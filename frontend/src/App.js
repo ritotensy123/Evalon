@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { ThemeProvider } from '@mui/material/styles';
-import { CssBaseline } from '@mui/material';
+import { ThemeProvider, CssBaseline } from '@mui/material';
 import theme from './theme/theme';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
@@ -9,49 +8,75 @@ import './App.css';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('landing');
-  const [selectedUserType, setSelectedUserType] = useState(null);
 
-  const handleNavigateToLanding = () => {
-    setCurrentPage('landing');
+  const handleNavigateToOnboarding = () => {
+    setCurrentPage('onboarding');
   };
 
   const handleNavigateToLogin = () => {
     setCurrentPage('login');
   };
 
-  const handleNavigateToOnboarding = (userType) => {
-    setSelectedUserType(userType);
-    setCurrentPage('onboarding');
-    console.log('Navigating to onboarding for user type:', userType);
+  const handleNavigateToLanding = () => {
+    setCurrentPage('landing');
   };
 
-  const renderCurrentPage = () => {
+  const handleNavigateToRegister = () => {
+    setCurrentPage('register');
+  };
+
+  // Onboarding navigation functions
+  const handleNavigateToOrgOnboarding = () => {
+    setCurrentPage('org-onboarding');
+  };
+
+  const handleNavigateToTeacherOnboarding = () => {
+    setCurrentPage('teacher-onboarding');
+  };
+
+  const handleNavigateToStudentOnboarding = () => {
+    setCurrentPage('student-onboarding');
+  };
+
+  const renderPage = () => {
     switch (currentPage) {
       case 'landing':
         return (
           <LandingPage
-            onNavigateToLogin={handleNavigateToLogin}
             onNavigateToOnboarding={handleNavigateToOnboarding}
+            onNavigateToLogin={handleNavigateToLogin}
           />
         );
       case 'login':
         return (
           <LoginPage
             onNavigateToLanding={handleNavigateToLanding}
+            onNavigateToRegister={handleNavigateToRegister}
           />
         );
       case 'onboarding':
         return (
           <OnboardingPage
-            selectedUserType={selectedUserType}
             onNavigateToLanding={handleNavigateToLanding}
+            onNavigateToLogin={handleNavigateToLogin}
+            onNavigateToOrgOnboarding={handleNavigateToOrgOnboarding}
+            onNavigateToTeacherOnboarding={handleNavigateToTeacherOnboarding}
+            onNavigateToStudentOnboarding={handleNavigateToStudentOnboarding}
           />
         );
+      case 'org-onboarding':
+        return <div>Organisation Onboarding (Coming Soon)</div>;
+      case 'teacher-onboarding':
+        return <div>Teacher Onboarding (Coming Soon)</div>;
+      case 'student-onboarding':
+        return <div>Student Onboarding (Coming Soon)</div>;
+      case 'register':
+        return <div>Register Page (Coming Soon)</div>;
       default:
         return (
           <LandingPage
-            onNavigateToLogin={handleNavigateToLogin}
             onNavigateToOnboarding={handleNavigateToOnboarding}
+            onNavigateToLogin={handleNavigateToLogin}
           />
         );
     }
@@ -60,9 +85,7 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <div className="App">
-        {renderCurrentPage()}
-      </div>
+      {renderPage()}
     </ThemeProvider>
   );
 }

@@ -1,5 +1,6 @@
 import { createTheme } from '@mui/material/styles';
 
+// Evalon Design System - Complete Theme Configuration
 const theme = createTheme({
   palette: {
     primary: {
@@ -40,25 +41,21 @@ const theme = createTheme({
       main: '#10b981',
       light: '#34d399',
       dark: '#059669',
-      contrastText: '#ffffff',
     },
     warning: {
       main: '#f59e0b',
       light: '#fbbf24',
       dark: '#d97706',
-      contrastText: '#ffffff',
     },
     error: {
       main: '#ef4444',
       light: '#f87171',
       dark: '#dc2626',
-      contrastText: '#ffffff',
     },
     info: {
       main: '#3b82f6',
       light: '#60a5fa',
       dark: '#2563eb',
-      contrastText: '#ffffff',
     },
   },
   typography: {
@@ -71,128 +68,123 @@ const theme = createTheme({
       color: '#111827',
     },
     h2: {
-      fontWeight: 700,
+      fontWeight: 800,
       fontSize: '3rem',
-      lineHeight: 1.2,
+      lineHeight: 1.1,
       letterSpacing: '-0.025em',
       color: '#111827',
     },
     h3: {
-      fontWeight: 700,
-      fontSize: '2.25rem',
-      lineHeight: 1.3,
+      fontWeight: 800,
+      fontSize: '2.5rem',
+      lineHeight: 1.1,
       letterSpacing: '-0.025em',
       color: '#111827',
     },
     h4: {
-      fontWeight: 600,
-      fontSize: '1.875rem',
-      lineHeight: 1.4,
+      fontWeight: 700,
+      fontSize: '2rem',
+      lineHeight: 1.3,
       letterSpacing: '-0.025em',
       color: '#111827',
     },
     h5: {
       fontWeight: 600,
       fontSize: '1.5rem',
-      lineHeight: 1.5,
-      letterSpacing: '-0.025em',
+      lineHeight: 1.4,
       color: '#111827',
     },
     h6: {
       fontWeight: 600,
       fontSize: '1.25rem',
-      lineHeight: 1.5,
-      letterSpacing: '-0.025em',
+      lineHeight: 1.4,
       color: '#111827',
     },
     body1: {
-      fontWeight: 400,
       fontSize: '1rem',
       lineHeight: 1.6,
-      color: '#374151',
+      color: '#6b7280',
     },
     body2: {
-      fontWeight: 400,
       fontSize: '0.875rem',
       lineHeight: 1.6,
       color: '#6b7280',
     },
     button: {
       fontWeight: 600,
-      fontSize: '0.875rem',
-      lineHeight: 1.5,
-      letterSpacing: '0.025em',
       textTransform: 'none',
+      fontSize: '0.875rem',
     },
     caption: {
-      fontWeight: 400,
       fontSize: '0.75rem',
-      lineHeight: 1.5,
-      color: '#6b7280',
+      fontWeight: 500,
+      letterSpacing: '0.1em',
+      textTransform: 'uppercase',
     },
   },
   shape: {
-    borderRadius: 8,
+    borderRadius: 12,
   },
-  spacing: 8,
-  shadows: [
-    'none',
-    '0px 2px 1px -1px rgba(0,0,0,0.1),0px 1px 1px 0px rgba(0,0,0,0.07),0px 1px 3px 0px rgba(0,0,0,0.06)',
-    '0px 3px 1px -2px rgba(0,0,0,0.1),0px 2px 2px 0px rgba(0,0,0,0.07),0px 1px 5px 0px rgba(0,0,0,0.06)',
-    '0px 3px 3px -2px rgba(0,0,0,0.1),0px 3px 4px 0px rgba(0,0,0,0.07),0px 1px 8px 0px rgba(0,0,0,0.06)',
-    '0px 2px 4px -1px rgba(0,0,0,0.1),0px 4px 5px 0px rgba(0,0,0,0.07),0px 1px 10px 0px rgba(0,0,0,0.06)',
-    '0px 3px 5px -1px rgba(0,0,0,0.1),0px 5px 8px 0px rgba(0,0,0,0.07),0px 1px 14px 0px rgba(0,0,0,0.06)',
-    '0px 3px 5px -1px rgba(0,0,0,0.1),0px 6px 10px 0px rgba(0,0,0,0.07),0px 1px 18px 0px rgba(0,0,0,0.06)',
-    '0px 4px 5px -2px rgba(0,0,0,0.1),0px 7px 10px 1px rgba(0,0,0,0.07),0px 2px 16px 1px rgba(0,0,0,0.06)',
-    '0px 5px 5px -3px rgba(0,0,0,0.1),0px 8px 10px 1px rgba(0,0,0,0.07),0px 3px 14px 2px rgba(0,0,0,0.06)',
-    '0px 5px 6px -3px rgba(0,0,0,0.1),0px 9px 12px 1px rgba(0,0,0,0.07),0px 3px 16px 2px rgba(0,0,0,0.06)',
-    '0px 6px 6px -3px rgba(0,0,0,0.1),0px 10px 14px 1px rgba(0,0,0,0.07),0px 4px 18px 3px rgba(0,0,0,0.06)',
-    '0px 6px 7px -4px rgba(0,0,0,0.1),0px 11px 15px 1px rgba(0,0,0,0.07),0px 4px 20px 3px rgba(0,0,0,0.06)',
-    '0px 7px 8px -4px rgba(0,0,0,0.1),0px 12px 17px 2px rgba(0,0,0,0.07),0px 5px 22px 4px rgba(0,0,0,0.06)',
-    '0px 7px 8px -4px rgba(0,0,0,0.1),0px 13px 19px 2px rgba(0,0,0,0.07),0px 5px 24px 4px rgba(0,0,0,0.06)',
-    '0px 7px 9px -4px rgba(0,0,0,0.1),0px 14px 21px 2px rgba(0,0,0,0.07),0px 5px 26px 4px rgba(0,0,0,0.06)',
-    '0px 8px 9px -5px rgba(0,0,0,0.1),0px 15px 22px 2px rgba(0,0,0,0.07),0px 6px 28px 5px rgba(0,0,0,0.06)',
-    '0px 8px 10px -5px rgba(0,0,0,0.1),0px 16px 24px 2px rgba(0,0,0,0.07),0px 6px 30px 5px rgba(0,0,0,0.06)',
-    '0px 8px 11px -5px rgba(0,0,0,0.1),0px 17px 26px 2px rgba(0,0,0,0.07),0px 6px 32px 5px rgba(0,0,0,0.06)',
-    '0px 9px 11px -5px rgba(0,0,0,0.1),0px 18px 28px 2px rgba(0,0,0,0.07),0px 7px 34px 6px rgba(0,0,0,0.06)',
-    '0px 9px 12px -6px rgba(0,0,0,0.1),0px 19px 29px 2px rgba(0,0,0,0.07),0px 7px 36px 6px rgba(0,0,0,0.06)',
-    '0px 10px 13px -6px rgba(0,0,0,0.1),0px 20px 31px 3px rgba(0,0,0,0.07),0px 8px 38px 7px rgba(0,0,0,0.06)',
-    '0px 10px 13px -6px rgba(0,0,0,0.1),0px 21px 33px 3px rgba(0,0,0,0.07),0px 8px 40px 7px rgba(0,0,0,0.06)',
-    '0px 10px 14px -6px rgba(0,0,0,0.1),0px 22px 35px 3px rgba(0,0,0,0.07),0px 8px 42px 7px rgba(0,0,0,0.06)',
-    '0px 11px 14px -7px rgba(0,0,0,0.1),0px 23px 36px 3px rgba(0,0,0,0.07),0px 9px 44px 8px rgba(0,0,0,0.06)',
-    '0px 11px 15px -7px rgba(0,0,0,0.1),0px 24px 38px 3px rgba(0,0,0,0.07),0px 9px 46px 8px rgba(0,0,0,0.06)',
-  ],
+  spacing: 8, // 8px base unit
   components: {
     MuiButton: {
       styleOverrides: {
         root: {
-          borderRadius: 8,
           textTransform: 'none',
+          borderRadius: 16,
+          padding: '12px 24px',
           fontWeight: 600,
-          boxShadow: 'none',
-          '&:hover': {
-            boxShadow: 'none',
-          },
+          fontSize: '0.875rem',
+          minHeight: 48,
+          transition: 'all 0.2s ease',
         },
         contained: {
+          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
           '&:hover': {
-            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            boxShadow: '0 6px 16px rgba(0,0,0,0.15)',
+            transform: 'translateY(-1px)',
           },
+        },
+        outlined: {
+          borderWidth: '1.5px',
+          '&:hover': {
+            borderWidth: '1.5px',
+            transform: 'translateY(-1px)',
+          },
+        },
+        sizeLarge: {
+          padding: '16px 32px',
+          fontSize: '1rem',
+          minHeight: 56,
+          borderRadius: 20,
+        },
+        sizeSmall: {
+          padding: '8px 16px',
+          fontSize: '0.875rem',
+          minHeight: 40,
+          borderRadius: 12,
         },
       },
     },
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: 12,
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          borderRadius: 16,
+          border: '1px solid #f3f4f6',
+          transition: 'all 0.3s ease',
+          '&:hover': {
+            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+            transform: 'translateY(-2px)',
+          },
         },
       },
     },
     MuiPaper: {
       styleOverrides: {
         root: {
-          borderRadius: 12,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          borderRadius: 16,
         },
       },
     },
@@ -200,8 +192,41 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           '& .MuiOutlinedInput-root': {
-            borderRadius: 8,
+            borderRadius: 12,
+            '&:hover .MuiOutlinedInput-notchedOutline': {
+              borderColor: '#667eea',
+            },
+            '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+              borderColor: '#667eea',
+              borderWidth: '2px',
+            },
           },
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          borderRadius: 20,
+          fontWeight: 600,
+          fontSize: '0.875rem',
+        },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          backgroundColor: '#ffffff',
+          color: '#111827',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+        },
+      },
+    },
+    MuiDrawer: {
+      styleOverrides: {
+        paper: {
+          backgroundColor: '#ffffff',
+          borderRight: '1px solid #e5e7eb',
         },
       },
     },
@@ -210,11 +235,76 @@ const theme = createTheme({
     values: {
       xs: 0,
       sm: 600,
-      md: 960,
-      lg: 1280,
-      xl: 1920,
+      md: 900,
+      lg: 1200,
+      xl: 1536,
     },
   },
 });
 
-export default theme; 
+export default theme;
+
+// Theme Usage Guide:
+/*
+Evalon Design System - Theme Usage Guide
+
+1. COLORS:
+   - Primary: #667eea (Main brand color)
+   - Secondary: #764ba2 (Accent color)
+   - Text Primary: #111827 (Dark text)
+   - Text Secondary: #6b7280 (Muted text)
+   - Background: #ffffff (White background)
+   - Background Subtle: #f8fafc (Light gray background)
+
+2. TYPOGRAPHY:
+   - Headlines: Use h1-h6 variants with proper weights
+   - Body: Use body1/body2 for regular text
+   - Buttons: Use button variant for button text
+   - Captions: Use caption for small labels
+
+3. SPACING:
+   - Base unit: 8px
+   - Use theme.spacing() for consistent spacing
+   - Common values: 1(8px), 2(16px), 3(24px), 4(32px)
+
+4. BORDER RADIUS:
+   - Small: 8px (theme.shape.borderRadius)
+   - Medium: 12px
+   - Large: 16px
+   - Extra Large: 20px
+
+5. SHADOWS:
+   - Light: 0 1px 3px rgba(0,0,0,0.1)
+   - Medium: 0 4px 12px rgba(0,0,0,0.1)
+   - Heavy: 0 8px 24px rgba(0,0,0,0.15)
+
+6. GRADIENTS:
+   - Primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%)
+   - Light: linear-gradient(45deg, #f0f9ff 0%, #e0f2fe 100%)
+   - Warm: linear-gradient(45deg, #fef3c7 0%, #fde68a 100%)
+
+7. COMPONENT USAGE:
+   - Always use theme.palette for colors
+   - Use theme.typography for text styles
+   - Use theme.spacing for consistent spacing
+   - Use theme.breakpoints for responsive design
+
+8. RESPONSIVE DESIGN:
+   - xs: 0-600px (Mobile)
+   - sm: 600-900px (Tablet)
+   - md: 900-1200px (Desktop)
+   - lg: 1200-1536px (Large Desktop)
+   - xl: 1536px+ (Extra Large)
+
+9. ANIMATIONS:
+   - Standard: 0.2s ease
+   - Smooth: 0.3s ease
+   - Hover effects: translateY(-1px) to (-2px)
+
+10. CONSISTENCY RULES:
+    - Always use theme colors, never hardcode
+    - Use consistent border radius values
+    - Maintain consistent spacing patterns
+    - Follow typography hierarchy
+    - Use consistent shadow patterns
+*/ 
