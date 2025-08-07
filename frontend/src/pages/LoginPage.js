@@ -853,7 +853,7 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister }) => {
                     transition: 'all 0.2s ease',
                   }}
                 >
-                  Create an Account
+                  Get Started
                 </Link>
               </Box>
             </Box>

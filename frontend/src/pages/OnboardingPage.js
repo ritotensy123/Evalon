@@ -59,21 +59,21 @@ const OnboardingPage = ({ onNavigateToLanding, onNavigateToLogin, onNavigateToOr
     {
       type: 'organisation',
       title: 'Organization',
-      description: 'Administer your institution',
+      description: 'Administer Your Institution',
       icon: <Business />,
       color: '#667eea',
     },
     {
       type: 'teacher',
       title: 'Teacher',
-      description: 'Create and manage assessments',
+      description: 'Schedule & Monitor Assessments',
       icon: <School />,
-      color: '#43e97b',
+      color: '#7dd87d',
     },
     {
       type: 'student',
       title: 'Student',
-      description: 'Access learning materials',
+      description: 'Attend Secure Exams & Track Progress',
       icon: <Person />,
       color: '#4facfe',
     },
@@ -179,15 +179,30 @@ const OnboardingPage = ({ onNavigateToLanding, onNavigateToLogin, onNavigateToOr
               <Typography
                 variant="h3"
                 sx={{
-                  fontWeight: 800,
-                  color: COLORS.TEXT_PRIMARY,
+                  fontWeight: 600,
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  backgroundClip: 'text',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
                   mb: { xs: 1, sm: 1.5, md: 2 },
-                  fontSize: { xs: '1.5rem', sm: '1.75rem', md: '2.25rem', lg: '2.5rem' },
-                  letterSpacing: '-0.02em',
-                  lineHeight: 1.2,
+                  fontSize: { xs: '1.3rem', sm: '1.5rem', md: '1.8rem', lg: '2rem' },
+                  letterSpacing: '0.02em',
+                  lineHeight: 1.4,
+                  position: 'relative',
+                  '&::after': {
+                    content: '""',
+                    position: 'absolute',
+                    bottom: '-8px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: '40px',
+                    height: '2px',
+                    background: 'linear-gradient(90deg, #667eea, #764ba2)',
+                    borderRadius: '1px',
+                  },
                 }}
               >
-                Choose your role
+                Choose Your Role
               </Typography>
             </Grow>
             
@@ -196,11 +211,12 @@ const OnboardingPage = ({ onNavigateToLanding, onNavigateToLogin, onNavigateToOr
                 variant="body1"
                 sx={{
                   color: COLORS.TEXT_SECONDARY,
-                  fontSize: { xs: '0.875rem', sm: '1rem', md: '1.125rem' },
+                  fontSize: { xs: '0.75rem', sm: '0.85rem', md: '0.95rem' },
                   maxWidth: { xs: 280, sm: 350, md: 400 },
                   mx: 'auto',
-                  lineHeight: 1.5,
+                  lineHeight: 1.6,
                   px: { xs: 2, sm: 0 },
+                  opacity: 0.8,
                 }}
               >
                 Select how you'll be using Evalon
