@@ -201,6 +201,15 @@ const theme = createTheme({
               borderWidth: '2px',
             },
           },
+          '& .MuiFormHelperText-root': {
+            textTransform: 'none',
+            fontSize: '0.875rem',
+            fontWeight: 500,
+            marginTop: 4,
+            '&.Mui-error': {
+              color: '#ef4444',
+            },
+          },
         },
       },
     },
@@ -210,6 +219,21 @@ const theme = createTheme({
           borderRadius: 20,
           fontWeight: 600,
           fontSize: '0.875rem',
+        },
+      },
+    },
+    MuiFormControl: {
+      styleOverrides: {
+        root: {
+          '& .MuiFormHelperText-root': {
+            textTransform: 'none',
+            fontSize: '0.875rem',
+            fontWeight: 500,
+            marginTop: 4,
+            '&.Mui-error': {
+              color: '#ef4444',
+            },
+          },
         },
       },
     },

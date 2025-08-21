@@ -7,6 +7,8 @@ import './App.css';
 const LandingPage = lazy(() => import('./pages/LandingPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'));
+const OrganisationRegistration = lazy(() => import('./pages/onboarding/OrganisationRegistration'));
+const TeacherRegistration = lazy(() => import('./pages/onboarding/TeacherRegistration'));
 
 // Loading component for page transitions
 const PageLoadingFallback = () => (
@@ -48,7 +50,7 @@ function App() {
 
   // Onboarding navigation functions
   const handleNavigateToOrgOnboarding = React.useCallback(() => {
-    setCurrentPage('org-onboarding');
+    setCurrentPage('organisation-registration');
   }, []);
 
   const handleNavigateToTeacherOnboarding = React.useCallback(() => {
@@ -91,10 +93,24 @@ function App() {
             />
           </Suspense>
         );
-      case 'org-onboarding':
-        return <div>Organisation Onboarding (Coming Soon)</div>;
+      case 'organisation-registration':
+        return (
+          <Suspense fallback={<PageLoadingFallback />}>
+            <OrganisationRegistration
+              onNavigateToLanding={handleNavigateToLanding}
+              onNavigateToLogin={handleNavigateToLogin}
+            />
+          </Suspense>
+        );
       case 'teacher-onboarding':
-        return <div>Teacher Onboarding (Coming Soon)</div>;
+        return (
+          <Suspense fallback={<PageLoadingFallback />}>
+            <TeacherRegistration
+              onNavigateToLanding={handleNavigateToLanding}
+              onNavigateToLogin={handleNavigateToLogin}
+            />
+          </Suspense>
+        );
       case 'student-onboarding':
         return <div>Student Onboarding (Coming Soon)</div>;
       case 'register':
