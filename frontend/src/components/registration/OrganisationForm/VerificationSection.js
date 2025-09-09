@@ -283,9 +283,11 @@ const VerificationSection = ({ formData, onFormChange, onSubmit, isSubmitting, o
                 </Button>
               </Box>
             ) : (
-              <Alert severity="success" sx={{ mt: 2 }}>
-                Email verified successfully!
-              </Alert>
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="body2" sx={{ color: '#4caf50', fontWeight: 500 }}>
+                  ✓ Email verified successfully
+                </Typography>
+              </Box>
             )}
           </Box>
         </Grid>
@@ -381,9 +383,11 @@ const VerificationSection = ({ formData, onFormChange, onSubmit, isSubmitting, o
                 </Button>
               </Box>
             ) : (
-              <Alert severity="success" sx={{ mt: 2 }}>
-                Phone verified successfully!
-              </Alert>
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="body2" sx={{ color: '#4caf50', fontWeight: 500 }}>
+                  ✓ Phone verified successfully
+                </Typography>
+              </Box>
             )}
           </Box>
         </Grid>

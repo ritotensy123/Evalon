@@ -1,17 +1,27 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
-  Grid,
   Typography,
   TextField,
-  Select,
-  MenuItem,
   FormControl,
   InputLabel,
-  Checkbox,
+  Select,
+  MenuItem,
+  InputAdornment,
   FormControlLabel,
+  Checkbox,
+  CircularProgress,
+  Alert,
 } from '@mui/material';
-import { COLORS, TYPOGRAPHY, SPACING, BORDER_RADIUS } from '../../../theme/constants';
+import {
+  Business,
+  LocationOn,
+  Phone,
+  Email,
+  Language,
+} from '@mui/icons-material';
+import { COLORS, BORDER_RADIUS } from '../../../theme/constants';
+import { locationAPI } from '../../../services/api';
 
 const Step1OrganisationDetails = ({ formData, formErrors, onFormChange }) => {
   const organisationTypes = [
@@ -22,41 +32,100 @@ const Step1OrganisationDetails = ({ formData, formErrors, onFormChange }) => {
     { value: 'other', label: 'Other' },
   ];
 
-  const countries = [
-    { value: 'india', label: '🇮🇳 India' },
-    { value: 'usa', label: '🇺🇸 United States' },
-    { value: 'uk', label: '🇬🇧 United Kingdom' },
-    { value: 'canada', label: '🇨🇦 Canada' },
-    { value: 'australia', label: '🇦🇺 Australia' },
-    { value: 'germany', label: '🇩🇪 Germany' },
-    { value: 'france', label: '🇫🇷 France' },
-    { value: 'japan', label: '🇯🇵 Japan' },
-  ];
+  // State for dynamic location data
+  const [countries, setCountries] = useState([]);
+  const [states, setStates] = useState([]);
+  const [cities, setCities] = useState([]);
+  const [loading, setLoading] = useState({
+    countries: false,
+    states: false,
+    cities: false
+  });
+  const [error, setError] = useState({
+    countries: null,
+    states: null,
+    cities: null
+  });
 
-  const states = {
-    india: [
-      { value: 'maharashtra', label: 'Maharashtra' },
-      { value: 'karnataka', label: 'Karnataka' },
-      { value: 'tamil-nadu', label: 'Tamil Nadu' },
-      { value: 'delhi', label: 'Delhi' },
-      { value: 'mumbai', label: 'Mumbai' },
-    ],
-    usa: [
-      { value: 'california', label: 'California' },
-      { value: 'new-york', label: 'New York' },
-      { value: 'texas', label: 'Texas' },
-      { value: 'florida', label: 'Florida' },
-    ],
-    uk: [
-      { value: 'england', label: 'England' },
-      { value: 'scotland', label: 'Scotland' },
-      { value: 'wales', label: 'Wales' },
-      { value: 'northern-ireland', label: 'Northern Ireland' },
-    ],
+  // Fetch countries on component mount - using dynamic API (CountryStateCity)
+  useEffect(() => {
+    fetchCountries();
+  }, []);
+
+  // Fetch states when country changes
+  useEffect(() => {
+    if (formData.country) {
+      fetchStates(formData.country);
+      // Reset state and city when country changes
+      onFormChange('state', '');
+      onFormChange('city', '');
+    }
+  }, [formData.country]);
+
+  // Fetch cities when state changes
+  useEffect(() => {
+    if (formData.country && formData.state) {
+      fetchCities(formData.country, formData.state);
+      // Reset city when state changes
+      onFormChange('city', '');
+    }
+  }, [formData.state]);
+
+  const fetchCountries = async () => {
+    setLoading(prev => ({ ...prev, countries: true }));
+    setError(prev => ({ ...prev, countries: null }));
+    
+    try {
+      const response = await locationAPI.getCountries();
+      if (response.success) {
+        setCountries(response.data);
+      } else {
+        setError(prev => ({ ...prev, countries: 'Failed to fetch countries' }));
+      }
+    } catch (err) {
+      console.error('Error fetching countries:', err);
+      setError(prev => ({ ...prev, countries: err.message || 'Failed to fetch countries' }));
+    } finally {
+      setLoading(prev => ({ ...prev, countries: false }));
+    }
   };
 
-  const getStatesForCountry = (country) => {
-    return states[country] || [];
+  const fetchStates = async (countryCode) => {
+    setLoading(prev => ({ ...prev, states: true }));
+    setError(prev => ({ ...prev, states: null }));
+    
+    try {
+      const response = await locationAPI.getStatesByCountry(countryCode);
+      if (response.success) {
+        setStates(response.data);
+      } else {
+        setError(prev => ({ ...prev, states: 'Failed to fetch states' }));
+      }
+    } catch (err) {
+      console.error('Error fetching states:', err);
+      setError(prev => ({ ...prev, states: err.message || 'Failed to fetch states' }));
+    } finally {
+      setLoading(prev => ({ ...prev, states: false }));
+    }
+  };
+
+  const fetchCities = async (countryCode, stateCode) => {
+    setLoading(prev => ({ ...prev, cities: true }));
+    setError(prev => ({ ...prev, cities: null }));
+    
+    try {
+      const response = await locationAPI.getCitiesByState(countryCode, stateCode);
+      if (response.success) {
+        setCities(response.data);
+      } else {
+        setError(prev => ({ ...prev, cities: 'Failed to fetch cities' }));
+      }
+    } catch (err) {
+      console.error('Error fetching cities:', err);
+      setError(prev => ({ ...prev, cities: err.message || 'Failed to fetch cities' }));
+    } finally {
+      setLoading(prev => ({ ...prev, cities: false }));
+    }
   };
 
   // Enhanced field styling - matching login page
@@ -137,13 +206,15 @@ const Step1OrganisationDetails = ({ formData, formErrors, onFormChange }) => {
           <FormControl sx={{ flex: 1, ...universalFieldStyle }}>
             <InputLabel>Country</InputLabel>
             <Select
-              value={formData.country}
+              value={formData.country || ''}
               label="Country"
               onChange={(e) => {
                 onFormChange('country', e.target.value);
                 onFormChange('state', '');
+                onFormChange('city', '');
               }}
               error={!!formErrors.country}
+              disabled={loading.countries}
               MenuProps={{
                 PaperProps: {
                   sx: {
@@ -155,22 +226,38 @@ const Step1OrganisationDetails = ({ formData, formErrors, onFormChange }) => {
                 }
               }}
             >
-              {countries.map((country) => (
-                <MenuItem key={country.value} value={country.value}>
-                  {country.label}
+              {loading.countries ? (
+                <MenuItem disabled>
+                  <CircularProgress size={20} sx={{ mr: 1 }} />
+                  Loading countries...
                 </MenuItem>
-              ))}
+              ) : error.countries ? (
+                <MenuItem disabled>
+                  <Alert severity="error" sx={{ width: '100%' }}>
+                    {error.countries}
+                  </Alert>
+                </MenuItem>
+              ) : (
+                countries.map((country) => (
+                  <MenuItem key={country.code} value={country.code}>
+                    {country.name}
+                  </MenuItem>
+                ))
+              )}
             </Select>
           </FormControl>
 
           <FormControl sx={{ flex: 1, ...universalFieldStyle }}>
             <InputLabel>State</InputLabel>
             <Select
-              value={formData.state}
+              value={formData.state || ''}
               label="State"
-              onChange={(e) => onFormChange('state', e.target.value)}
+              onChange={(e) => {
+                onFormChange('state', e.target.value);
+                onFormChange('city', '');
+              }}
               error={!!formErrors.state}
-              disabled={!formData.country}
+              disabled={!formData.country || loading.states}
               MenuProps={{
                 PaperProps: {
                   sx: {
@@ -182,11 +269,24 @@ const Step1OrganisationDetails = ({ formData, formErrors, onFormChange }) => {
                 }
               }}
             >
-              {getStatesForCountry(formData.country).map((state) => (
-                <MenuItem key={state.value} value={state.value}>
-                  {state.label}
+              {loading.states ? (
+                <MenuItem disabled>
+                  <CircularProgress size={20} sx={{ mr: 1 }} />
+                  Loading states...
                 </MenuItem>
-              ))}
+              ) : error.states ? (
+                <MenuItem disabled>
+                  <Alert severity="error" sx={{ width: '100%' }}>
+                    {error.states}
+                  </Alert>
+                </MenuItem>
+              ) : (
+                states.map((state) => (
+                  <MenuItem key={state.code} value={state.code}>
+                    {state.name}
+                  </MenuItem>
+                ))
+              )}
             </Select>
           </FormControl>
         </Box>
@@ -197,15 +297,45 @@ const Step1OrganisationDetails = ({ formData, formErrors, onFormChange }) => {
           gap: { xs: 1, sm: 2 }, 
           flexDirection: { xs: 'column', sm: 'row' } 
         }}>
-          <TextField
-            sx={{ flex: 1, ...universalFieldStyle }}
-            label="City"
-            value={formData.city}
-            onChange={(e) => onFormChange('city', e.target.value)}
-            error={!!formErrors.city}
-            helperText={formErrors.city}
-            placeholder="Enter city name"
-          />
+          <FormControl sx={{ flex: 1, ...universalFieldStyle }}>
+            <InputLabel>City</InputLabel>
+            <Select
+              value={formData.city || ''}
+              label="City"
+              onChange={(e) => onFormChange('city', e.target.value)}
+              error={!!formErrors.city}
+              disabled={!formData.state || loading.cities}
+              MenuProps={{
+                PaperProps: {
+                  sx: {
+                    maxHeight: 200,
+                    '& .MuiMenuItem-root': {
+                      fontSize: '0.875rem',
+                    }
+                  }
+                }
+              }}
+            >
+              {loading.cities ? (
+                <MenuItem disabled>
+                  <CircularProgress size={20} sx={{ mr: 1 }} />
+                  Loading cities...
+                </MenuItem>
+              ) : error.cities ? (
+                <MenuItem disabled>
+                  <Alert severity="error" sx={{ width: '100%' }}>
+                    {error.cities}
+                  </Alert>
+                </MenuItem>
+              ) : (
+                cities.map((city) => (
+                  <MenuItem key={city.name} value={city.name}>
+                    {city.name}
+                  </MenuItem>
+                ))
+              )}
+            </Select>
+          </FormControl>
 
           <TextField
             sx={{ flex: 1, ...universalFieldStyle }}
@@ -232,7 +362,7 @@ const Step1OrganisationDetails = ({ formData, formErrors, onFormChange }) => {
           <FormControl sx={{ flex: 1, ...universalFieldStyle }}>
             <InputLabel>Type of Institution</InputLabel>
             <Select
-              value={formData.organisationType}
+              value={formData.organisationType || ''}
               label="Type of Institution"
               onChange={(e) => onFormChange('organisationType', e.target.value)}
               error={!!formErrors.organisationType}

@@ -1,32 +1,14 @@
-import React, { useState, Suspense, lazy, memo } from 'react';
-import { ThemeProvider, CssBaseline, CircularProgress, Box } from '@mui/material';
+import React, { useState } from 'react';
+import { ThemeProvider, CssBaseline } from '@mui/material';
 import theme from './theme/theme';
-import './App.css';
+import LandingPage from './pages/LandingPage';
+import LoginPage from './pages/LoginPage';
+import OnboardingPage from './pages/OnboardingPage';
+import OrganisationRegistration from './pages/onboarding/OrganisationRegistration';
+import TeacherRegistration from './pages/onboarding/TeacherRegistration';
+import StudentRegistration from './pages/onboarding/StudentRegistration';
 
-// Lazy load all page components for better performance
-const LandingPage = lazy(() => import('./pages/LandingPage'));
-const LoginPage = lazy(() => import('./pages/LoginPage'));
-const OnboardingPage = lazy(() => import('./pages/OnboardingPage'));
-const OrganisationRegistration = lazy(() => import('./pages/onboarding/OrganisationRegistration'));
-const TeacherRegistration = lazy(() => import('./pages/onboarding/TeacherRegistration'));
 
-// Loading component for page transitions
-const PageLoadingFallback = () => (
-  <Box
-    display="flex"
-    justifyContent="center"
-    alignItems="center"
-    minHeight="100vh"
-    bgcolor="background.default"
-  >
-    <CircularProgress size={40} sx={{ color: 'primary.main' }} />
-  </Box>
-);
-
-// Memoized page components to prevent unnecessary re-renders
-const MemoizedLandingPage = memo(LandingPage);
-const MemoizedLoginPage = memo(LoginPage);
-const MemoizedOnboardingPage = memo(OnboardingPage);
 
 function App() {
   const [currentPage, setCurrentPage] = useState('landing');
@@ -42,10 +24,6 @@ function App() {
 
   const handleNavigateToLanding = React.useCallback(() => {
     setCurrentPage('landing');
-  }, []);
-
-  const handleNavigateToRegister = React.useCallback(() => {
-    setCurrentPage('register');
   }, []);
 
   // Onboarding navigation functions
@@ -65,64 +43,55 @@ function App() {
     switch (currentPage) {
       case 'landing':
         return (
-          <Suspense fallback={<PageLoadingFallback />}>
-            <MemoizedLandingPage
-              onNavigateToOnboarding={handleNavigateToOnboarding}
-              onNavigateToLogin={handleNavigateToLogin}
-            />
-          </Suspense>
+          <LandingPage
+            onNavigateToOnboarding={handleNavigateToOnboarding}
+            onNavigateToLogin={handleNavigateToLogin}
+          />
         );
       case 'login':
         return (
-          <Suspense fallback={<PageLoadingFallback />}>
-            <MemoizedLoginPage
-              onNavigateToLanding={handleNavigateToLanding}
-              onNavigateToRegister={handleNavigateToOnboarding}
-            />
-          </Suspense>
+          <LoginPage
+            onNavigateToLanding={handleNavigateToLanding}
+            onNavigateToRegister={handleNavigateToOnboarding}
+          />
         );
       case 'onboarding':
         return (
-          <Suspense fallback={<PageLoadingFallback />}>
-            <MemoizedOnboardingPage
-              onNavigateToLanding={handleNavigateToLanding}
-              onNavigateToLogin={handleNavigateToLogin}
-              onNavigateToOrgOnboarding={handleNavigateToOrgOnboarding}
-              onNavigateToTeacherOnboarding={handleNavigateToTeacherOnboarding}
-              onNavigateToStudentOnboarding={handleNavigateToStudentOnboarding}
-            />
-          </Suspense>
+          <OnboardingPage
+            onNavigateToLanding={handleNavigateToLanding}
+            onNavigateToLogin={handleNavigateToLogin}
+            onNavigateToOrgOnboarding={handleNavigateToOrgOnboarding}
+            onNavigateToTeacherOnboarding={handleNavigateToTeacherOnboarding}
+            onNavigateToStudentOnboarding={handleNavigateToStudentOnboarding}
+          />
         );
       case 'organisation-registration':
         return (
-          <Suspense fallback={<PageLoadingFallback />}>
-            <OrganisationRegistration
-              onNavigateToLanding={handleNavigateToLanding}
-              onNavigateToLogin={handleNavigateToLogin}
-            />
-          </Suspense>
+          <OrganisationRegistration
+            onNavigateToLanding={handleNavigateToLanding}
+            onNavigateToLogin={handleNavigateToLogin}
+          />
         );
       case 'teacher-onboarding':
         return (
-          <Suspense fallback={<PageLoadingFallback />}>
-            <TeacherRegistration
-              onNavigateToLanding={handleNavigateToLanding}
-              onNavigateToLogin={handleNavigateToLogin}
-            />
-          </Suspense>
+          <TeacherRegistration
+            onNavigateToLanding={handleNavigateToLanding}
+            onNavigateToLogin={handleNavigateToLogin}
+          />
         );
       case 'student-onboarding':
-        return <div>Student Onboarding (Coming Soon)</div>;
-      case 'register':
-        return <div>Register Page (Coming Soon)</div>;
+        return (
+          <StudentRegistration
+            onNavigateToLanding={handleNavigateToLanding}
+            onNavigateToLogin={handleNavigateToLogin}
+          />
+        );
       default:
         return (
-          <Suspense fallback={<PageLoadingFallback />}>
-            <MemoizedLandingPage
-              onNavigateToOnboarding={handleNavigateToOnboarding}
-              onNavigateToLogin={handleNavigateToLogin}
-            />
-          </Suspense>
+          <LandingPage
+            onNavigateToOnboarding={handleNavigateToOnboarding}
+            onNavigateToLogin={handleNavigateToLogin}
+          />
         );
     }
   };

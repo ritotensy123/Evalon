@@ -5,32 +5,37 @@ import {
   Typography,
   Button,
   useTheme,
-  useMediaQuery,
   Fade,
   LinearProgress,
+  Alert,
+  Snackbar,
 } from '@mui/material';
 import {
   Business,
-  Person,
+  Security,
   Settings,
+  CheckCircle,
   ArrowBack,
   ArrowForward,
-  CheckCircle,
 } from '@mui/icons-material';
-import { COLORS, TYPOGRAPHY, SPACING, BORDER_RADIUS, SHADOWS, GRADIENTS } from '../../theme/constants';
+import { COLORS, BORDER_RADIUS, GRADIENTS } from '../../theme/constants';
 import Step1OrganisationDetails from '../../components/registration/OrganisationForm/Step1OrganisationDetails';
 import Step2AdminDetails from '../../components/registration/OrganisationForm/Step2AdminDetails';
 import Step3SetupPreferences from '../../components/registration/OrganisationForm/Step3SetupPreferences';
+import { organizationAPI, healthAPI } from '../../services/api';
 import '../../styles/registration/organisation.css';
 
 const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [activeStep, setActiveStep] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orgCode, setOrgCode] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState(5);
+  const [registrationToken, setRegistrationToken] = useState(null);
+  const [backendConnected, setBackendConnected] = useState(false);
+  const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
   
   // Enhanced form data structure
   const [formData, setFormData] = useState({
@@ -65,8 +70,30 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
 
   const [formErrors, setFormErrors] = useState({});
 
+  // Notification handler
+  const showNotification = (message, severity = 'info') => {
+    setNotification({ open: true, message, severity });
+  };
+
+  const handleCloseNotification = () => {
+    setNotification({ ...notification, open: false });
+  };
+
+  // Check backend connection
+  const checkBackendConnection = async () => {
+    try {
+      await healthAPI.check();
+      setBackendConnected(true);
+      // Backend connection successful - no notification needed
+    } catch (error) {
+      setBackendConnected(false);
+      showNotification('Backend server is not running. Please start the backend server.', 'error');
+    }
+  };
+
   useEffect(() => {
     setIsLoaded(true);
+    checkBackendConnection();
   }, []);
 
   const steps = [
@@ -78,7 +105,7 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
     },
     { 
       label: 'Admin Details', 
-      icon: <Person />,
+      icon: <Security />,
       title: "Who will manage your institution?",
       subtitle: "This person will act as the primary admin for Evalon"
     },
@@ -90,13 +117,75 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
     },
   ];
 
-  const handleNext = () => {
-    if (validateStep(activeStep)) {
-      setActiveStep((prevStep) => prevStep + 1);
-      // Scroll to top when moving to next step with smoother animation
+  const handleNext = async () => {
+    if (!validateStep(activeStep)) {
+      return;
+    }
+
+    if (!backendConnected) {
+      showNotification('Backend server is not connected. Please start the backend server.', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      if (activeStep === 0) {
+        // Step 1: Organization Details
+        const step1Data = {
+          organisationName: formData.organisationName,
+          country: formData.country,
+          state: formData.state,
+          city: formData.city,
+          pincode: formData.pincode,
+          organisationType: formData.organisationType,
+          studentStrength: formData.studentStrength,
+          isGovernmentRecognized: formData.isGovernmentRecognized
+        };
+
+        const response = await organizationAPI.registerStep1(step1Data);
+        
+        if (response.success) {
+          console.log('Step 1 response:', response.data);
+          setRegistrationToken(response.data.registrationToken);
+          setOrgCode(response.data.orgCode);
+          showNotification('Organization details saved successfully!', 'success');
+          setActiveStep(1);
+        }
+        } else if (activeStep === 1) {
+          // Step 2: Admin Details - registerStep2 is now called when sending OTP
+          // Just move to next step if both email and phone are verified
+          if (formData.emailVerified && formData.phoneVerified) {
+            // Check if password fields are filled before proceeding
+            if (!formData.password || !formData.confirmPassword) {
+              showNotification('Please fill in password and confirm password before proceeding', 'warning');
+              return;
+            }
+            if (formData.password !== formData.confirmPassword) {
+              showNotification('Passwords do not match', 'error');
+              return;
+            }
+            showNotification('Moving to setup preferences!', 'success');
+            setActiveStep(2);
+          } else {
+            showNotification('Please verify both email and phone before proceeding', 'warning');
+            return;
+          }
+        } else {
+        // Step 3: Setup Preferences
+        setActiveStep(3);
+      }
+
+      // Scroll to top when moving to next step
       setTimeout(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }, 100);
+
+    } catch (error) {
+      console.error('Registration error:', error);
+      showNotification(error.message || 'An error occurred. Please try again.', 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -190,16 +279,45 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
     if (!validateStep(2)) {
       return; // Don't submit if validation fails
     }
+
+    if (!backendConnected) {
+      showNotification('Backend server is not connected. Please start the backend server.', 'error');
+      return;
+    }
     
     setIsSubmitting(true);
     
-    // Simulate API call
-    setTimeout(() => {
-      const generatedCode = generateOrgCode();
-      setOrgCode(generatedCode);
+    try {
+      // Step 3: Complete Registration
+      const step3Data = {
+        institutionStructure: formData.institutionStructure,
+        departments: formData.departments,
+        addSubAdmins: formData.addSubAdmins,
+        timeZone: formData.timeZone,
+        twoFactorAuth: formData.twoFactorAuth,
+        logo: formData.logo,
+        registrationToken: registrationToken
+      };
+
+      const response = await organizationAPI.registerStep3(step3Data);
+      
+      if (response.success) {
+        showNotification('Organization registered successfully!', 'success');
+        setShowSuccess(true);
+        
+        // Store the JWT token for future use
+        if (response.data.token) {
+          localStorage.setItem('authToken', response.data.token);
+          localStorage.setItem('organizationId', response.data.organization.id);
+          localStorage.setItem('adminId', response.data.admin.id);
+        }
+      }
+    } catch (error) {
+      console.error('Final registration error:', error);
+      showNotification(error.message || 'Failed to complete registration. Please try again.', 'error');
+    } finally {
       setIsSubmitting(false);
-      setShowSuccess(true);
-    }, 2000);
+    }
   };
 
   const renderStepContent = (step) => {
@@ -213,11 +331,13 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
           />
         );
       case 1:
+        console.log('Rendering Step2 with registrationToken:', registrationToken);
         return (
           <Step2AdminDetails
             formData={formData}
             formErrors={formErrors}
             onFormChange={handleFormChange}
+            registrationToken={registrationToken}
           />
         );
       case 2:
@@ -226,6 +346,7 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
             formData={formData}
             formErrors={formErrors}
             onFormChange={handleFormChange}
+            orgCode={orgCode}
           />
         );
       default:
@@ -383,17 +504,34 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
   }
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        backgroundColor: '#f8fafc',
-        display: 'flex',
-        alignItems: 'center',
-        py: 3,
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
+    <>
+      {/* Notification Snackbar */}
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={6000}
+        onClose={handleCloseNotification}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={handleCloseNotification} 
+          severity={notification.severity}
+          sx={{ width: '100%' }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
+
+      <Box
+        sx={{
+          minHeight: '100vh',
+          backgroundColor: '#f8fafc',
+          display: 'flex',
+          alignItems: 'center',
+          py: 3,
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
       {/* Subtle Background Animation */}
       <Box
         sx={{
@@ -799,6 +937,7 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
         </Box>
       </Container>
     </Box>
+    </>
   );
 };
 

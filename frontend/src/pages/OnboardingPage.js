@@ -20,7 +20,7 @@ import {
   ArrowForward,
   Check,
 } from '@mui/icons-material';
-import { COLORS, GRADIENTS } from '../theme/constants';
+import { COLORS, BORDER_RADIUS, GRADIENTS } from '../theme/constants';
 
 const OnboardingPage = ({ onNavigateToLanding, onNavigateToLogin, onNavigateToOrgOnboarding, onNavigateToTeacherOnboarding, onNavigateToStudentOnboarding }) => {
   const theme = useTheme();
@@ -508,7 +508,7 @@ const OnboardingPage = ({ onNavigateToLanding, onNavigateToLogin, onNavigateToOr
       </Container>
 
       {/* CSS Animations */}
-      <style jsx>{`
+      <style>{`
         @keyframes slideIn {
           from {
             transform: scale(0) rotate(-180deg);

@@ -7,34 +7,62 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Switch,
-  FormControlLabel,
-  Button,
   Chip,
+  Button,
+  ToggleButton,
+  ToggleButtonGroup,
+  Divider,
+  Alert,
+  InputAdornment,
+  FormControlLabel,
+  Checkbox,
+  RadioGroup,
+  Radio,
+  Slider,
+  Switch,
+  FormGroup,
+  Fade,
   Avatar,
   IconButton,
-  InputAdornment,
-  Fade,
-  Alert,
+  CircularProgress,
 } from '@mui/material';
 import {
-  Upload,
-  Settings,
   Business,
-  Group,
-  Schedule,
   Security,
-  Add,
-  PhotoCamera,
-  Delete,
+  Notifications,
+  Language,
+  AccessTime,
+  School,
+  Work,
+  TrendingUp,
+  Settings,
+  CheckCircle,
   Warning,
+  Info,
+  Palette,
+  Visibility,
+  VisibilityOff,
+  Lock,
+  Public,
+  Schedule,
+  LocationOn,
+  Phone,
+  Email,
+  Person,
+  Delete,
+  PhotoCamera,
+  Upload,
+  Group,
+  Add,
 } from '@mui/icons-material';
-import { COLORS, BORDER_RADIUS, SHADOWS } from '../../../theme/constants';
+import { COLORS, BORDER_RADIUS } from '../../../theme/constants';
+import { organizationAPI } from '../../../services/api';
 
-const Step3SetupPreferences = ({ formData, formErrors, onFormChange }) => {
+const Step3SetupPreferences = ({ formData, formErrors, onFormChange, orgCode }) => {
   const [newDepartment, setNewDepartment] = useState('');
   const [logoPreview, setLogoPreview] = useState(null);
   const [fileError, setFileError] = useState('');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   // Universal field styling matching other steps
   const universalFieldStyle = {
@@ -65,7 +93,7 @@ const Step3SetupPreferences = ({ formData, formErrors, onFormChange }) => {
     },
   };
 
-  const handleLogoUpload = (event) => {
+  const handleLogoUpload = async (event) => {
     const file = event.target.files[0];
     setFileError(''); // Clear previous errors
     
@@ -85,12 +113,31 @@ const Step3SetupPreferences = ({ formData, formErrors, onFormChange }) => {
         return;
       }
       
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setLogoPreview(e.target.result);
-        onFormChange('logo', file);
-      };
-      reader.readAsDataURL(file);
+      setUploadingLogo(true);
+      
+      try {
+        // Upload to backend with organization context
+        const organizationContext = {
+          orgCode: orgCode,
+          orgName: formData.organisationName
+        };
+        const response = await organizationAPI.uploadLogo(file, organizationContext);
+        
+        if (response.success) {
+          // Create preview
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            setLogoPreview(e.target.result);
+            onFormChange('logo', response.data.url); // Store the URL from backend
+          };
+          reader.readAsDataURL(file);
+        }
+      } catch (error) {
+        console.error('Logo upload error:', error);
+        setFileError(error.message || 'Failed to upload logo');
+      } finally {
+        setUploadingLogo(false);
+      }
     }
   };
 
@@ -259,7 +306,8 @@ const Step3SetupPreferences = ({ formData, formErrors, onFormChange }) => {
                 component="label"
                 variant="outlined"
                 size="small"
-                startIcon={<Upload />}
+                startIcon={uploadingLogo ? <CircularProgress size={16} /> : <Upload />}
+                disabled={uploadingLogo}
                 sx={{
                   borderColor: fileError ? '#ef4444' : COLORS.PRIMARY,
                   color: fileError ? '#ef4444' : COLORS.PRIMARY,
@@ -273,14 +321,19 @@ const Step3SetupPreferences = ({ formData, formErrors, onFormChange }) => {
                     transform: 'translateY(-1px)',
                     boxShadow: fileError ? '0 2px 6px rgba(239, 68, 68, 0.15)' : '0 2px 6px rgba(102, 126, 234, 0.15)',
                   },
+                  '&:disabled': {
+                    borderColor: '#9ca3af',
+                    color: '#9ca3af',
+                  },
                 }}
               >
-                {logoPreview ? 'Change Logo' : 'Choose File'}
+                {uploadingLogo ? 'Uploading...' : (logoPreview ? 'Change Logo' : 'Choose File')}
                 <input
                   type="file"
                   hidden
                   accept="image/*"
                   onChange={handleLogoUpload}
+                  disabled={uploadingLogo}
                 />
               </Button>
             </Box>
@@ -311,7 +364,7 @@ const Step3SetupPreferences = ({ formData, formErrors, onFormChange }) => {
             <FormControl fullWidth error={!!formErrors.institutionStructure} sx={universalFieldStyle}>
               <InputLabel>Institution Structure</InputLabel>
               <Select
-                value={formData.institutionStructure}
+                value={formData.institutionStructure || ''}
                 onChange={(e) => onFormChange('institutionStructure', e.target.value)}
                 label="Institution Structure"
                 startAdornment={
@@ -482,7 +535,7 @@ const Step3SetupPreferences = ({ formData, formErrors, onFormChange }) => {
             <FormControl fullWidth error={!!formErrors.timeZone} sx={universalFieldStyle}>
               <InputLabel>Time Zone</InputLabel>
               <Select
-                value={formData.timeZone}
+                value={formData.timeZone || ''}
                 onChange={(e) => onFormChange('timeZone', e.target.value)}
                 label="Time Zone"
                 startAdornment={

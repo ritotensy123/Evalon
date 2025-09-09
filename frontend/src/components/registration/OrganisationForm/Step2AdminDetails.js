@@ -16,6 +16,7 @@ import {
   Fade,
   Slide,
   Collapse,
+  Alert,
 } from '@mui/material';
 import {
   Person,
@@ -33,9 +34,13 @@ import {
   Star,
   StarBorder,
 } from '@mui/icons-material';
-import { COLORS, TYPOGRAPHY, SPACING, BORDER_RADIUS } from '../../../theme/constants';
+import { COLORS, BORDER_RADIUS } from '../../../theme/constants';
+import { otpAPI, organizationAPI } from '../../../services/api';
 
-const Step2AdminDetails = ({ formData, formErrors, onFormChange }) => {
+const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationToken }) => {
+  // Debug: Log the registration token and form data
+  console.log('Step2AdminDetails - registrationToken:', registrationToken);
+  console.log('Step2AdminDetails - formData:', formData);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [emailOtpSent, setEmailOtpSent] = useState(false);
@@ -45,6 +50,10 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange }) => {
   const [verifyingEmail, setVerifyingEmail] = useState(false);
   const [verifyingPhone, setVerifyingPhone] = useState(false);
   const [showPasswordTips, setShowPasswordTips] = useState(false);
+  const [emailError, setEmailError] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+  const [emailResendCooldown, setEmailResendCooldown] = useState(0);
+  const [phoneResendCooldown, setPhoneResendCooldown] = useState(0);
 
   const countryCodes = [
     { value: '+91', label: '🇮🇳 +91 (India)', flag: '🇮🇳' },
@@ -86,48 +95,243 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange }) => {
     },
   };
 
-  const handleSendEmailOTP = () => {
+  const handleSendEmailOTP = async () => {
     if (!formData.adminEmail || !/\S+@\S+\.\S+/.test(formData.adminEmail)) {
+      setEmailError('Please enter a valid email address');
       return;
     }
+
+    // Check if basic required fields are filled for email OTP
+    console.log('Email OTP - Checking form data:', {
+      adminName: formData.adminName,
+      adminEmail: formData.adminEmail,
+      countryCode: formData.countryCode
+    });
+    
+    const missingFields = [];
+    if (!formData.adminName) missingFields.push('Admin Name');
+    if (!formData.countryCode) missingFields.push('Country Code');
+    
+    if (missingFields.length > 0) {
+      console.log('Missing fields for email OTP:', missingFields);
+      setEmailError(`Please fill in: ${missingFields.join(', ')}`);
+      return;
+    }
+    
+    setEmailError('');
     setEmailOtpSent(true);
-    // Simulate OTP sending
-    setTimeout(() => {
+    
+    try {
+      // First, save the admin details to backend (registerStep2)
+      const step2Data = {
+        adminName: formData.adminName,
+        adminEmail: formData.adminEmail,
+        countryCode: formData.countryCode,
+        registrationToken: registrationToken
+      };
+
+      // Only include phone if it's filled
+      if (formData.adminPhone && formData.adminPhone.trim()) {
+        step2Data.adminPhone = formData.adminPhone;
+      }
+
+      // Only include password fields if they are filled
+      if (formData.password && formData.password.trim()) {
+        step2Data.password = formData.password;
+      }
+      if (formData.confirmPassword && formData.confirmPassword.trim()) {
+        step2Data.confirmPassword = formData.confirmPassword;
+      }
+
+      console.log('Sending step2Data for email OTP:', step2Data);
+      const registerResponse = await organizationAPI.registerStep2(step2Data);
+      
+      if (!registerResponse.success) {
+        console.error('RegisterStep2 validation errors:', registerResponse.errors);
+        console.error('Full error response:', registerResponse);
+        throw new Error(registerResponse.message || 'Failed to save admin details');
+      }
+
+      // Then send the OTP
+      const response = await otpAPI.sendEmailOTP({
+        email: formData.adminEmail,
+        purpose: 'registration'
+      });
+      
+      if (response.success) {
+        console.log('Email OTP sent successfully');
+        // Keep emailOtpSent as true to show the OTP input box
+        // It will be reset to false when OTP is verified
+        // Start resend cooldown
+        setEmailResendCooldown(60);
+        const cooldownInterval = setInterval(() => {
+          setEmailResendCooldown((prev) => {
+            if (prev <= 1) {
+              clearInterval(cooldownInterval);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      } else {
+        setEmailOtpSent(false);
+      }
+    } catch (error) {
+      console.error('Email OTP error:', error);
+      setEmailError(error.message || 'Failed to send email OTP');
       setEmailOtpSent(false);
-    }, 2000);
+    }
   };
 
-  const handleSendPhoneOTP = () => {
+  const handleSendPhoneOTP = async () => {
     if (!formData.adminPhone) {
+      setPhoneError('Please enter a phone number');
       return;
     }
+
+    // Check if basic required fields are filled for phone OTP
+    const missingFields = [];
+    if (!formData.adminName) missingFields.push('Admin Name');
+    if (!formData.adminEmail) missingFields.push('Email');
+    if (!formData.countryCode) missingFields.push('Country Code');
+    
+    if (missingFields.length > 0) {
+      setPhoneError(`Please fill in: ${missingFields.join(', ')}`);
+      return;
+    }
+    
+    setPhoneError('');
     setPhoneOtpSent(true);
-    // Simulate OTP sending
-    setTimeout(() => {
+    
+    try {
+      // First, save the admin details to backend (registerStep2) if not already saved
+      const step2Data = {
+        adminName: formData.adminName,
+        adminEmail: formData.adminEmail,
+        adminPhone: formData.adminPhone,
+        countryCode: formData.countryCode,
+        registrationToken: registrationToken
+      };
+
+      // Only include password fields if they are filled
+      if (formData.password && formData.password.trim()) {
+        step2Data.password = formData.password;
+      }
+      if (formData.confirmPassword && formData.confirmPassword.trim()) {
+        step2Data.confirmPassword = formData.confirmPassword;
+      }
+
+      console.log('Sending step2Data for phone OTP:', step2Data);
+      const registerResponse = await organizationAPI.registerStep2(step2Data);
+      
+      if (!registerResponse.success) {
+        console.error('RegisterStep2 validation errors:', registerResponse.errors);
+        console.error('Full error response:', registerResponse);
+        throw new Error(registerResponse.message || 'Failed to save admin details');
+      }
+
+      // Then send the OTP
+      const response = await otpAPI.sendPhoneOTP({
+        phone: formData.adminPhone,
+        countryCode: formData.countryCode,
+        purpose: 'registration'
+      });
+      
+      if (response.success) {
+        console.log('Phone OTP sent successfully');
+        // Keep phoneOtpSent as true to show the OTP input box
+        // It will be reset to false when OTP is verified
+        // Start resend cooldown
+        setPhoneResendCooldown(60);
+        const cooldownInterval = setInterval(() => {
+          setPhoneResendCooldown((prev) => {
+            if (prev <= 1) {
+              clearInterval(cooldownInterval);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      } else {
+        setPhoneOtpSent(false);
+      }
+    } catch (error) {
+      console.error('Phone OTP error:', error);
+      setPhoneError(error.message || 'Failed to send phone OTP');
       setPhoneOtpSent(false);
-    }, 2000);
+    }
   };
 
-  const handleVerifyEmail = () => {
-    if (!emailOtp) return;
+  const handleVerifyEmail = async () => {
+    if (!emailOtp) {
+      setEmailError('Please enter the OTP');
+      return;
+    }
+    
+    setEmailError('');
     setVerifyingEmail(true);
-    // Simulate verification
-    setTimeout(() => {
-      onFormChange('emailVerified', true);
+    
+    try {
+      console.log('Verifying email OTP with token:', registrationToken);
+      const response = await otpAPI.verifyEmailOTP({
+        email: formData.adminEmail,
+        otp: emailOtp,
+        registrationToken: registrationToken
+      });
+      
+      if (response.success) {
+        onFormChange('emailVerified', true);
+        setEmailOtp('');
+        setEmailOtpSent(false); // Reset OTP sent state after successful verification
+        console.log('Email verified successfully');
+      }
+    } catch (error) {
+      console.error('Email verification error:', error);
+      setEmailError(error.message || 'Failed to verify email OTP');
+    } finally {
       setVerifyingEmail(false);
-      setEmailOtp('');
-    }, 1500);
+    }
   };
 
-  const handleVerifyPhone = () => {
-    if (!phoneOtp) return;
+  const handleVerifyPhone = async () => {
+    if (!phoneOtp) {
+      setPhoneError('Please enter the OTP');
+      return;
+    }
+    
+    setPhoneError('');
     setVerifyingPhone(true);
-    // Simulate verification
-    setTimeout(() => {
-      onFormChange('phoneVerified', true);
+    
+    try {
+      const response = await otpAPI.verifyPhoneOTP({
+        phone: formData.adminPhone,
+        countryCode: formData.countryCode,
+        otp: phoneOtp,
+        registrationToken: registrationToken
+      });
+      
+      if (response.success) {
+        onFormChange('phoneVerified', true);
+        setPhoneOtp('');
+        setPhoneOtpSent(false); // Reset OTP sent state after successful verification
+        console.log('Phone verified successfully');
+      }
+    } catch (error) {
+      console.error('Phone verification error:', error);
+      setPhoneError(error.message || 'Failed to verify phone OTP');
+    } finally {
       setVerifyingPhone(false);
-      setPhoneOtp('');
-    }, 1500);
+    }
+  };
+
+  const handleResendEmailOTP = () => {
+    if (emailResendCooldown > 0) return;
+    handleSendEmailOTP();
+  };
+
+  const handleResendPhoneOTP = () => {
+    if (phoneResendCooldown > 0) return;
+    handleSendPhoneOTP();
   };
 
   const getPasswordStrength = (password) => {
@@ -257,6 +461,12 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange }) => {
               sx={universalFieldStyle}
             />
             
+            {emailError && (
+              <Alert severity="error" sx={{ mt: 1, fontSize: '0.875rem' }}>
+                {emailError}
+              </Alert>
+            )}
+            
             <Collapse in={!formData.emailVerified && formData.adminEmail && /\S+@\S+\.\S+/.test(formData.adminEmail)}>
               <Box sx={{ 
                 mt: 1, 
@@ -289,6 +499,41 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange }) => {
                 >
                   {emailOtpSent ? 'Sending...' : 'Send OTP'}
                 </Button>
+                
+                {emailOtpSent && emailResendCooldown > 0 && (
+                  <Button
+                    size="small"
+                    variant="text"
+                    disabled
+                    sx={{ 
+                      color: COLORS.TEXT_DISABLED,
+                      textTransform: 'none',
+                      fontSize: '0.75rem',
+                      minWidth: 'auto',
+                    }}
+                  >
+                    Resend in {emailResendCooldown}s
+                  </Button>
+                )}
+                
+                {emailOtpSent && emailResendCooldown === 0 && (
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={handleResendEmailOTP}
+                    sx={{ 
+                      color: COLORS.PRIMARY,
+                      textTransform: 'none',
+                      fontSize: '0.75rem',
+                      minWidth: 'auto',
+                      '&:hover': {
+                        backgroundColor: 'rgba(102, 126, 234, 0.04)',
+                      },
+                    }}
+                  >
+                    Resend OTP
+                  </Button>
+                )}
                 
                 <Collapse in={emailOtpSent} orientation="horizontal">
                   <TextField
@@ -361,7 +606,7 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange }) => {
                   <InputAdornment position="start">
                     <FormControl sx={{ minWidth: 80, mr: 1 }}>
                       <Select
-                        value={formData.countryCode}
+                        value={formData.countryCode || '+91'}
                         onChange={(e) => onFormChange('countryCode', e.target.value)}
                         variant="standard"
                         sx={{
@@ -403,6 +648,12 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange }) => {
               sx={universalFieldStyle}
             />
             
+            {phoneError && (
+              <Alert severity="error" sx={{ mt: 1, fontSize: '0.875rem' }}>
+                {phoneError}
+              </Alert>
+            )}
+            
             <Collapse in={!formData.phoneVerified && formData.adminPhone}>
               <Box sx={{ 
                 mt: 1, 
@@ -435,6 +686,41 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange }) => {
                 >
                   {phoneOtpSent ? 'Sending...' : 'Send OTP'}
                 </Button>
+                
+                {phoneOtpSent && phoneResendCooldown > 0 && (
+                  <Button
+                    size="small"
+                    variant="text"
+                    disabled
+                    sx={{ 
+                      color: COLORS.TEXT_DISABLED,
+                      textTransform: 'none',
+                      fontSize: '0.75rem',
+                      minWidth: 'auto',
+                    }}
+                  >
+                    Resend in {phoneResendCooldown}s
+                  </Button>
+                )}
+                
+                {phoneOtpSent && phoneResendCooldown === 0 && (
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={handleResendPhoneOTP}
+                    sx={{ 
+                      color: COLORS.PRIMARY,
+                      textTransform: 'none',
+                      fontSize: '0.75rem',
+                      minWidth: 'auto',
+                      '&:hover': {
+                        backgroundColor: 'rgba(102, 126, 234, 0.04)',
+                      },
+                    }}
+                  >
+                    Resend OTP
+                  </Button>
+                )}
                 
                 <Collapse in={phoneOtpSent} orientation="horizontal">
                   <TextField

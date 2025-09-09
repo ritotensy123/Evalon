@@ -8,19 +8,17 @@ import {
   FormControl,
   InputLabel,
   Chip,
-  RadioGroup,
-  FormControlLabel,
-  Radio,
-  InputAdornment,
   Button,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import {
-  School,
-  Work,
-  Subject,
   Add,
   Business,
   Person,
+  School,
+  Work,
+  Star,
 } from '@mui/icons-material';
 import { COLORS, BORDER_RADIUS } from '../../../theme/constants';
 
@@ -34,9 +32,7 @@ const Step2ProfessionalDetails = ({ formData, formErrors, onFormChange }) => {
   ];
 
   const commonSubjects = [
-    'Mathematics', 'Physics', 'Chemistry', 'Biology', 'English', 'History',
-    'Geography', 'Computer Science', 'Economics', 'Business Studies',
-    'Art', 'Music', 'Physical Education', 'Literature', 'Psychology'
+    'Mathematics', 'Physics', 'Chemistry', 'Biology', 'English', 'Computer Science'
   ];
 
   // Enhanced field styling - matching organization registration
@@ -69,76 +65,83 @@ const Step2ProfessionalDetails = ({ formData, formErrors, onFormChange }) => {
   };
 
   const handleAddSubject = () => {
-    if (newSubject.trim() && !formData.subjectExpertise.includes(newSubject.trim())) {
-      onFormChange('subjectExpertise', [...formData.subjectExpertise, newSubject.trim()]);
+    if (newSubject.trim() && !formData.subjects.includes(newSubject.trim())) {
+      onFormChange('subjects', [...formData.subjects, newSubject.trim()]);
       setNewSubject('');
     }
   };
 
   const handleRemoveSubject = (subjectToRemove) => {
-    onFormChange('subjectExpertise', formData.subjectExpertise.filter(subject => subject !== subjectToRemove));
+    onFormChange('subjects', formData.subjects.filter(subject => subject !== subjectToRemove));
   };
 
   const handleQuickAddSubject = (subject) => {
-    if (!formData.subjectExpertise.includes(subject)) {
-      onFormChange('subjectExpertise', [...formData.subjectExpertise, subject]);
+    if (!formData.subjects.includes(subject)) {
+      onFormChange('subjects', [...formData.subjects, subject]);
     }
   };
 
   return (
     <Box sx={{ width: '100%' }}>
       {/* Section Header */}
-      <Box sx={{ mb: { xs: 2, sm: 3 } }}>
+      <Box sx={{ mb: 3 }}>
         <Typography
           variant="h6"
           sx={{
             fontWeight: 600,
             color: '#1a1a1a',
-            mb: { xs: 0.5, sm: 1 },
+            mb: 0.5,
             fontSize: { xs: '1.1rem', sm: '1.25rem' },
           }}
         >
-          🎓 Subject & Role
+          Subject & Role
         </Typography>
         <Typography
           variant="body2"
           sx={{ 
-            color: '#6b7280',
-            fontSize: '0.9rem',
+            color: '#666666',
+            fontSize: { xs: '0.8rem', sm: '0.875rem' },
           }}
         >
-          Tell us about your teaching expertise and role
+          Tell us about your teaching expertise and professional role
         </Typography>
       </Box>
 
       {/* Form Fields */}
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         
-        {/* Subject Expertise */}
+        {/* Subject Expertise Section */}
         <Box>
           <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, color: '#1f2937' }}>
             Subject Expertise *
           </Typography>
           
           {/* Existing Subjects */}
-          {formData.subjectExpertise.length > 0 && (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
-              {formData.subjectExpertise.map((subject, index) => (
+          {formData.subjects.length > 0 && (
+            <Box sx={{ 
+              display: 'flex', 
+              flexWrap: 'wrap', 
+              gap: 1, 
+              mb: 1.5, 
+              p: 1.5, 
+              backgroundColor: 'rgba(102, 126, 234, 0.02)', 
+              borderRadius: 1,
+              border: '1px solid rgba(102, 126, 234, 0.1)',
+            }}>
+              {formData.subjects.map((subject, index) => (
                 <Chip
                   key={index}
                   label={subject}
                   onDelete={() => handleRemoveSubject(subject)}
                   size="small"
                   sx={{
-                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    backgroundColor: 'rgba(102, 126, 234, 0.08)',
                     color: COLORS.PRIMARY,
-                    border: '1px solid rgba(102, 126, 234, 0.2)',
+                    border: '1px solid rgba(102, 126, 234, 0.15)',
                     fontSize: '0.8rem',
                     fontWeight: 500,
                     '&:hover': {
-                      backgroundColor: 'rgba(102, 126, 234, 0.15)',
-                      transform: 'translateY(-1px)',
-                      boxShadow: '0 2px 4px rgba(102, 126, 234, 0.2)',
+                      backgroundColor: 'rgba(102, 126, 234, 0.12)',
                     },
                     '& .MuiChip-deleteIcon': {
                       color: COLORS.PRIMARY,
@@ -152,47 +155,38 @@ const Step2ProfessionalDetails = ({ formData, formErrors, onFormChange }) => {
             </Box>
           )}
 
-          {/* Add New Subject */}
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', mb: 2 }}>
+          {/* Add Subject Input */}
+          <Box sx={{ mb: 2 }}>
             <TextField
               fullWidth
-              placeholder="Enter subject name"
+              label="Add a subject"
               value={newSubject}
               onChange={(e) => setNewSubject(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleAddSubject()}
-              size="small"
+              placeholder="e.g., Advanced Mathematics"
+              sx={universalFieldStyle}
               InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Subject sx={{ color: '#6b7280', fontSize: 18 }} />
-                  </InputAdornment>
+                endAdornment: (
+                  <Button
+                    onClick={handleAddSubject}
+                    disabled={!newSubject.trim()}
+                    sx={{
+                      minWidth: 'auto',
+                      px: 1.5,
+                      color: COLORS.PRIMARY,
+                      '&:hover': {
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                      },
+                      '&:disabled': {
+                        color: '#9ca3af',
+                      },
+                    }}
+                  >
+                    <Add />
+                  </Button>
                 ),
               }}
-              sx={universalFieldStyle}
             />
-            <Button
-              onClick={handleAddSubject}
-              disabled={!newSubject.trim()}
-              variant="contained"
-              size="small"
-              sx={{
-                backgroundColor: COLORS.PRIMARY,
-                minWidth: 'auto',
-                px: 1.5,
-                boxShadow: '0 2px 4px rgba(102, 126, 234, 0.2)',
-                '&:hover': {
-                  backgroundColor: '#5a6fd8',
-                  boxShadow: '0 2px 6px rgba(102, 126, 234, 0.3)',
-                  transform: 'translateY(-1px)',
-                },
-                '&:disabled': {
-                  backgroundColor: '#9ca3af',
-                  boxShadow: 'none',
-                },
-              }}
-            >
-              <Add sx={{ fontSize: 18 }} />
-            </Button>
           </Box>
 
           {/* Quick Add Common Subjects */}
@@ -200,141 +194,174 @@ const Step2ProfessionalDetails = ({ formData, formErrors, onFormChange }) => {
             <Typography variant="caption" sx={{ color: '#6b7280', mb: 1, display: 'block' }}>
               Quick add common subjects:
             </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-              {commonSubjects.slice(0, 8).map((subject) => (
-                <Chip
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {commonSubjects.map((subject) => (
+                <Button
                   key={subject}
-                  label={subject}
-                  size="small"
                   variant="outlined"
+                  size="small"
                   onClick={() => handleQuickAddSubject(subject)}
-                  disabled={formData.subjectExpertise.includes(subject)}
+                  disabled={formData.subjects.includes(subject)}
                   sx={{
-                    fontSize: '0.7rem',
-                    borderColor: '#d1d5db',
-                    color: '#6b7280',
+                    borderColor: formData.subjects.includes(subject) ? '#e5e7eb' : 'rgba(102, 126, 234, 0.3)',
+                    color: formData.subjects.includes(subject) ? '#9ca3af' : COLORS.PRIMARY,
+                    fontSize: '0.75rem',
+                    px: 1.5,
+                    py: 0.5,
+                    borderRadius: 1,
+                    fontWeight: 500,
+                    textTransform: 'none',
+                    backgroundColor: formData.subjects.includes(subject) ? '#f9fafb' : 'rgba(102, 126, 234, 0.02)',
                     '&:hover': {
-                      borderColor: COLORS.PRIMARY,
-                      color: COLORS.PRIMARY,
-                      backgroundColor: 'rgba(102, 126, 234, 0.04)',
+                      borderColor: formData.subjects.includes(subject) ? '#e5e7eb' : 'rgba(102, 126, 234, 0.5)',
+                      backgroundColor: formData.subjects.includes(subject) ? '#f9fafb' : 'rgba(102, 126, 234, 0.06)',
                     },
-                    '&.Mui-disabled': {
-                      backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                      color: COLORS.PRIMARY,
-                      borderColor: 'rgba(102, 126, 234, 0.2)',
+                    '&:disabled': {
+                      borderColor: '#e5e7eb',
+                      color: '#9ca3af',
+                      backgroundColor: '#f9fafb',
                     },
                   }}
-                />
+                >
+                  {subject}
+                </Button>
               ))}
             </Box>
           </Box>
-
-          {formErrors.subjectExpertise && (
-            <Typography variant="caption" sx={{ color: '#ef4444', mt: 0.5, display: 'block' }}>
-              {formErrors.subjectExpertise}
-            </Typography>
-          )}
         </Box>
 
-        {/* Role */}
-        <FormControl fullWidth error={!!formErrors.role} sx={universalFieldStyle}>
-          <InputLabel>Role *</InputLabel>
-          <Select
-            value={formData.role}
-            onChange={(e) => onFormChange('role', e.target.value)}
-            label="Role"
-            startAdornment={
-              <InputAdornment position="start">
-                <Work sx={{ color: '#6b7280', fontSize: 18 }} />
-              </InputAdornment>
-            }
-            MenuProps={{
-              PaperProps: {
-                sx: {
-                  maxHeight: 200,
-                  '& .MuiMenuItem-root': {
-                    fontSize: '0.875rem',
-                  }
-                }
-              }
-            }}
-          >
-            {roles.map((role) => (
-              <MenuItem key={role.value} value={role.value}>
-                {role.label}
-              </MenuItem>
-            ))}
-          </Select>
+        {/* Role Selection */}
+        <Box>
+          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, color: '#1f2937' }}>
+            Role *
+          </Typography>
+          <FormControl fullWidth sx={universalFieldStyle}>
+            <InputLabel>Select your role</InputLabel>
+            <Select
+              value={formData.role || ''}
+              label="Select your role"
+              onChange={(e) => onFormChange('role', e.target.value)}
+              error={!!formErrors.role}
+            >
+              {roles.map((role) => (
+                <MenuItem key={role.value} value={role.value}>
+                  {role.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
           {formErrors.role && (
-            <Typography variant="caption" sx={{ color: '#ef4444', mt: 0.5 }}>
+            <Typography variant="caption" sx={{ color: '#ef4444', mt: 1, display: 'block', fontWeight: 500 }}>
               {formErrors.role}
             </Typography>
           )}
-        </FormControl>
-
-        {/* Freelance or Organization-Linked */}
-        <Box
-          sx={{
-            p: 2,
-            backgroundColor: 'rgba(102, 126, 234, 0.02)',
-            borderRadius: 2,
-            border: '1px solid rgba(102, 126, 234, 0.1)',
-          }}
-        >
-          <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, color: '#1f2937' }}>
-            Freelance or Organization-Linked?
-          </Typography>
-          
-          <RadioGroup
-            value={formData.isFreelance ? 'freelance' : 'organization'}
-            onChange={(e) => onFormChange('isFreelance', e.target.value === 'freelance')}
-          >
-            <FormControlLabel
-              value="organization"
-              control={
-                <Radio
-                  sx={{
-                    color: COLORS.PRIMARY,
-                    '&.Mui-checked': {
-                      color: COLORS.PRIMARY,
-                    },
-                  }}
-                />
-              }
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Business sx={{ color: '#6b7280', fontSize: 18 }} />
-                  <Typography variant="body2" sx={{ fontWeight: 500, color: '#1f2937' }}>
-                    🔗 I belong to an organization
-                  </Typography>
-                </Box>
-              }
-              sx={{ mb: 1 }}
-            />
-            
-            <FormControlLabel
-              value="freelance"
-              control={
-                <Radio
-                  sx={{
-                    color: COLORS.PRIMARY,
-                    '&.Mui-checked': {
-                      color: COLORS.PRIMARY,
-                    },
-                  }}
-                />
-              }
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Person sx={{ color: '#6b7280', fontSize: 18 }} />
-                  <Typography variant="body2" sx={{ fontWeight: 500, color: '#1f2937' }}>
-                    💼 I'm a freelance teacher
-                  </Typography>
-                </Box>
-              }
-            />
-          </RadioGroup>
         </Box>
+
+        {/* Affiliation Type */}
+        <Box>
+          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, color: '#1f2937' }}>
+            Affiliation Type *
+          </Typography>
+          <ToggleButtonGroup
+            value={formData.affiliationType || 'organization'}
+            exclusive
+            onChange={(e, value) => value && onFormChange('affiliationType', value)}
+            sx={{
+              width: '100%',
+              '& .MuiToggleButton-root': {
+                flex: 1,
+                borderColor: '#e5e7eb',
+                color: '#6b7280',
+                textTransform: 'none',
+                fontWeight: 500,
+                fontSize: '0.875rem',
+                py: 1.5,
+                backgroundColor: '#f9fafb',
+                '&.Mui-selected': {
+                  backgroundColor: 'rgba(102, 126, 234, 0.08)',
+                  color: COLORS.PRIMARY,
+                  borderColor: 'rgba(102, 126, 234, 0.2)',
+                  '&:hover': {
+                    backgroundColor: 'rgba(102, 126, 234, 0.12)',
+                  },
+                },
+                '&:hover': {
+                  backgroundColor: 'rgba(102, 126, 234, 0.04)',
+                  color: COLORS.PRIMARY,
+                  borderColor: 'rgba(102, 126, 234, 0.15)',
+                },
+              },
+            }}
+          >
+            <ToggleButton value="organization">
+              <Business sx={{ mr: 1, fontSize: 18, color: 'inherit' }} />
+              I belong to an organization
+            </ToggleButton>
+            <ToggleButton value="freelance">
+              <Person sx={{ mr: 1, fontSize: 18, color: 'inherit' }} />
+              I am an independent teacher
+            </ToggleButton>
+          </ToggleButtonGroup>
+          {formErrors.affiliationType && (
+            <Typography variant="caption" sx={{ color: '#ef4444', mt: 1, display: 'block', fontWeight: 500 }}>
+              {formErrors.affiliationType}
+            </Typography>
+          )}
+        </Box>
+
+        {/* Conditional Fields for Independent Teachers */}
+        {formData.affiliationType === 'freelance' && (
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600, color: '#1f2937' }}>
+              Experience Level *
+            </Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+              {[
+                { value: 'beginner', label: 'Beginner (0-2 years)', icon: <School /> },
+                { value: 'intermediate', label: 'Intermediate (3-5 years)', icon: <Work /> },
+                { value: 'experienced', label: 'Experienced (6-10 years)', icon: <Business /> },
+                { value: 'expert', label: 'Expert (10+ years)', icon: <Star /> },
+              ].map((level) => (
+                <Button
+                  key={level.value}
+                  variant="outlined"
+                  onClick={() => onFormChange('experienceLevel', level.value)}
+                  sx={{
+                    justifyContent: 'flex-start',
+                    textAlign: 'left',
+                    borderColor: formData.experienceLevel === level.value ? 'rgba(102, 126, 234, 0.3)' : '#e5e7eb',
+                    backgroundColor: formData.experienceLevel === level.value ? 'rgba(102, 126, 234, 0.06)' : '#f9fafb',
+                    color: formData.experienceLevel === level.value ? COLORS.PRIMARY : '#6b7280',
+                    textTransform: 'none',
+                    fontWeight: 500,
+                    fontSize: '0.875rem',
+                    py: 1.5,
+                    px: 2,
+                    '&:hover': {
+                      backgroundColor: formData.experienceLevel === level.value ? 'rgba(102, 126, 234, 0.1)' : 'rgba(102, 126, 234, 0.04)',
+                      borderColor: formData.experienceLevel === level.value ? 'rgba(102, 126, 234, 0.4)' : 'rgba(102, 126, 234, 0.2)',
+                      color: formData.experienceLevel === level.value ? COLORS.PRIMARY : COLORS.PRIMARY,
+                    },
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                    <Box sx={{ color: 'inherit' }}>
+                      {level.icon}
+                    </Box>
+                    <Typography variant="body2" sx={{ textAlign: 'left' }}>
+                      {level.label}
+                    </Typography>
+                  </Box>
+                </Button>
+              ))}
+            </Box>
+            {formErrors.experienceLevel && (
+              <Typography variant="caption" sx={{ color: '#ef4444', mt: 1, display: 'block', fontWeight: 500 }}>
+                {formErrors.experienceLevel}
+              </Typography>
+            )}
+          </Box>
+        )}
       </Box>
     </Box>
   );

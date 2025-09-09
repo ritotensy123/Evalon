@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -7,40 +7,49 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
-  InputAdornment,
-  Fade,
+  CircularProgress,
+  Alert,
 } from '@mui/material';
-import {
-  Person,
-  Phone,
-  Email,
-  Public,
-  LocationCity,
-  PinDrop,
-} from '@mui/icons-material';
 import { COLORS, BORDER_RADIUS } from '../../../theme/constants';
+import { locationAPI } from '../../../services/api';
 
 const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
-  const countries = [
-    { value: 'india', label: '🇮🇳 India' },
-    { value: 'usa', label: '🇺🇸 United States' },
-    { value: 'uk', label: '🇬🇧 United Kingdom' },
-    { value: 'canada', label: '🇨🇦 Canada' },
-    { value: 'australia', label: '🇦🇺 Australia' },
-    { value: 'germany', label: '🇩🇪 Germany' },
-    { value: 'france', label: '🇫🇷 France' },
-    { value: 'japan', label: '🇯🇵 Japan' },
-  ];
+  const [countries, setCountries] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Fetch countries on component mount
+  useEffect(() => {
+    const fetchCountries = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await locationAPI.getCountries();
+        if (response.success && response.data) {
+          setCountries(response.data);
+        } else {
+          setError('Failed to load countries');
+        }
+      } catch (err) {
+        console.error('Error fetching countries:', err);
+        setError('Failed to load countries');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCountries();
+  }, []);
 
   const countryCodes = [
-    { value: '+91', label: '🇮🇳 +91 (India)', flag: '🇮🇳' },
-    { value: '+1', label: '🇺🇸 +1 (USA)', flag: '🇺🇸' },
-    { value: '+44', label: '🇬🇧 +44 (UK)', flag: '🇬🇧' },
-    { value: '+61', label: '🇦🇺 +61 (Australia)', flag: '🇦🇺' },
-    { value: '+86', label: '🇨🇳 +86 (China)', flag: '🇨🇳' },
-    { value: '+81', label: '🇯🇵 +81 (Japan)', flag: '🇯🇵' },
-    { value: '+49', label: '🇩🇪 +49 (Germany)', flag: '🇩🇪' },
-    { value: '+33', label: '🇫🇷 +33 (France)', flag: '🇫🇷' },
+    { value: '+91', label: '🇮🇳 +91' },
+    { value: '+1', label: '🇺🇸 +1' },
+    { value: '+44', label: '🇬🇧 +44' },
+    { value: '+61', label: '🇦🇺 +61' },
+    { value: '+86', label: '🇨🇳 +86' },
+    { value: '+81', label: '🇯🇵 +81' },
+    { value: '+49', label: '🇩🇪 +49' },
+    { value: '+33', label: '🇫🇷 +33' },
   ];
 
   // Enhanced field styling - matching organization registration
@@ -85,13 +94,13 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
             fontSize: { xs: '1.1rem', sm: '1.25rem' },
           }}
         >
-          👩‍🏫 Personal Information
+          Personal Information
         </Typography>
         <Typography
           variant="body2"
           sx={{ 
-            color: '#6b7280',
-            fontSize: '0.9rem',
+            color: '#666666',
+            fontSize: { xs: '0.8rem', sm: '0.875rem' },
           }}
         >
           Provide your basic personal details
@@ -99,7 +108,7 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
       </Box>
 
       {/* Form Fields */}
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, sm: 2, md: 2.5 } }}>
         
         {/* Full Name */}
         <TextField
@@ -110,13 +119,6 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
           error={!!formErrors.fullName}
           helperText={formErrors.fullName}
           placeholder="Enter your full name"
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <Person sx={{ color: '#6b7280', fontSize: 18 }} />
-              </InputAdornment>
-            ),
-          }}
           sx={universalFieldStyle}
         />
 
@@ -131,42 +133,39 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
           placeholder="Enter your phone number"
           InputProps={{
             startAdornment: (
-              <InputAdornment position="start">
-                <FormControl sx={{ minWidth: 80, mr: 1 }}>
-                  <Select
-                    value={formData.countryCode}
-                    onChange={(e) => onFormChange('countryCode', e.target.value)}
-                    variant="standard"
-                    sx={{
-                      '&:before': { borderBottom: 'none' },
-                      '&:after': { borderBottom: 'none' },
-                      '& .MuiSelect-select': {
-                        paddingTop: 0,
-                        paddingBottom: 0,
-                        fontSize: '0.875rem',
-                        fontWeight: 500,
-                      }
-                    }}
-                    MenuProps={{
-                      PaperProps: {
-                        sx: {
-                          maxHeight: 200,
-                          '& .MuiMenuItem-root': {
-                            fontSize: '0.875rem',
-                          }
+              <FormControl sx={{ minWidth: 90, mr: 1 }}>
+                <Select
+                  value={formData.countryCode || '+91'}
+                  onChange={(e) => onFormChange('countryCode', e.target.value)}
+                  variant="standard"
+                  sx={{
+                    '&:before': { borderBottom: 'none' },
+                    '&:after': { borderBottom: 'none' },
+                    '& .MuiSelect-select': {
+                      paddingTop: 0,
+                      paddingBottom: 0,
+                      fontSize: '0.875rem',
+                      fontWeight: 500,
+                    }
+                  }}
+                  MenuProps={{
+                    PaperProps: {
+                      sx: {
+                        maxHeight: 200,
+                        '& .MuiMenuItem-root': {
+                          fontSize: '0.875rem',
                         }
                       }
-                    }}
-                  >
-                    {countryCodes.map((code) => (
-                      <MenuItem key={code.value} value={code.value}>
-                        {code.flag} {code.value}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                <Phone sx={{ color: '#6b7280', fontSize: 18 }} />
-              </InputAdornment>
+                    }
+                  }}
+                >
+                  {countryCodes.map((code) => (
+                    <MenuItem key={code.value} value={code.value}>
+                      {code.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             ),
           }}
           sx={universalFieldStyle}
@@ -182,13 +181,6 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
           error={!!formErrors.emailAddress}
           helperText={formErrors.emailAddress}
           placeholder="Enter your email address"
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <Email sx={{ color: '#6b7280', fontSize: 18 }} />
-              </InputAdornment>
-            ),
-          }}
           sx={universalFieldStyle}
         />
 
@@ -196,14 +188,11 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
         <FormControl fullWidth error={!!formErrors.country} sx={universalFieldStyle}>
           <InputLabel>Country</InputLabel>
           <Select
-            value={formData.country}
+            value={formData.country || ''}
             onChange={(e) => onFormChange('country', e.target.value)}
             label="Country"
-            startAdornment={
-              <InputAdornment position="start">
-                <Public sx={{ color: '#6b7280', fontSize: 18 }} />
-              </InputAdornment>
-            }
+            disabled={loading}
+            displayEmpty
             MenuProps={{
               PaperProps: {
                 sx: {
@@ -215,11 +204,24 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
               }
             }}
           >
-            {countries.map((country) => (
-              <MenuItem key={country.value} value={country.value}>
-                {country.label}
+            {loading ? (
+              <MenuItem disabled>
+                <CircularProgress size={20} sx={{ mr: 1 }} />
+                Loading countries...
               </MenuItem>
-            ))}
+            ) : error ? (
+              <MenuItem disabled>
+                <Alert severity="error" sx={{ width: '100%', py: 0 }}>
+                  {error}
+                </Alert>
+              </MenuItem>
+            ) : (
+              countries.map((country) => (
+                <MenuItem key={country.code} value={country.code}>
+                  {country.name}
+                </MenuItem>
+              ))
+            )}
           </Select>
           {formErrors.country && (
             <Typography variant="caption" sx={{ color: '#ef4444', mt: 0.5 }}>
@@ -242,33 +244,20 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
             error={!!formErrors.city}
             helperText={formErrors.city}
             placeholder="Enter city name"
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <LocationCity sx={{ color: '#6b7280', fontSize: 18 }} />
-                </InputAdornment>
-              ),
-            }}
           />
 
           <TextField
             sx={{ flex: 1, ...universalFieldStyle }}
-            label="Pincode"
+            label="Pincode / Postal Code"
             value={formData.pincode}
             onChange={(e) => onFormChange('pincode', e.target.value)}
             error={!!formErrors.pincode}
             helperText={formErrors.pincode}
             placeholder="Enter pincode"
             inputProps={{
-              maxLength: 6,
+              maxLength: 10,
               inputMode: 'numeric',
-            }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <PinDrop sx={{ color: '#6b7280', fontSize: 18 }} />
-                </InputAdornment>
-              ),
+              pattern: '[0-9]*',
             }}
           />
         </Box>

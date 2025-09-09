@@ -7,15 +7,20 @@ import {
   useTheme,
   useMediaQuery,
   Fade,
-  Slide,
+  Grow,
   Chip,
 } from '@mui/material';
 import {
+  Business,
+  School,
+  Person,
   ArrowForward,
+  Check,
+  Star,
   Login,
   AutoAwesome,
-  School,
 } from '@mui/icons-material';
+import { COLORS, BORDER_RADIUS, GRADIENTS } from '../theme/constants';
 
 const LandingPage = ({ onNavigateToOnboarding, onNavigateToLogin }) => {
   const theme = useTheme();
