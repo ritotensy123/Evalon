@@ -9,7 +9,6 @@ const organizationSchema = new mongoose.Schema({
   email: {
     type: String,
     required: true,
-    unique: true,
     lowercase: true,
     trim: true
   },
@@ -66,7 +65,6 @@ const organizationSchema = new mongoose.Schema({
   },
   orgCode: {
     type: String,
-    unique: true,
     required: true
   },
   institutionStructure: {
@@ -98,7 +96,8 @@ const organizationSchema = new mongoose.Schema({
 });
 
 // Index for better query performance
-organizationSchema.index({ email: 1 });
+organizationSchema.index({ email: 1 }, { unique: true });
+organizationSchema.index({ orgCode: 1 }, { unique: true });
 organizationSchema.index({ name: 1 });
 organizationSchema.index({ status: 1 });
 

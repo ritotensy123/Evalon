@@ -4,8 +4,6 @@ require('dotenv').config();
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
       dbName: process.env.MONGODB_DB_NAME || 'evalon'
     });
 

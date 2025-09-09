@@ -36,7 +36,23 @@ const sendEmailOTP = async (req, res) => {
     // Create OTP record
     const otpRecord = await OTP.createEmailOTP(email, purpose);
 
-    // Send email with OTP
+    // For development, just log the OTP instead of sending email
+    if (process.env.NODE_ENV === 'development' || !process.env.EMAIL_USER || process.env.EMAIL_USER === 'your-email@gmail.com') {
+      console.log(`📧 Email OTP for ${email}: ${otpRecord.otp}`);
+      
+      res.status(200).json({
+        success: true,
+        message: 'OTP generated successfully (development mode)',
+        data: {
+          email,
+          otp: otpRecord.otp, // Only in development
+          expiresIn: '10 minutes'
+        }
+      });
+      return;
+    }
+
+    // Send email with OTP (production mode)
     const transporter = createEmailTransporter();
     
     const mailOptions = {
@@ -166,7 +182,24 @@ const sendPhoneOTP = async (req, res) => {
     // Format phone number with country code
     const fullPhoneNumber = `${countryCode}${phone}`;
 
-    // Send SMS via Twilio Verify
+    // For development, just log the OTP instead of sending SMS
+    if (process.env.NODE_ENV === 'development' || !process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_ACCOUNT_SID === 'your-twilio-account-sid') {
+      const devOTP = Math.floor(100000 + Math.random() * 900000).toString();
+      console.log(`📱 Phone OTP for ${fullPhoneNumber}: ${devOTP}`);
+      
+      res.status(200).json({
+        success: true,
+        message: 'OTP generated successfully (development mode)',
+        data: {
+          phone: fullPhoneNumber,
+          otp: devOTP, // Only in development
+          expiresIn: '10 minutes'
+        }
+      });
+      return;
+    }
+
+    // Send SMS via Twilio Verify (production mode)
     try {
       const verification = await twilioClient.verify.v2
         .services('VA3f3539548e41c1b6def2b7b85ca2a3e9')

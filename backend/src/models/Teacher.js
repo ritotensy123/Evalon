@@ -21,7 +21,6 @@ const teacherSchema = new mongoose.Schema({
   emailAddress: {
     type: String,
     required: true,
-    unique: true,
     lowercase: true,
     trim: true
   },
@@ -137,7 +136,7 @@ const teacherSchema = new mongoose.Schema({
 });
 
 // Index for better query performance
-teacherSchema.index({ emailAddress: 1 });
+teacherSchema.index({ emailAddress: 1 }, { unique: true });
 teacherSchema.index({ organizationId: 1 });
 teacherSchema.index({ organizationCode: 1 });
 teacherSchema.index({ status: 1 });

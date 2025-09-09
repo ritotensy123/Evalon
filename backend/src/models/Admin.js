@@ -15,7 +15,6 @@ const adminSchema = new mongoose.Schema({
   email: {
     type: String,
     required: true,
-    unique: true,
     lowercase: true,
     trim: true
   },
@@ -72,7 +71,7 @@ const adminSchema = new mongoose.Schema({
 });
 
 // Index for better query performance
-adminSchema.index({ email: 1 });
+adminSchema.index({ email: 1 }, { unique: true });
 adminSchema.index({ organizationId: 1 });
 adminSchema.index({ role: 1 });
 adminSchema.index({ status: 1 });
