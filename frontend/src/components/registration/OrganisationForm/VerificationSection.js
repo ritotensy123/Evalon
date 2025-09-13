@@ -17,6 +17,7 @@ import {
   Send,
 } from '@mui/icons-material';
 import { COLORS } from '../../../theme/constants';
+import { organizationAPI } from '../../../services/api';
 
 const VerificationSection = ({ formData, onFormChange, onSubmit, isSubmitting, orgCode }) => {
   const [emailOTPSent, setEmailOTPSent] = useState(false);
@@ -42,33 +43,85 @@ const VerificationSection = ({ formData, onFormChange, onSubmit, isSubmitting, o
     };
   }, [emailCountdown, phoneCountdown]);
 
-  const handleSendEmailOTP = () => {
-    setEmailOTPSent(true);
-    setEmailCountdown(60);
-    // Simulate API call
-    setTimeout(() => {
-      // OTP sent successfully
-    }, 1000);
-  };
-
-  const handleSendPhoneOTP = () => {
-    setPhoneOTPSent(true);
-    setPhoneCountdown(60);
-    // Simulate API call
-    setTimeout(() => {
-      // OTP sent successfully
-    }, 1000);
-  };
-
-  const handleVerifyEmailOTP = () => {
-    if (formData.emailOTP === '123456') { // Simulate verification
-      setEmailOTPVerified(true);
+  const handleSendEmailOTP = async () => {
+    try {
+      setEmailOTPSent(true);
+      setEmailCountdown(60);
+      
+      const response = await organizationAPI.sendEmailOTP({
+        email: formData.adminEmail,
+        purpose: 'registration'
+      });
+      
+      if (response.success) {
+        console.log('Email OTP sent successfully');
+      } else {
+        setEmailOTPSent(false);
+        setEmailCountdown(0);
+      }
+    } catch (error) {
+      console.error('Failed to send email OTP:', error);
+      setEmailOTPSent(false);
+      setEmailCountdown(0);
     }
   };
 
-  const handleVerifyPhoneOTP = () => {
-    if (formData.phoneOTP === '123456') { // Simulate verification
-      setPhoneOTPVerified(true);
+  const handleSendPhoneOTP = async () => {
+    try {
+      setPhoneOTPSent(true);
+      setPhoneCountdown(60);
+      
+      const response = await organizationAPI.sendPhoneOTP({
+        phone: formData.adminPhone,
+        countryCode: formData.countryCode,
+        purpose: 'registration'
+      });
+      
+      if (response.success) {
+        console.log('Phone OTP sent successfully');
+      } else {
+        setPhoneOTPSent(false);
+        setPhoneCountdown(0);
+      }
+    } catch (error) {
+      console.error('Failed to send phone OTP:', error);
+      setPhoneOTPSent(false);
+      setPhoneCountdown(0);
+    }
+  };
+
+  const handleVerifyEmailOTP = async () => {
+    try {
+      const response = await organizationAPI.verifyEmailOTP({
+        email: formData.adminEmail,
+        otp: formData.emailOTP
+      });
+      
+      if (response.success) {
+        setEmailOTPVerified(true);
+        onFormChange('emailVerified', true);
+        console.log('Email OTP verified successfully');
+      }
+    } catch (error) {
+      console.error('Failed to verify email OTP:', error);
+    }
+  };
+
+  const handleVerifyPhoneOTP = async () => {
+    try {
+      const response = await organizationAPI.verifyPhoneOTP({
+        phone: formData.adminPhone,
+        countryCode: formData.countryCode,
+        otp: formData.phoneOTP
+      });
+      
+      if (response.success) {
+        setPhoneOTPVerified(true);
+        onFormChange('phoneVerified', true);
+        console.log('Phone OTP verified successfully');
+      }
+    } catch (error) {
+      console.error('Failed to verify phone OTP:', error);
     }
   };
 
@@ -209,9 +262,6 @@ const VerificationSection = ({ formData, onFormChange, onSubmit, isSubmitting, o
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
                 Email Verification
               </Typography>
-              {emailOTPVerified && (
-                <CheckCircle sx={{ ml: 1, color: '#4caf50' }} />
-              )}
             </Box>
             
             <Typography variant="body2" sx={{ mb: 2, color: COLORS.TEXT_SECONDARY }}>
@@ -282,13 +332,7 @@ const VerificationSection = ({ formData, onFormChange, onSubmit, isSubmitting, o
                   Verify
                 </Button>
               </Box>
-            ) : (
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" sx={{ color: '#4caf50', fontWeight: 500 }}>
-                  ✓ Email verified successfully
-                </Typography>
-              </Box>
-            )}
+            ) : null}
           </Box>
         </Grid>
 
@@ -411,9 +455,9 @@ const VerificationSection = ({ formData, onFormChange, onSubmit, isSubmitting, o
             lineHeight: 1.5,
           }}
         >
-          <strong>Note:</strong> For testing purposes, use <strong>123456</strong> as the OTP code.
+          <strong>Note:</strong> Real OTP codes will be sent to your email and phone.
           <br />
-          In production, real OTP codes will be sent to your email and phone.
+          Please check your email inbox and SMS messages for the verification codes.
         </Typography>
       </Box>
     </Box>

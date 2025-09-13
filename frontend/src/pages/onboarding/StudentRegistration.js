@@ -7,6 +7,8 @@ import {
   useTheme,
   Fade,
   LinearProgress,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import {
   Person,
@@ -22,6 +24,7 @@ import Step1BasicDetails from '../../components/registration/StudentForm/Step1Ba
 import Step2OrganizationVerification from '../../components/registration/StudentForm/Step2OrganizationVerification';
 import Step3SecurityVerification from '../../components/registration/StudentForm/Step3SecurityVerification';
 import Step4AutoMapping from '../../components/registration/StudentForm/Step4AutoMapping';
+import { studentAPI } from '../../services/api';
 import '../../styles/registration/organisation.css';
 
 const StudentRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
@@ -31,6 +34,8 @@ const StudentRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [redirectCountdown, setRedirectCountdown] = useState(5);
+  const [registrationToken, setRegistrationToken] = useState(null);
+  const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
   
   // Enhanced form data structure
   const [formData, setFormData] = useState({
@@ -39,11 +44,14 @@ const StudentRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
     phoneNumber: '',
     countryCode: '+91',
     emailAddress: '',
+    dateOfBirth: '',
+    gender: '',
     country: '',
     city: '',
     pincode: '',
     
     // Step 2: Organization Verification
+    registrationType: 'organization', // 'organization' | 'standalone'
     organizationCode: '',
     organizationName: '',
     isOrganizationValid: false,
@@ -78,7 +86,7 @@ const StudentRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
         setRedirectCountdown((prev) => {
           if (prev <= 1) {
             clearInterval(timer);
-            onNavigateToLogin();
+            window.location.href = '/dashboard';
             return 0;
           }
           return prev - 1;
@@ -121,7 +129,21 @@ const StudentRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
       // If this is the last step, submit the form
       handleSubmit();
     } else if (validateStep(activeStep)) {
-      setActiveStep((prevStep) => prevStep + 1);
+      // Call step-specific handlers
+      switch (activeStep) {
+        case 0:
+          handleStep1Submit();
+          break;
+        case 1:
+          handleStep2Submit();
+          break;
+        case 2:
+          handleStep3Submit();
+          break;
+        default:
+          setActiveStep((prevStep) => prevStep + 1);
+      }
+      
       // Scroll to top when moving to next step with smoother animation
       setTimeout(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -163,6 +185,8 @@ const StudentRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
         if (!formData.phoneNumber.trim()) errors.phoneNumber = 'Phone Number Is Required';
         if (!formData.emailAddress.trim()) errors.emailAddress = 'Email Address Is Required';
         if (!/\S+@\S+\.\S+/.test(formData.emailAddress)) errors.emailAddress = 'Please Enter A Valid Email';
+        if (!formData.dateOfBirth) errors.dateOfBirth = 'Date of Birth Is Required';
+        if (!formData.gender) errors.gender = 'Gender Is Required';
         if (!formData.country) errors.country = 'Country Is Required';
         if (!formData.city.trim()) errors.city = 'City Is Required';
         if (!formData.pincode.trim()) errors.pincode = 'Pincode Is Required';
@@ -215,11 +239,150 @@ const StudentRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
     
     setIsSubmitting(true);
     
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      // Step 4: Complete registration
+      const response = await studentAPI.registerStep4({
+        password: formData.password,
+        confirmPassword: formData.confirmPassword,
+        academicYear: formData.year || '2024-25',
+        grade: formData.academicLevel || '10',
+        section: formData.batch || 'A',
+        subjects: formData.department ? [formData.department] : ['Mathematics', 'Physics', 'Chemistry', 'English'],
+        registrationToken: registrationToken
+      });
+
+      console.log('Student registration completed:', response);
       setIsSubmitting(false);
       setShowSuccess(true);
-    }, 2000);
+    } catch (error) {
+      console.error('Student registration failed:', error);
+      setIsSubmitting(false);
+      // Handle error - you might want to show an error message to the user
+    }
+  };
+
+  // Step-specific handlers
+  const handleStep1Submit = async () => {
+    try {
+      // Validate date of birth format
+      if (!formData.dateOfBirth || formData.dateOfBirth.trim() === '') {
+        setNotification({
+          open: true,
+          message: 'Please enter a valid date of birth',
+          severity: 'error'
+        });
+        return;
+      }
+
+      // Validate date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(formData.dateOfBirth)) {
+        setNotification({
+          open: true,
+          message: 'Please enter a valid date format (YYYY-MM-DD)',
+          severity: 'error'
+        });
+        return;
+      }
+
+      // Validate age (must be between 5 and 100 years)
+      const birthDate = new Date(formData.dateOfBirth);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      
+      // Check if the birthday has occurred this year
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      
+      if (age < 5) {
+        setNotification({
+          open: true,
+          message: 'You must be at least 5 years old to register. Please enter a valid birth date.',
+          severity: 'error'
+        });
+        return;
+      }
+      
+      if (age > 100) {
+        setNotification({
+          open: true,
+          message: 'Please enter a valid birth date. Age must be less than 100 years.',
+          severity: 'error'
+        });
+        return;
+      }
+
+      // Debug: Log the date being sent
+      console.log('Date of birth being sent:', formData.dateOfBirth);
+      console.log('Date type:', typeof formData.dateOfBirth);
+      console.log('Calculated age:', age);
+
+      const response = await studentAPI.registerStep1({
+        fullName: formData.fullName,
+        phoneNumber: formData.phoneNumber,
+        countryCode: formData.countryCode,
+        emailAddress: formData.emailAddress,
+        dateOfBirth: formData.dateOfBirth,
+        gender: formData.gender,
+        country: formData.country,
+        city: formData.city,
+        pincode: formData.pincode
+      });
+
+      // Store registration token for subsequent requests
+      if (response.success && response.data.registrationToken) {
+        setRegistrationToken(response.data.registrationToken);
+        setNotification({
+          open: true,
+          message: 'Basic details saved successfully!',
+          severity: 'success'
+        });
+      }
+
+      setActiveStep(1);
+    } catch (error) {
+      console.error('Step 1 failed:', error);
+      setNotification({
+        open: true,
+        message: error.response?.data?.message || 'Step 1 failed. Please try again.',
+        severity: 'error'
+      });
+    }
+  };
+
+  const handleStep2Submit = async () => {
+    try {
+      const response = await studentAPI.registerStep2({
+        organizationCode: formData.organizationCode,
+        registrationToken: registrationToken,
+        registrationType: formData.registrationType,
+        academicLevel: formData.academicLevel
+      });
+
+      setFormData(prev => ({
+        ...prev,
+        organizationName: response.data.organizationName,
+        isOrganizationValid: response.data.isOrganizationValid,
+        studentVerificationStatus: response.data.associationStatus,
+        isStandalone: response.data.isStandalone
+      }));
+
+      setActiveStep(2);
+    } catch (error) {
+      console.error('Step 2 failed:', error);
+      setNotification({
+        open: true,
+        message: error.response?.data?.message || 'Step 2 failed. Please try again.',
+        severity: 'error'
+      });
+    }
+  };
+
+  const handleStep3Submit = async () => {
+    // Just move to step 3 - OTP sending is handled by the Step3SecurityVerification component
+    setActiveStep(3);
   };
 
   const renderStepContent = (step) => {
@@ -238,6 +401,7 @@ const StudentRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
             formData={formData}
             formErrors={formErrors}
             onFormChange={handleFormChange}
+            registrationToken={registrationToken}
           />
         );
       case 2:
@@ -246,6 +410,7 @@ const StudentRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
             formData={formData}
             formErrors={formErrors}
             onFormChange={handleFormChange}
+            registrationToken={registrationToken}
           />
         );
       case 3:
@@ -343,14 +508,14 @@ const StudentRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
                 fontStyle: 'italic',
               }}
             >
-              Redirecting to login page in {redirectCountdown} seconds...
+              Redirecting to dashboard in {redirectCountdown} seconds...
             </Typography>
             
             {/* Action Button */}
             <Button
               variant="contained"
               size="large"
-              onClick={onNavigateToLogin}
+              onClick={() => window.location.href = '/dashboard'}
               sx={{
                 background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                 borderRadius: 2,
@@ -367,7 +532,7 @@ const StudentRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
                 transition: 'all 0.2s ease',
               }}
             >
-              Go to Login
+              Go to Dashboard
             </Button>
           </Box>
         </Container>
@@ -753,6 +918,22 @@ const StudentRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
           </Button>
         </Box>
       </Container>
+
+      {/* Notification Snackbar */}
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={6000}
+        onClose={() => setNotification({ ...notification, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setNotification({ ...notification, open: false })}
+          severity={notification.severity}
+          sx={{ width: '100%' }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

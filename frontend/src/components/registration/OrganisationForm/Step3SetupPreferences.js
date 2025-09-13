@@ -58,11 +58,14 @@ import {
 import { COLORS, BORDER_RADIUS } from '../../../theme/constants';
 import { organizationAPI } from '../../../services/api';
 
-const Step3SetupPreferences = ({ formData, formErrors, onFormChange, orgCode }) => {
+const Step3SetupPreferences = ({ formData, formErrors, onFormChange, orgCode, onLogoPathChange }) => {
   const [newDepartment, setNewDepartment] = useState('');
   const [logoPreview, setLogoPreview] = useState(null);
   const [fileError, setFileError] = useState('');
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [tempLogoPath, setTempLogoPath] = useState(null);
+  const [logoTempKey, setLogoTempKey] = useState(null); // Store temp key for later use
+  const [selectedFile, setSelectedFile] = useState(null); // Store file for later upload
 
   // Universal field styling matching other steps
   const universalFieldStyle = {
@@ -116,7 +119,10 @@ const Step3SetupPreferences = ({ formData, formErrors, onFormChange, orgCode }) 
       setUploadingLogo(true);
       
       try {
-        // Upload to backend with organization context
+        // Store file for later upload
+        setSelectedFile(file);
+        
+        // Upload to backend as temporary file
         const organizationContext = {
           orgCode: orgCode,
           orgName: formData.organisationName
@@ -128,7 +134,13 @@ const Step3SetupPreferences = ({ formData, formErrors, onFormChange, orgCode }) 
           const reader = new FileReader();
           reader.onload = (e) => {
             setLogoPreview(e.target.result);
-            onFormChange('logo', response.data.url); // Store the URL from backend
+            // Store temp key and path for later use
+            setLogoTempKey(response.tempKey);
+            setTempLogoPath(response.tempPath);
+            // Pass temp key to parent component instead of path
+            if (onLogoPathChange) {
+              onLogoPathChange(response.tempKey);
+            }
           };
           reader.readAsDataURL(file);
         }
@@ -257,6 +269,9 @@ const Step3SetupPreferences = ({ formData, formErrors, onFormChange, orgCode }) 
                   <IconButton
                     onClick={() => {
                       setLogoPreview(null);
+                      setSelectedFile(null);
+                      setLogoTempKey(null);
+                      setTempLogoPath(null);
                       onFormChange('logo', null);
                       setFileError('');
                     }}

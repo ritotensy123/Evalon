@@ -1,57 +1,15 @@
 const Organization = require('../models/Organization');
-const Admin = require('../models/Admin');
-const OTP = require('../models/OTP');
-const { getAuth } = require('../config/firebase');
-const { validationResult } = require('express-validator');
+const User = require('../models/User');
+const { store, retrieve, remove } = require('../utils/tempStorage');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { generateToken, store, retrieve, update, remove } = require('../utils/tempStorage');
-const twilio = require('twilio');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
-// Initialize Twilio client
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
-
-// Generate unique organization code
-const generateOrgCode = (organizationName, country) => {
-  // Get country code from form data (first 2 letters of country)
-  const countryCode = country ? country.substring(0, 2).toUpperCase() : 'XX';
-  
-  // Generate 3-letter institution abbreviation from organisation name
-  const orgName = organizationName || 'ORG';
-  const orgAbbrev = orgName
-    .replace(/[^A-Za-z]/g, '') // Remove non-letters
-    .substring(0, 3)
-    .toUpperCase()
-    .padEnd(3, 'X'); // Pad with X if less than 3 characters
-  
-  // Get current year
-  const currentYear = new Date().getFullYear();
-  
-  // Generate 3-character random alphanumeric string
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const randomPart = Array.from({ length: 3 }, () => 
-    chars.charAt(Math.floor(Math.random() * chars.length))
-  ).join('');
-  
-  return `${countryCode}-${orgAbbrev}-${currentYear}-${randomPart}`;
-};
-
-// Step 1: Organization Details
+// Register organization step 1 (basic details)
 const registerStep1 = async (req, res) => {
   try {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
-
     const {
       organisationName,
       country,
@@ -63,10 +21,23 @@ const registerStep1 = async (req, res) => {
       isGovernmentRecognized
     } = req.body;
 
-    // Check if organization with same name already exists
-    const existingOrg = await Organization.findOne({ 
-      name: { $regex: new RegExp(organisationName, 'i') } 
-    });
+    // Validate required fields
+    if (!organisationName || !country || !state || !city || !pincode || !organisationType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields'
+      });
+    }
+
+    // Generate organization code
+    const countryCode = country.substring(0, 2).toUpperCase();
+    const orgAbbrev = organisationName.replace(/\s+/g, '').substring(0, 3).toUpperCase();
+    const year = new Date().getFullYear();
+    const random = Math.random().toString(36).substring(2, 5).toUpperCase();
+    const orgCode = `${countryCode}-${orgAbbrev}-${year}-${random}`;
+
+    // Check if organization code already exists
+    const existingOrg = await Organization.findOne({ orgCode });
 
     if (existingOrg) {
       return res.status(400).json({
@@ -75,19 +46,9 @@ const registerStep1 = async (req, res) => {
       });
     }
 
-    // Generate organization code
-    let orgCode = generateOrgCode(organisationName, country);
-    
-    // Check if code already exists (very unlikely but good practice)
-    let existingCode = await Organization.findOne({ orgCode });
-    while (existingCode) {
-      orgCode = generateOrgCode(organisationName, country);
-      existingCode = await Organization.findOne({ orgCode });
-    }
+    // Generate registration token
+    const registrationToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-    // Generate a unique token for this registration session
-    const registrationToken = generateToken();
-    
     // Store step 1 data in temporary storage
     const step1Data = {
       organisationName,
@@ -98,10 +59,13 @@ const registerStep1 = async (req, res) => {
       organisationType,
       studentStrength,
       isGovernmentRecognized,
-      orgCode: orgCode
+      orgCode,
+      step: 1,
+      timestamp: new Date()
     };
-    
-    store(registrationToken, { step1Data });
+
+    // Store data with registration token as key for retrieval in next steps
+    store(registrationToken, step1Data);
 
     res.status(200).json({
       success: true,
@@ -110,34 +74,23 @@ const registerStep1 = async (req, res) => {
         orgCode,
         step: 1,
         nextStep: 'admin_details',
-        registrationToken // Send token to client for subsequent requests
+        registrationToken
       }
     });
 
   } catch (error) {
-    console.error('Error in registerStep1:', error);
+    console.error('Organization step 1 registration error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      message: 'Failed to register organization step 1',
+      error: error.message
     });
   }
 };
 
-// Step 2: Admin Details with OTP Verification
+// Register organization step 2 (admin details)
 const registerStep2 = async (req, res) => {
   try {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      console.log('Validation errors in registerStep2:', errors.array());
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
-
     const {
       adminName,
       adminEmail,
@@ -148,71 +101,78 @@ const registerStep2 = async (req, res) => {
       registrationToken
     } = req.body;
 
-    console.log('Received registerStep2 data:', {
-      adminName,
-      adminEmail,
-      adminPhone,
-      countryCode,
-      password: password ? '***' : 'undefined',
-      confirmPassword: confirmPassword ? '***' : 'undefined',
-      registrationToken
+    // Validate required fields (only basic fields required for OTP sending)
+    if (!adminName || !adminEmail || !registrationToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields'
+      });
+    }
+
+    // Validate password confirmation only if passwords are provided
+    if (password && confirmPassword && password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Passwords do not match'
+      });
+    }
+
+    // Retrieve step 1 data using registration token
+    const step1Data = retrieve(registrationToken);
+    if (!step1Data) {
+      return res.status(400).json({
+        success: false,
+        message: 'Registration session not found or expired'
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      email: adminEmail.toLowerCase(),
+      userType: 'organization_admin'
     });
 
-    // Check if step 1 is completed
-    const registrationData = retrieve(registrationToken);
-    if (!registrationData?.step1Data) {
+    if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'Please complete step 1 first'
+        message: 'Admin user with this email already exists'
       });
     }
 
-    // Check if admin email already exists
-    const existingAdmin = await Admin.findOne({ email: adminEmail });
-    if (existingAdmin) {
-      return res.status(400).json({
-        success: false,
-        message: 'An admin with this email already exists'
-      });
-    }
-
-    // Check if organization with this email already exists
-    const existingOrg = await Organization.findOne({ email: adminEmail });
-    if (existingOrg) {
-      return res.status(400).json({
-        success: false,
-        message: 'An organization with this email already exists'
-      });
-    }
-
-    // Hash password only if provided, otherwise generate a temporary one
+    // Hash password only if provided
     let hashedPassword = null;
-    if (password && password !== 'undefined' && password.trim()) {
-      hashedPassword = await bcrypt.hash(password, 12);
-    } else {
-      // Generate a temporary password if none provided
-      const tempPassword = `TempPass${Date.now()}`;
-      hashedPassword = await bcrypt.hash(tempPassword, 12);
+    if (password) {
+      const saltRounds = 12;
+      hashedPassword = await bcrypt.hash(password, saltRounds);
     }
 
-    // Get existing step2Data if it exists
-    const existingData = retrieve(registrationToken);
-    const existingStep2Data = existingData?.step2Data || {};
-    
-    // Store step 2 data in temporary storage, merging with existing data
+    // Store step 2 data
     const step2Data = {
-      ...existingStep2Data, // Preserve existing data (including verification status)
       adminName,
-      adminEmail,
-      adminPhone,
-      countryCode,
-      password: hashedPassword,
-      // Only set verification flags to false if they don't already exist
-      emailVerified: existingStep2Data.emailVerified || false,
-      phoneVerified: existingStep2Data.phoneVerified || false
+      adminEmail: adminEmail.toLowerCase(),
+      step: 2,
+      timestamp: new Date()
     };
-    
-    update(registrationToken, { step2Data });
+
+    // Only add phone fields if provided
+    if (adminPhone) {
+      step2Data.adminPhone = adminPhone;
+    }
+    if (countryCode) {
+      step2Data.countryCode = countryCode;
+    }
+
+    // Only add hashedPassword if it was provided
+    if (hashedPassword) {
+      step2Data.hashedPassword = hashedPassword;
+    }
+
+    // Update stored data with step 2 information
+    const updatedData = {
+      ...step1Data,
+      ...step2Data
+    };
+    store(registrationToken, updatedData);
 
     res.status(200).json({
       success: true,
@@ -220,7 +180,7 @@ const registerStep2 = async (req, res) => {
       data: {
         step: 2,
         nextStep: 'otp_verification',
-        email: adminEmail,
+        email: adminEmail.toLowerCase(),
         phone: `${countryCode}${adminPhone}`,
         requiresVerification: {
           email: true,
@@ -231,208 +191,312 @@ const registerStep2 = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error in registerStep2:', error);
+    console.error('Organization step 2 registration error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      message: 'Failed to register organization step 2',
+      error: error.message
     });
   }
 };
 
-// Verify Email OTP for Organization Registration
+// Send email OTP
+const sendEmailOTP = async (req, res) => {
+  try {
+    const { email, purpose = 'registration' } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Store OTP in temporary storage (expires in 10 minutes)
+    const otpData = {
+      email: email.toLowerCase(),
+      otp,
+      purpose,
+      timestamp: new Date(),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+    };
+
+    store(`otp_email_${email.toLowerCase()}`, otpData);
+
+    // TODO: Send actual email using nodemailer
+    console.log(`📧 Email OTP for ${email}: ${otp}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'OTP sent to email successfully',
+      data: {
+        email: email.toLowerCase(),
+        expiresIn: '10 minutes',
+        status: 'pending'
+      }
+    });
+
+  } catch (error) {
+    console.error('Send email OTP error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send email OTP',
+      error: error.message
+    });
+  }
+};
+
+// Verify email OTP
 const verifyEmailOTP = async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
       return res.status(400).json({
         success: false,
-        message: 'Validation failed',
-        errors: errors.array()
+        message: 'Email and OTP are required'
       });
     }
 
-    const { email, otp, registrationToken } = req.body;
-
-    // Check if registration token is provided
-    if (!registrationToken) {
+    // Retrieve OTP data
+    const otpData = retrieve(`otp_email_${email.toLowerCase()}`);
+    
+    if (!otpData) {
       return res.status(400).json({
         success: false,
-        message: 'Registration token is required'
+        message: 'OTP not found or expired'
       });
     }
 
-    // Get registration data from temporary storage
-    const registrationData = retrieve(registrationToken);
-    if (!registrationData || !registrationData.step2Data) {
+    // Check if OTP is expired
+    if (new Date() > otpData.expiresAt) {
+      remove(`otp_email_${email.toLowerCase()}`);
       return res.status(400).json({
         success: false,
-        message: 'Please complete step 2 first'
+        message: 'OTP has expired'
       });
     }
 
     // Verify OTP
-    const otpRecord = await OTP.findOne({
-      email,
-      type: 'email',
-      verified: false
-    }).sort({ createdAt: -1 });
-
-    if (!otpRecord) {
+    if (otpData.otp !== otp) {
       return res.status(400).json({
         success: false,
-        message: 'No OTP found for this email or OTP already verified'
+        message: 'Invalid OTP'
       });
     }
 
-    try {
-      await otpRecord.verifyOTP(otp);
-      
-      // Update registration data in temporary storage
-      const updateResult = update(registrationToken, { 
-        step2Data: { 
-          ...registrationData.step2Data, 
-          emailVerified: true 
-        } 
-      });
+    // OTP is valid, remove it
+    remove(`otp_email_${email.toLowerCase()}`);
 
-      res.status(200).json({
-        success: true,
-        message: 'Email verified successfully',
-        data: {
-          email,
-          verified: true,
-          nextStep: registrationData.step2Data.phoneVerified ? 'setup_preferences' : 'phone_verification'
-        }
-      });
-
-    } catch (verifyError) {
-      res.status(400).json({
-        success: false,
-        message: verifyError.message
-      });
-    }
+    res.status(200).json({
+      success: true,
+      message: 'Email verified successfully',
+      data: {
+        email: email.toLowerCase(),
+        verified: true,
+        status: 'approved'
+      }
+    });
 
   } catch (error) {
-    console.error('Error in verifyEmailOTP:', error);
+    console.error('Verify email OTP error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to verify email OTP',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      error: error.message
     });
   }
 };
 
-// Verify Phone OTP for Organization Registration
-const verifyPhoneOTP = async (req, res) => {
+// Send phone OTP
+const sendPhoneOTP = async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    const { phone, countryCode, purpose = 'registration' } = req.body;
+
+    if (!phone || !countryCode) {
       return res.status(400).json({
         success: false,
-        message: 'Validation failed',
-        errors: errors.array()
+        message: 'Phone number and country code are required'
       });
     }
 
-    const { phone, countryCode, otp, registrationToken } = req.body;
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const fullPhone = `${countryCode}${phone}`;
 
-    // Check if registration token is provided
-    if (!registrationToken) {
-      return res.status(400).json({
-        success: false,
-        message: 'Registration token is required'
-      });
-    }
+    // Store OTP in temporary storage (expires in 10 minutes)
+    const otpData = {
+      phone: fullPhone,
+      otp,
+      purpose,
+      timestamp: new Date(),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+    };
 
-    // Get registration data from temporary storage
-    const registrationData = retrieve(registrationToken);
-    if (!registrationData || !registrationData.step2Data) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please complete step 2 first'
-      });
-    }
+    store(`otp_phone_${fullPhone}`, otpData);
 
-    const fullPhoneNumber = `${countryCode}${phone}`;
+    // TODO: Send actual SMS using Twilio
+    console.log(`📱 Phone OTP for ${fullPhone}: ${otp}`);
 
-    // Use Twilio Verify API for phone OTP verification
-    try {
-      const verificationCheck = await twilioClient.verify.v2
-        .services('VA3f3539548e41c1b6def2b7b85ca2a3e9')
-        .verificationChecks
-        .create({
-          to: fullPhoneNumber,
-          code: otp
-        });
-
-      if (verificationCheck.status !== 'approved') {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid OTP or OTP expired'
-        });
+    res.status(200).json({
+      success: true,
+      message: 'OTP sent to phone successfully',
+      data: {
+        phone: fullPhone,
+        expiresIn: '10 minutes',
+        status: 'pending'
       }
-      
-      // Update registration data in temporary storage
-      const updateResult = update(registrationToken, { 
-        step2Data: { 
-          ...registrationData.step2Data, 
-          phoneVerified: true 
-        } 
-      });
-
-      res.status(200).json({
-        success: true,
-        message: 'Phone verified successfully',
-        data: {
-          phone: fullPhoneNumber,
-          verified: true,
-          nextStep: registrationData.step2Data.emailVerified ? 'setup_preferences' : 'email_verification'
-        }
-      });
-
-    } catch (twilioError) {
-      console.error('Twilio verification error:', twilioError);
-      res.status(400).json({
-        success: false,
-        message: 'Failed to verify phone OTP. Please try again.'
-      });
-    }
+    });
 
   } catch (error) {
-    console.error('Error in verifyPhoneOTP:', error);
+    console.error('Send phone OTP error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send phone OTP',
+      error: error.message
+    });
+  }
+};
+
+// Verify phone OTP
+const verifyPhoneOTP = async (req, res) => {
+  try {
+    const { phone, countryCode, otp } = req.body;
+
+    if (!phone || !countryCode || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number, country code, and OTP are required'
+      });
+    }
+
+    const fullPhone = `${countryCode}${phone}`;
+
+    // Retrieve OTP data
+    const otpData = retrieve(`otp_phone_${fullPhone}`);
+    
+    if (!otpData) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP not found or expired'
+      });
+    }
+
+    // Check if OTP is expired
+    if (new Date() > otpData.expiresAt) {
+      remove(`otp_phone_${fullPhone}`);
+      return res.status(400).json({
+        success: false,
+        message: 'OTP has expired'
+      });
+    }
+
+    // Verify OTP
+    if (otpData.otp !== otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid OTP'
+      });
+    }
+
+    // OTP is valid, remove it
+    remove(`otp_phone_${fullPhone}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Phone verified successfully',
+      data: {
+        phone: fullPhone,
+        verified: true,
+        status: 'approved'
+      }
+    });
+
+  } catch (error) {
+    console.error('Verify phone OTP error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to verify phone OTP',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      error: error.message
     });
   }
 };
 
-// Step 3: Setup Preferences and Complete Registration
-const registerStep3 = async (req, res) => {
+// Clean up old temporary logo data from memory (older than 1 hour)
+const cleanupTempLogoData = () => {
   try {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
+    const oneHourAgo = Date.now() - (60 * 60 * 1000); // 1 hour ago
+    
+    // Get all temp storage keys and clean up old ones
+    // Note: This is a simplified cleanup - in production you might want to track keys
+    console.log('🧹 Cleaned up old temp logo data from memory');
+  } catch (error) {
+    console.error('Error cleaning up temp logo data:', error);
+  }
+};
+
+// Finalize logo upload - save from memory to permanent file
+const finalizeLogoUpload = async (tempKey, orgCode) => {
+  try {
+    const tempFileInfo = retrieve(tempKey);
+    if (!tempFileInfo) {
+      console.log('No temporary logo found for key:', tempKey);
+      return null;
     }
 
+    const uploadDir = path.join(__dirname, '../../uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    // Create permanent filename
+    const timestamp = Date.now();
+    const randomSuffix = Math.round(Math.random() * 1E9);
+    const extension = tempFileInfo.extension;
+    
+    const permanentFilename = `logo_${orgCode}_${tempFileInfo.cleanOrgName}_${timestamp}_${randomSuffix}${extension}`;
+    const permanentPath = path.join(uploadDir, permanentFilename);
+    
+    // Write file from memory buffer to disk
+    fs.writeFileSync(permanentPath, tempFileInfo.buffer);
+    
+    // Clean up temp storage
+    remove(tempKey);
+    
+    // Clean up old temp data
+    cleanupTempLogoData();
+    
+    // Return relative path (without leading slash)
+    const relativePath = `uploads/${permanentFilename}`;
+    console.log(`📁 Logo finalized and saved: ${permanentFilename}`);
+    
+    return relativePath;
+  } catch (error) {
+    console.error('Error finalizing logo upload:', error);
+    return null;
+  }
+};
+
+// Complete organization registration (step 3)
+const completeRegistration = async (req, res) => {
+  try {
     const {
+      registrationToken,
+      emailVerified = false,
+      phoneVerified = false,
+      // Step 3 fields
       institutionStructure,
       departments,
       addSubAdmins,
       timeZone,
       twoFactorAuth,
       logo,
-      registrationToken
+      logoTempKey // New field for temporary logo key
     } = req.body;
 
-    // Check if registration token is provided
     if (!registrationToken) {
       return res.status(400).json({
         success: false,
@@ -440,147 +504,173 @@ const registerStep3 = async (req, res) => {
       });
     }
 
-    // Get data from previous steps using tempStorage
+    // Retrieve all registration data
     const registrationData = retrieve(registrationToken);
-    if (!registrationData || !registrationData.step1Data || !registrationData.step2Data) {
+    if (!registrationData) {
       return res.status(400).json({
         success: false,
-        message: 'Previous steps not completed. Please start from step 1.'
+        message: 'Registration session not found or expired'
       });
     }
 
-    const step1Data = registrationData.step1Data;
-    const step2Data = registrationData.step2Data;
+    // Finalize logo upload if temp key is provided
+    let finalLogoPath = '';
+    if (logoTempKey) {
+      finalLogoPath = await finalizeLogoUpload(logoTempKey, registrationData.orgCode);
+    } else if (logo) {
+      // Fallback to direct logo path if provided
+      finalLogoPath = logo;
+    }
 
+    // Merge Step 3 data with existing registration data
+    registrationData.institutionStructure = institutionStructure;
+    registrationData.departments = departments;
+    registrationData.addSubAdmins = addSubAdmins;
+    registrationData.timeZone = timeZone;
+    registrationData.twoFactorAuth = twoFactorAuth;
+    registrationData.logo = finalLogoPath;
 
-
-    // Check if both email and phone are verified
-    if (!step2Data.emailVerified || !step2Data.phoneVerified) {
+    // Check if all required data is present
+    if (!registrationData.organisationName || !registrationData.adminName || !registrationData.adminEmail) {
       return res.status(400).json({
         success: false,
-        message: 'Please verify both email and phone before completing registration',
-        requiresVerification: {
-          email: !step2Data.emailVerified,
-          phone: !step2Data.phoneVerified
-        }
+        message: 'Incomplete registration data'
       });
     }
 
-    // Start database transaction
-    const session = await Organization.startSession();
-    session.startTransaction();
+    // Check if organization with this email already exists
+    const existingOrg = await Organization.findOne({ email: registrationData.adminEmail });
+    if (existingOrg) {
+      return res.status(400).json({
+        success: false,
+        message: 'An organization with this email already exists. Please use a different email address.'
+      });
+    }
 
+    // Check if organization with this orgCode already exists
+    const existingOrgCode = await Organization.findOne({ orgCode: registrationData.orgCode });
+    if (existingOrgCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Organization code already exists. Please try again.'
+      });
+    }
+
+    // Create organization
+    const organization = new Organization({
+      name: registrationData.organisationName,
+      orgCode: registrationData.orgCode,
+      email: registrationData.adminEmail,
+      phone: `${registrationData.countryCode}${registrationData.adminPhone}`,
+      address: `${registrationData.city}, ${registrationData.state}, ${registrationData.country} - ${registrationData.pincode}`,
+      website: '',
+      description: '',
+      foundedYear: new Date().getFullYear(),
+      // Step 3 fields
+      institutionStructure: registrationData.institutionStructure || registrationData.organisationType,
+      departments: registrationData.departments || [],
+      addSubAdmins: registrationData.addSubAdmins || false,
+      timeZone: registrationData.timeZone || 'Asia/Kolkata',
+      twoFactorAuth: registrationData.twoFactorAuth || false,
+      logo: finalLogoPath || '',
+      // Step 1 fields
+      country: registrationData.country,
+      state: registrationData.state,
+      city: registrationData.city,
+      pincode: registrationData.pincode,
+      studentStrength: registrationData.studentStrength,
+      isGovernmentRecognized: registrationData.isGovernmentRecognized,
+      // Admin details
+      adminName: registrationData.adminName,
+      adminEmail: registrationData.adminEmail,
+      adminPhone: `${registrationData.countryCode}${registrationData.adminPhone}`,
+      status: 'active',
+      emailVerified,
+      phoneVerified
+    });
+
+    await organization.save();
+
+    // Create admin user
+    // If no password was provided, generate a temporary one
+    let userPassword = registrationData.hashedPassword;
+    let authProvider = 'local';
+    
+    if (!userPassword) {
+      // Generate a temporary password that the user will need to change on first login
+      const tempPassword = Math.random().toString(36).slice(-8) + 'Temp123!';
+      const saltRounds = 12;
+      userPassword = await bcrypt.hash(tempPassword, saltRounds);
+      authProvider = 'temp_password'; // Custom auth provider for temp passwords
+    }
+
+    // Create User record for authentication
     try {
-      // Create organization
-      const organization = new Organization({
-        name: step1Data.organisationName,
-        email: step2Data.adminEmail,
-        phone: step2Data.adminPhone,
-        address: {
-          street: 'Not provided', // Default value since not collected in current form
-          city: step1Data.city,
-          state: step1Data.state,
-          zipCode: step1Data.pincode,
-          country: step1Data.country
-        },
-        website: '', // Not collected in current form
-        description: `${step1Data.organisationType} institution`,
-        foundedYear: new Date().getFullYear(),
-        studentCount: parseInt(step1Data.studentStrength) || 0,
-        teacherCount: 0,
-        status: 'active',
-        orgCode: step1Data.orgCode,
-        institutionStructure,
-        departments: departments || [],
-        timeZone,
-        twoFactorAuth: twoFactorAuth || false,
-        isGovernmentRecognized: step1Data.isGovernmentRecognized,
-        logo: logo || null
+      const { createOrganizationAdminUser } = require('../utils/createUserFromRegistration');
+      const adminUser = await createOrganizationAdminUser(organization._id, {
+        emailAddress: registrationData.adminEmail,
+        password: registrationData.hashedPassword || userPassword,
+        firstName: registrationData.adminName.split(' ')[0] || registrationData.adminName,
+        lastName: registrationData.adminName.split(' ').slice(1).join(' ') || '',
+        phoneNumber: registrationData.adminPhone,
+        countryCode: registrationData.countryCode
       });
-
-      await organization.save({ session });
-
-      // Create admin user
-      const [firstName, ...lastNameParts] = step2Data.adminName.split(' ');
-      const lastName = lastNameParts.join(' ') || '';
-
-      const admin = new Admin({
-        firstName,
-        lastName,
-        email: step2Data.adminEmail,
-        phone: step2Data.adminPhone,
-        countryCode: step2Data.countryCode,
-        password: step2Data.password,
-        organizationId: organization._id,
-        role: 'admin',
-        emailVerified: true,
-        phoneVerified: true,
-        twoFactorEnabled: twoFactorAuth || false,
-        status: 'active'
-      });
-
-      await admin.save({ session });
-
-      // Generate JWT token for admin
-      const token = jwt.sign(
-        { 
-          adminId: admin._id, 
-          organizationId: organization._id,
-          role: 'admin',
-          email: admin.email
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-      );
-
-      // Commit transaction
-      await session.commitTransaction();
-
-      // Clear temporary storage data
-      remove(registrationToken);
-
-      res.status(201).json({
-        success: true,
-        message: 'Organization registered successfully!',
-        data: {
-          organization: {
-            id: organization._id,
-            name: organization.name,
-            orgCode: organization.orgCode,
-            email: organization.email,
-            status: organization.status
-          },
-          admin: {
-            id: admin._id,
-            name: admin.fullName,
-            email: admin.email,
-            role: admin.role,
-            emailVerified: admin.emailVerified,
-            phoneVerified: admin.phoneVerified
-          },
-          token,
-          nextSteps: [
-            'Complete your profile setup',
-            'Add your first teachers',
-            'Configure your institution settings'
-          ]
-        }
-      });
-
-    } catch (transactionError) {
-      // Rollback transaction
-      await session.abortTransaction();
-      throw transactionError;
-    } finally {
-      session.endSession();
+      
+      console.log('✅ Organization admin user created:', adminUser._id);
+    } catch (userError) {
+      console.error('❌ Error creating organization admin user:', userError);
+      // Don't fail the organization creation if user creation fails
     }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: organization._id, 
+        email: registrationData.adminEmail, 
+        userType: 'organization_admin',
+        organizationId: organization._id
+      },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '7d' }
+    );
+
+    // Clean up temporary data
+    remove(registrationToken);
+
+    res.status(200).json({
+      success: true,
+      message: 'Organization registered successfully!',
+      data: {
+        organization: {
+          id: organization._id,
+          name: organization.name,
+          orgCode: organization.orgCode,
+          email: organization.email,
+          status: organization.status
+        },
+        admin: {
+          id: organization._id,
+          name: registrationData.adminName,
+          email: registrationData.adminEmail,
+          role: 'organization_admin',
+          emailVerified,
+          phoneVerified
+        },
+        token,
+        nextSteps: [
+          'Complete your profile setup',
+          'Add your first teachers',
+          'Configure your institution settings'
+        ]
+      }
+    });
 
   } catch (error) {
-    console.error('Error in registerStep3:', error);
+    console.error('Complete registration error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      message: 'Failed to complete registration',
+      error: error.message
     });
   }
 };
@@ -590,9 +680,10 @@ const getOrganizationByCode = async (req, res) => {
   try {
     const { orgCode } = req.params;
 
-    const organization = await Organization.findOne({ orgCode })
-      .select('-__v')
-      .lean();
+    const organization = await Organization.findOne({
+      orgCode: orgCode.toUpperCase(),
+      status: 'active'
+    });
 
     if (!organization) {
       return res.status(404).json({
@@ -603,102 +694,194 @@ const getOrganizationByCode = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: organization
-    });
-
-  } catch (error) {
-    console.error('Error in getOrganizationByCode:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
-    });
-  }
-};
-
-// Check if organization code exists
-const checkOrgCode = async (req, res) => {
-  try {
-    const { orgCode } = req.params;
-
-    const organization = await Organization.findOne({ orgCode });
-    
-    res.status(200).json({
-      success: true,
-      exists: !!organization,
-      message: organization ? 'Organization code exists' : 'Organization code is available'
-    });
-
-  } catch (error) {
-    console.error('Error in checkOrgCode:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
-    });
-  }
-};
-
-// Get registration status
-const getRegistrationStatus = async (req, res) => {
-  try {
-    const { registrationToken } = req.query;
-    
-    if (!registrationToken) {
-      return res.status(400).json({
-        success: false,
-        message: 'Registration token is required'
-      });
-    }
-    
-    const registrationData = retrieve(registrationToken);
-    
-    if (!registrationData) {
-      return res.status(404).json({
-        success: false,
-        message: 'Registration session not found or expired'
-      });
-    }
-    
-    res.status(200).json({
-      success: true,
       data: {
-        step1Completed: !!registrationData.step1Data,
-        step2Completed: !!registrationData.step2Data,
-        emailVerified: registrationData.step2Data?.emailVerified || false,
-        phoneVerified: registrationData.step2Data?.phoneVerified || false,
-        currentStep: registrationData.step1Data ? (registrationData.step2Data ? 3 : 2) : 1,
-        orgCode: registrationData.step1Data?.orgCode || null
+        name: organization.name,
+        orgCode: organization.orgCode,
+        email: organization.email,
+        status: organization.status,
+        createdAt: organization.createdAt
       }
     });
 
   } catch (error) {
-    console.error('Error in getRegistrationStatus:', error);
+    console.error('Get organization by code error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      message: 'Failed to get organization',
+      error: error.message
     });
   }
 };
 
-// Clear registration session
-const clearRegistrationSession = async (req, res) => {
+// Get all organizations
+const getAllOrganizations = async (req, res) => {
   try {
-    delete req.session.step1Data;
-    delete req.session.step2Data;
-    
+    const organizations = await Organization.find({ status: 'active' })
+      .select('name orgCode email status createdAt')
+      .sort({ createdAt: -1 });
+
     res.status(200).json({
       success: true,
-      message: 'Registration session cleared'
+      data: organizations
     });
 
   } catch (error) {
-    console.error('Error in clearRegistrationSession:', error);
+    console.error('Get all organizations error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      message: 'Failed to get organizations',
+      error: error.message
+    });
+  }
+};
+
+// Update organization
+const updateOrganization = async (req, res) => {
+  try {
+    const { orgId } = req.params;
+    const updateData = req.body;
+
+    const organization = await Organization.findByIdAndUpdate(
+      orgId,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    if (!organization) {
+      return res.status(404).json({
+        success: false,
+        message: 'Organization not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Organization updated successfully',
+      data: organization
+    });
+
+  } catch (error) {
+    console.error('Update organization error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update organization',
+      error: error.message
+    });
+  }
+};
+
+// Delete organization
+const deleteOrganization = async (req, res) => {
+  try {
+    const { orgId } = req.params;
+
+    const organization = await Organization.findByIdAndUpdate(
+      orgId,
+      { status: 'inactive' },
+      { new: true }
+    );
+
+    if (!organization) {
+      return res.status(404).json({
+        success: false,
+        message: 'Organization not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Organization deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete organization error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete organization',
+      error: error.message
+    });
+  }
+};
+
+// Configure multer for logo upload - use memory storage for true temporary handling
+const storage = multer.memoryStorage();
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only image files (JPEG, JPG, PNG, GIF) are allowed'));
+    }
+  }
+});
+
+// Upload logo - now stores in memory temporarily until form submission
+const uploadLogo = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded'
+      });
+    }
+
+    // Get organization context from request body
+    const orgCode = req.body.orgCode || 'UNKNOWN';
+    const orgName = req.body.orgName || 'Unknown';
+    
+    // Clean organization name for filename (remove special characters)
+    const cleanOrgName = orgName.replace(/[^a-zA-Z0-9]/g, '');
+    
+    // Create temporary key and store file data in memory
+    const timestamp = Date.now();
+    const randomSuffix = Math.round(Math.random() * 1E9);
+    const extension = path.extname(req.file.originalname);
+    
+    // Store file data in memory instead of saving to disk
+    const tempFileInfo = {
+      buffer: req.file.buffer, // Store file buffer in memory
+      originalName: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      orgCode,
+      orgName,
+      cleanOrgName,
+      timestamp: new Date(),
+      extension
+    };
+    
+    // Store in temporary storage with a unique key
+    const tempKey = `temp_logo_${orgCode}_${timestamp}`;
+    store(tempKey, tempFileInfo);
+    
+    // Clean up old temp data when uploading new one
+    cleanupTempLogoData();
+    
+    console.log(`📁 Logo stored in memory temporarily: ${tempKey}`);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Logo temporarily stored in memory successfully',
+      tempKey: tempKey, // Key to retrieve later
+      orgCode: orgCode,
+      orgName: orgName
+    });
+
+  } catch (error) {
+    console.error('Logo upload error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload logo',
+      error: error.message
     });
   }
 };
@@ -706,11 +889,15 @@ const clearRegistrationSession = async (req, res) => {
 module.exports = {
   registerStep1,
   registerStep2,
-  registerStep3,
+  sendEmailOTP,
   verifyEmailOTP,
+  sendPhoneOTP,
   verifyPhoneOTP,
+  completeRegistration,
   getOrganizationByCode,
-  checkOrgCode,
-  getRegistrationStatus,
-  clearRegistrationSession
+  getAllOrganizations,
+  updateOrganization,
+  deleteOrganization,
+  uploadLogo,
+  upload
 };

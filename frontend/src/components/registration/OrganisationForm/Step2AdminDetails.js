@@ -39,8 +39,8 @@ import { otpAPI, organizationAPI } from '../../../services/api';
 
 const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationToken }) => {
   // Debug: Log the registration token and form data
-  console.log('Step2AdminDetails - registrationToken:', registrationToken);
-  console.log('Step2AdminDetails - formData:', formData);
+  // console.log('Step2AdminDetails - registrationToken:', registrationToken);
+  // console.log('Step2AdminDetails - formData:', formData);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [emailOtpSent, setEmailOtpSent] = useState(false);
@@ -101,23 +101,6 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
       return;
     }
 
-    // Check if basic required fields are filled for email OTP
-    console.log('Email OTP - Checking form data:', {
-      adminName: formData.adminName,
-      adminEmail: formData.adminEmail,
-      countryCode: formData.countryCode
-    });
-    
-    const missingFields = [];
-    if (!formData.adminName) missingFields.push('Admin Name');
-    if (!formData.countryCode) missingFields.push('Country Code');
-    
-    if (missingFields.length > 0) {
-      console.log('Missing fields for email OTP:', missingFields);
-      setEmailError(`Please fill in: ${missingFields.join(', ')}`);
-      return;
-    }
-    
     setEmailError('');
     setEmailOtpSent(true);
     
@@ -126,22 +109,12 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
       const step2Data = {
         adminName: formData.adminName,
         adminEmail: formData.adminEmail,
+        adminPhone: formData.adminPhone,
         countryCode: formData.countryCode,
+        password: formData.password,
+        confirmPassword: formData.confirmPassword,
         registrationToken: registrationToken
       };
-
-      // Only include phone if it's filled
-      if (formData.adminPhone && formData.adminPhone.trim()) {
-        step2Data.adminPhone = formData.adminPhone;
-      }
-
-      // Only include password fields if they are filled
-      if (formData.password && formData.password.trim()) {
-        step2Data.password = formData.password;
-      }
-      if (formData.confirmPassword && formData.confirmPassword.trim()) {
-        step2Data.confirmPassword = formData.confirmPassword;
-      }
 
       console.log('Sending step2Data for email OTP:', step2Data);
       const registerResponse = await organizationAPI.registerStep2(step2Data);
@@ -153,7 +126,7 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
       }
 
       // Then send the OTP
-      const response = await otpAPI.sendEmailOTP({
+      const response = await organizationAPI.sendEmailOTP({
         email: formData.adminEmail,
         purpose: 'registration'
       });
@@ -189,17 +162,6 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
       return;
     }
 
-    // Check if basic required fields are filled for phone OTP
-    const missingFields = [];
-    if (!formData.adminName) missingFields.push('Admin Name');
-    if (!formData.adminEmail) missingFields.push('Email');
-    if (!formData.countryCode) missingFields.push('Country Code');
-    
-    if (missingFields.length > 0) {
-      setPhoneError(`Please fill in: ${missingFields.join(', ')}`);
-      return;
-    }
-    
     setPhoneError('');
     setPhoneOtpSent(true);
     
@@ -231,7 +193,7 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
       }
 
       // Then send the OTP
-      const response = await otpAPI.sendPhoneOTP({
+      const response = await organizationAPI.sendPhoneOTP({
         phone: formData.adminPhone,
         countryCode: formData.countryCode,
         purpose: 'registration'
@@ -273,10 +235,9 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
     
     try {
       console.log('Verifying email OTP with token:', registrationToken);
-      const response = await otpAPI.verifyEmailOTP({
+      const response = await organizationAPI.verifyEmailOTP({
         email: formData.adminEmail,
-        otp: emailOtp,
-        registrationToken: registrationToken
+        otp: emailOtp
       });
       
       if (response.success) {
@@ -303,11 +264,10 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
     setVerifyingPhone(true);
     
     try {
-      const response = await otpAPI.verifyPhoneOTP({
+      const response = await organizationAPI.verifyPhoneOTP({
         phone: formData.adminPhone,
         countryCode: formData.countryCode,
-        otp: phoneOtp,
-        registrationToken: registrationToken
+        otp: phoneOtp
       });
       
       if (response.success) {
@@ -572,21 +532,6 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
               </Box>
             </Collapse>
             
-            {formData.emailVerified && (
-              <Fade in timeout={500}>
-                <Chip
-                  icon={<VerifiedUser />}
-                  label="Email Verified"
-                  color="success"
-                  size="small"
-                  sx={{ 
-                    mt: 1,
-                    borderRadius: 2,
-                    fontWeight: 500,
-                  }}
-                />
-              </Fade>
-            )}
           </Box>
         </Slide>
 
@@ -903,40 +848,66 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
 
         {/* Confirm Password */}
         <Slide direction="up" in timeout={1200}>
-          <TextField
-            fullWidth
-            label="Confirm Password"
-            type={showConfirmPassword ? 'text' : 'password'}
-            value={formData.confirmPassword}
-            onChange={(e) => onFormChange('confirmPassword', e.target.value)}
-            error={!!formErrors.confirmPassword}
-            helperText={formErrors.confirmPassword}
-            placeholder="Confirm your password"
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <Lock sx={{ color: COLORS.TEXT_SECONDARY, fontSize: 20 }} />
-                </InputAdornment>
-              ),
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    edge="end"
-                    sx={{ 
-                      color: COLORS.TEXT_SECONDARY,
-                      '&:hover': {
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                      },
-                    }}
-                  >
-                    {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
-            sx={universalFieldStyle}
-          />
+          <Box>
+            <TextField
+              fullWidth
+              label="Confirm Password"
+              type={showConfirmPassword ? 'text' : 'password'}
+              value={formData.confirmPassword}
+              onChange={(e) => onFormChange('confirmPassword', e.target.value)}
+              error={!!formErrors.confirmPassword || (formData.confirmPassword && formData.password && formData.confirmPassword !== formData.password)}
+              helperText={
+                formErrors.confirmPassword || 
+                (formData.confirmPassword && formData.password && formData.confirmPassword !== formData.password ? 'Passwords do not match' : '')
+              }
+              placeholder="Confirm your password"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Lock sx={{ color: COLORS.TEXT_SECONDARY, fontSize: 20 }} />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      edge="end"
+                      sx={{ 
+                        color: COLORS.TEXT_SECONDARY,
+                        '&:hover': {
+                          backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        },
+                      }}
+                    >
+                      {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+              sx={universalFieldStyle}
+            />
+            
+            {/* Real-time password match indicator */}
+            {formData.confirmPassword && formData.password && (
+              <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                {formData.confirmPassword === formData.password ? (
+                  <>
+                    <CheckCircle sx={{ color: COLORS.SUCCESS, fontSize: 16 }} />
+                    <Typography variant="caption" sx={{ color: COLORS.SUCCESS, fontWeight: 500 }}>
+                      Passwords match
+                    </Typography>
+                  </>
+                ) : (
+                  <>
+                    <Warning sx={{ color: '#f59e0b', fontSize: 16 }} />
+                    <Typography variant="caption" sx={{ color: '#f59e0b', fontWeight: 500 }}>
+                      Passwords do not match
+                    </Typography>
+                  </>
+                )}
+              </Box>
+            )}
+          </Box>
         </Slide>
       </Box>
 
@@ -956,7 +927,7 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
           </Typography>
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
             <Chip
-              icon={formData.emailVerified ? <CheckCircle /> : <Email />}
+              icon={<Email />}
               label={formData.emailVerified ? 'Email Verified' : 'Email Pending'}
               color={formData.emailVerified ? 'success' : 'default'}
               size="medium"

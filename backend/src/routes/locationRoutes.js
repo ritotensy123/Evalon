@@ -1,161 +1,225 @@
 const express = require('express');
+const axios = require('axios');
 const router = express.Router();
-const countryStateCityService = require('../services/countryStateCityService');
 
-/**
- * @route GET /api/locations/countries
- * @desc Get all countries
- * @access Public
- */
+// CountryStateCity API configuration
+const CSC_API_KEY = 'aFZ4Q2ttOXA4TU5PY2FNWUZpNmxmNUhnYTRlNHprVXJHb291Vk9GZQ==';
+const CSC_BASE_URL = 'https://api.countrystatecity.in/v1';
+
+// Axios instance for CountryStateCity API
+const cscApi = axios.create({
+  baseURL: CSC_BASE_URL,
+  timeout: 10000,
+  headers: {
+    'X-CSCAPI-KEY': CSC_API_KEY,
+    'Content-Type': 'application/json'
+  }
+});
+
+// Get all countries
 router.get('/countries', async (req, res) => {
   try {
-    const result = await countryStateCityService.getCountries();
+    console.log('🌍 Fetching countries from CountryStateCity API...');
     
-    if (result.success) {
-      res.status(200).json({
-        success: true,
-        message: 'Countries fetched successfully',
-        data: result.data
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch countries',
-        error: result.error
-      });
-    }
+    const response = await cscApi.get('/countries');
+    const countries = response.data;
+    
+    // Transform the data to match our expected format
+    const transformedCountries = countries.map(country => ({
+      code: country.iso2,
+      name: country.name,
+      phoneCode: country.phonecode,
+      currency: country.currency,
+      currencySymbol: country.currency_symbol
+    }));
+    
+    console.log(`✅ Successfully fetched ${transformedCountries.length} countries`);
+    res.json({
+      success: true,
+      message: 'Countries fetched successfully',
+      data: transformedCountries
+    });
+    
   } catch (error) {
-    console.error('Error in /countries route:', error);
+    console.error('❌ Error fetching countries:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      message: 'Failed to fetch countries',
+      error: error.message
     });
   }
 });
 
-/**
- * @route GET /api/locations/countries/:countryCode/states
- * @desc Get states by country code
- * @access Public
- */
+// Get states by country (alternative route format)
 router.get('/countries/:countryCode/states', async (req, res) => {
   try {
     const { countryCode } = req.params;
     
-    if (!countryCode) {
-      return res.status(400).json({
-        success: false,
-        message: 'Country code is required'
-      });
-    }
+    console.log(`🌍 Fetching states for country: ${countryCode}`);
     
-    const result = await countryStateCityService.getStatesByCountry(countryCode);
+    const response = await cscApi.get(`/countries/${countryCode}/states`);
+    const states = response.data;
     
-    if (result.success) {
-      res.status(200).json({
-        success: true,
-        message: `States for ${countryCode} fetched successfully`,
-        data: result.data
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: `Failed to fetch states for ${countryCode}`,
-        error: result.error
-      });
-    }
+    // Transform the data to match our expected format
+    const transformedStates = states.map(state => ({
+      code: state.iso2,
+      name: state.name,
+      countryCode: state.country_code
+    }));
+    
+    console.log(`✅ Successfully fetched ${transformedStates.length} states for ${countryCode}`);
+    res.json({
+      success: true,
+      message: `States for ${countryCode} fetched successfully`,
+      data: transformedStates
+    });
+    
   } catch (error) {
-    console.error('Error in /states route:', error);
+    console.error('❌ Error fetching states:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      message: 'Failed to fetch states',
+      error: error.message
     });
   }
 });
 
-/**
- * @route GET /api/locations/countries/:countryCode/states/:stateCode/cities
- * @desc Get cities by country code and state code
- * @access Public
- */
+// Get states by country (original route format)
+router.get('/states/:countryCode', async (req, res) => {
+  try {
+    const { countryCode } = req.params;
+    
+    console.log(`🌍 Fetching states for country: ${countryCode}`);
+    
+    const response = await cscApi.get(`/countries/${countryCode}/states`);
+    const states = response.data;
+    
+    // Transform the data to match our expected format
+    const transformedStates = states.map(state => ({
+      code: state.iso2,
+      name: state.name,
+      countryCode: state.country_code
+    }));
+    
+    console.log(`✅ Successfully fetched ${transformedStates.length} states for ${countryCode}`);
+    res.json({
+      success: true,
+      message: `States for ${countryCode} fetched successfully`,
+      data: transformedStates
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching states:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch states',
+      error: error.message
+    });
+  }
+});
+
+// Get cities by state (new route format)
 router.get('/countries/:countryCode/states/:stateCode/cities', async (req, res) => {
   try {
     const { countryCode, stateCode } = req.params;
     
-    if (!countryCode || !stateCode) {
-      return res.status(400).json({
-        success: false,
-        message: 'Both country code and state code are required'
-      });
-    }
+    console.log(`🌍 Fetching cities for state: ${stateCode}, country: ${countryCode}`);
     
-    const result = await countryStateCityService.getCitiesByState(countryCode, stateCode);
+    const response = await cscApi.get(`/countries/${countryCode}/states/${stateCode}/cities`);
+    const cities = response.data;
     
-    if (result.success) {
-      res.status(200).json({
-        success: true,
-        message: `Cities for ${stateCode}, ${countryCode} fetched successfully`,
-        data: result.data
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: `Failed to fetch cities for ${stateCode}, ${countryCode}`,
-        error: result.error
-      });
-    }
+    // Transform the data to match our expected format
+    const transformedCities = cities.map(city => ({
+      name: city.name,
+      stateCode: city.state_code,
+      countryCode: city.country_code
+    }));
+    
+    console.log(`✅ Successfully fetched ${transformedCities.length} cities for ${stateCode}, ${countryCode}`);
+    res.json({
+      success: true,
+      message: `Cities for ${stateCode}, ${countryCode} fetched successfully`,
+      data: transformedCities
+    });
+    
   } catch (error) {
-    console.error('Error in /cities route:', error);
+    console.error('❌ Error fetching cities:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      message: 'Failed to fetch cities',
+      error: error.message
     });
   }
 });
 
-/**
- * @route GET /api/locations/countries/:countryCode
- * @desc Get country details by country code
- * @access Public
- */
+// Get cities by state (original route format)
+router.get('/cities/:countryCode/:stateCode', async (req, res) => {
+  try {
+    const { countryCode, stateCode } = req.params;
+    
+    console.log(`🌍 Fetching cities for state: ${stateCode}, country: ${countryCode}`);
+    
+    const response = await cscApi.get(`/countries/${countryCode}/states/${stateCode}/cities`);
+    const cities = response.data;
+    
+    // Transform the data to match our expected format
+    const transformedCities = cities.map(city => ({
+      name: city.name,
+      stateCode: city.state_code,
+      countryCode: city.country_code
+    }));
+    
+    console.log(`✅ Successfully fetched ${transformedCities.length} cities for ${stateCode}, ${countryCode}`);
+    res.json({
+      success: true,
+      message: `Cities for ${stateCode}, ${countryCode} fetched successfully`,
+      data: transformedCities
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching cities:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch cities',
+      error: error.message
+    });
+  }
+});
+
+// Get country details
 router.get('/countries/:countryCode', async (req, res) => {
   try {
     const { countryCode } = req.params;
     
-    if (!countryCode) {
-      return res.status(400).json({
-        success: false,
-        message: 'Country code is required'
-      });
-    }
+    console.log(`🌍 Fetching country details for: ${countryCode}`);
     
-    const result = await countryStateCityService.getCountryByCode(countryCode);
+    const response = await cscApi.get(`/countries/${countryCode}`);
+    const country = response.data;
     
-    if (result.success) {
-      res.status(200).json({
-        success: true,
-        message: `Country details for ${countryCode} fetched successfully`,
-        data: result.data
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: `Failed to fetch country details for ${countryCode}`,
-        error: result.error
-      });
-    }
+    // Transform the data to match our expected format
+    const transformedCountry = {
+      code: country.iso2,
+      name: country.name,
+      phoneCode: country.phonecode,
+      currency: country.currency,
+      currencySymbol: country.currency_symbol
+    };
+    
+    console.log(`✅ Successfully fetched country details for ${countryCode}`);
+    res.json({
+      success: true,
+      message: `Country details for ${countryCode} fetched successfully`,
+      data: transformedCountry
+    });
+    
   } catch (error) {
-    console.error('Error in /country route:', error);
+    console.error('❌ Error fetching country details:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      message: 'Failed to fetch country details',
+      error: error.message
     });
   }
 });
 
 module.exports = router;
-

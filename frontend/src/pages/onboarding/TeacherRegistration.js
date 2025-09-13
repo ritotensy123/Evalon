@@ -36,6 +36,7 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [redirectCountdown, setRedirectCountdown] = useState(5);
+  const [registrationToken, setRegistrationToken] = useState(null);
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
   
   // Enhanced form data structure
@@ -110,7 +111,7 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
         setRedirectCountdown((prev) => {
           if (prev <= 1) {
             clearInterval(timer);
-            onNavigateToLogin();
+            window.location.href = '/dashboard';
             return 0;
           }
           return prev - 1;
@@ -269,6 +270,10 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
             city: formData.city,
             pincode: formData.pincode
           });
+          // Store registration token from Step 1
+          if (response.success && response.data.registrationToken) {
+            setRegistrationToken(response.data.registrationToken);
+          }
           break;
         case 1: // Professional Details
           response = await teacherAPI.registerStep2({
@@ -277,13 +282,23 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
             affiliationType: formData.affiliationType,
             experienceLevel: formData.experienceLevel,
             currentInstitution: formData.currentInstitution,
-            yearsOfExperience: formData.yearsOfExperience
+            yearsOfExperience: formData.yearsOfExperience,
+            registrationToken: registrationToken
           });
           break;
         case 2: // Organization Link
           response = await teacherAPI.registerStep3({
-            organizationCode: formData.organizationCode
+            organizationCode: formData.organizationCode,
+            registrationToken: registrationToken
           });
+          // Update organization validation status
+          if (response.success && response.data.isOrganizationValid !== undefined) {
+            setFormData(prev => ({
+              ...prev,
+              isOrganizationValid: response.data.isOrganizationValid,
+              associationStatus: response.data.isOrganizationValid ? 'verified' : 'not_found'
+            }));
+          }
           break;
         default:
           throw new Error('Invalid step');
@@ -311,7 +326,10 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
     try {
       const result = await teacherAPI.registerStep4({
         password: formData.password,
-        confirmPassword: formData.confirmPassword
+        confirmPassword: formData.confirmPassword,
+        emailVerified: formData.emailVerified || false,
+        phoneVerified: formData.phoneVerified || false,
+        registrationToken: registrationToken
       });
       
       if (result.success) {
@@ -319,6 +337,13 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
         setIsSubmitting(false);
         setShowSuccess(true);
         showNotification('Registration completed successfully!', 'success');
+        
+        // Store the JWT token for future use
+        if (result.data.token) {
+          localStorage.setItem('authToken', result.data.token);
+          localStorage.setItem('userType', 'teacher');
+          localStorage.setItem('teacherId', result.data.teacher.id);
+        }
       } else {
         throw new Error(result.message || 'Registration failed');
       }
@@ -361,6 +386,7 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
             formData={formData}
             formErrors={formErrors}
             onFormChange={handleFormChange}
+            registrationToken={registrationToken}
           />
         );
       default:
@@ -469,14 +495,14 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
                 fontStyle: 'italic',
               }}
             >
-              Redirecting to login page in {redirectCountdown} seconds...
+              Redirecting to dashboard in {redirectCountdown} seconds...
             </Typography>
             
             {/* Action Button */}
             <Button
               variant="contained"
               size="large"
-              onClick={onNavigateToLogin}
+              onClick={() => window.location.href = '/dashboard'}
               sx={{
                 background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                 borderRadius: 2,
@@ -493,7 +519,7 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
                 transition: 'all 0.2s ease',
               }}
             >
-              Go to Login
+              Go to Dashboard
             </Button>
           </Box>
         </Container>

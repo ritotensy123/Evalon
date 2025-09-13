@@ -10,6 +10,7 @@ import {
   LinearProgress,
   InputAdornment,
   IconButton,
+  Alert,
 } from '@mui/material';
 import {
   CheckCircle,
@@ -23,8 +24,9 @@ import {
   Phone,
 } from '@mui/icons-material';
 import { COLORS, BORDER_RADIUS } from '../../../theme/constants';
+import { studentAPI } from '../../../services/api';
 
-const Step3SecurityVerification = ({ formData, formErrors, onFormChange }) => {
+const Step3SecurityVerification = ({ formData, formErrors, onFormChange, registrationToken }) => {
   const [emailOtpSent, setEmailOtpSent] = useState(false);
   const [phoneOtpSent, setPhoneOtpSent] = useState(false);
   const [emailOtp, setEmailOtp] = useState('');
@@ -35,6 +37,8 @@ const Step3SecurityVerification = ({ formData, formErrors, onFormChange }) => {
   const [phoneTimer, setPhoneTimer] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   // Password strength calculation - matching teacher form exactly
   const calculatePasswordStrength = (password) => {
@@ -108,66 +112,126 @@ const Step3SecurityVerification = ({ formData, formErrors, onFormChange }) => {
     },
   };
 
-  const handleSendEmailOTP = () => {
-    setEmailOtpSent(true);
-    setEmailTimer(30);
-    const interval = setInterval(() => {
-      setEmailTimer((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return prev - 1;
+  const handleSendEmailOTP = async () => {
+    try {
+      setError('');
+      setSuccess('');
+      
+      const response = await studentAPI.sendEmailOTP({
+        emailAddress: formData.emailAddress,
+        registrationToken: registrationToken
       });
-    }, 1000);
+
+      setEmailOtpSent(true);
+      setEmailTimer(30);
+      setSuccess('Email OTP sent successfully');
+      
+      const interval = setInterval(() => {
+        setEmailTimer((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to send email OTP:', error);
+      setError(error.message || 'Failed to send email OTP');
+    }
   };
 
-  const handleSendPhoneOTP = () => {
-    setPhoneOtpSent(true);
-    setPhoneTimer(30);
-    const interval = setInterval(() => {
-      setPhoneTimer((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return prev - 1;
+  const handleSendPhoneOTP = async () => {
+    try {
+      setError('');
+      setSuccess('');
+      
+      const response = await studentAPI.sendPhoneOTP({
+        phoneNumber: formData.phoneNumber,
+        countryCode: formData.countryCode,
+        registrationToken: registrationToken
       });
-    }, 1000);
+
+      setPhoneOtpSent(true);
+      setPhoneTimer(30);
+      setSuccess('Phone OTP sent successfully');
+      
+      const interval = setInterval(() => {
+        setPhoneTimer((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to send phone OTP:', error);
+      setError(error.message || 'Failed to send phone OTP');
+    }
   };
 
-  const handleVerifyEmailOTP = () => {
-    setVerifyingEmail(true);
-    setTimeout(() => {
+  const handleVerifyEmailOTP = async () => {
+    try {
+      setError('');
+      setSuccess('');
+      setVerifyingEmail(true);
+      
+      const response = await studentAPI.verifyEmailOTP({
+        emailOTP: emailOtp,
+        emailAddress: formData.emailAddress,
+        registrationToken: registrationToken
+      });
+
       onFormChange('emailVerified', true);
       setVerifyingEmail(false);
       setEmailOtp('');
-    }, 1000);
+      setSuccess('Email verified successfully');
+    } catch (error) {
+      console.error('Failed to verify email OTP:', error);
+      setError(error.message || 'Failed to verify email OTP');
+      setVerifyingEmail(false);
+    }
   };
 
-  const handleVerifyPhoneOTP = () => {
-    setVerifyingPhone(true);
-    setTimeout(() => {
+  const handleVerifyPhoneOTP = async () => {
+    try {
+      setError('');
+      setSuccess('');
+      setVerifyingPhone(true);
+      
+      const response = await studentAPI.verifyPhoneOTP({
+        phoneOTP: phoneOtp,
+        phoneNumber: formData.phoneNumber,
+        countryCode: formData.countryCode,
+        registrationToken: registrationToken
+      });
+
       onFormChange('phoneVerified', true);
       setVerifyingPhone(false);
       setPhoneOtp('');
-    }, 1000);
+      setSuccess('Phone verified successfully');
+    } catch (error) {
+      console.error('Failed to verify phone OTP:', error);
+      setError(error.message || 'Failed to verify phone OTP');
+      setVerifyingPhone(false);
+    }
   };
 
   return (
     <Box sx={{ width: '100%' }}>
       {/* Section Header */}
-      <Box sx={{ mb: { xs: 2, sm: 3 } }}>
+      <Box sx={{ mb: 2 }}>
         <Typography
           variant="h6"
           sx={{
             fontWeight: 600,
             color: '#1a1a1a',
-            mb: { xs: 0.5, sm: 1 },
+            mb: 0.5,
             fontSize: { xs: '1.1rem', sm: '1.25rem' },
           }}
         >
-          Secure Verification
+          Secure Your Account
         </Typography>
         <Typography
           variant="body2"
@@ -176,12 +240,24 @@ const Step3SecurityVerification = ({ formData, formErrors, onFormChange }) => {
             fontSize: { xs: '0.8rem', sm: '0.875rem' },
           }}
         >
-          Verify your email and phone number, then create a secure password for your account.
+          Verify your email and phone number for account security
         </Typography>
       </Box>
 
+      {/* Error and Success Messages */}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          {success}
+        </Alert>
+      )}
+
       {/* Form Fields */}
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 2, sm: 2.5 } }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         
         {/* Email Verification */}
         <Box>

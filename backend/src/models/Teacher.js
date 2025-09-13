@@ -96,7 +96,7 @@ const teacherSchema = new mongoose.Schema({
   },
   associationStatus: {
     type: String,
-    enum: ['verified', 'pending', 'not_found'],
+    enum: ['verified', 'pending', 'not_found', 'freelance'],
     default: 'pending'
   },
   

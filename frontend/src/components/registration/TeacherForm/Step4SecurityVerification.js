@@ -25,7 +25,7 @@ import {
 import { COLORS, BORDER_RADIUS } from '../../../theme/constants';
 import { teacherAPI } from '../../../services/api';
 
-const Step4SecurityVerification = ({ formData, formErrors, onFormChange }) => {
+const Step4SecurityVerification = ({ formData, formErrors, onFormChange, registrationToken }) => {
   const [emailOtpSent, setEmailOtpSent] = useState(false);
   const [phoneOtpSent, setPhoneOtpSent] = useState(false);
   const [emailOtp, setEmailOtp] = useState('');
@@ -111,7 +111,10 @@ const Step4SecurityVerification = ({ formData, formErrors, onFormChange }) => {
 
   const handleSendEmailOTP = async () => {
     try {
-      const response = await teacherAPI.sendEmailOTP(formData.emailAddress);
+      const response = await teacherAPI.sendEmailOTP({ 
+        emailAddress: formData.emailAddress,
+        registrationToken: registrationToken
+      });
       if (response.success) {
         setEmailOtpSent(true);
         setEmailTimer(30);
@@ -138,7 +141,11 @@ const Step4SecurityVerification = ({ formData, formErrors, onFormChange }) => {
 
   const handleSendPhoneOTP = async () => {
     try {
-      const response = await teacherAPI.sendPhoneOTP(formData.phoneNumber, formData.countryCode);
+      const response = await teacherAPI.sendPhoneOTP({ 
+        phoneNumber: formData.phoneNumber, 
+        countryCode: formData.countryCode,
+        registrationToken: registrationToken
+      });
       if (response.success) {
         setPhoneOtpSent(true);
         setPhoneTimer(30);
@@ -166,7 +173,11 @@ const Step4SecurityVerification = ({ formData, formErrors, onFormChange }) => {
   const handleVerifyEmailOTP = async () => {
     setVerifyingEmail(true);
     try {
-      const response = await teacherAPI.verifyEmailOTP(emailOtp);
+      const response = await teacherAPI.verifyEmailOTP({ 
+        emailOTP: emailOtp, 
+        emailAddress: formData.emailAddress,
+        registrationToken: registrationToken
+      });
       if (response.success) {
         onFormChange('emailVerified', true);
         console.log('Email OTP verified successfully');
@@ -184,7 +195,12 @@ const Step4SecurityVerification = ({ formData, formErrors, onFormChange }) => {
   const handleVerifyPhoneOTP = async () => {
     setVerifyingPhone(true);
     try {
-      const response = await teacherAPI.verifyPhoneOTP(phoneOtp);
+      const response = await teacherAPI.verifyPhoneOTP({ 
+        phoneOTP: phoneOtp, 
+        phoneNumber: formData.phoneNumber, 
+        countryCode: formData.countryCode,
+        registrationToken: registrationToken
+      });
       if (response.success) {
         onFormChange('phoneVerified', true);
         console.log('Phone OTP verified successfully');

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -16,22 +16,87 @@ import {
   LocationOn,
   Home,
   PinDrop,
+  PersonOutline,
 } from '@mui/icons-material';
 import { COLORS, BORDER_RADIUS } from '../../../theme/constants';
+import { locationAPI } from '../../../services/api';
 
 const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
-  const countries = [
-    { value: 'IN', label: '🇮🇳 India' },
-    { value: 'US', label: '🇺🇸 United States' },
-    { value: 'GB', label: '🇬🇧 United Kingdom' },
-    { value: 'CA', label: '🇨🇦 Canada' },
-    { value: 'AU', label: '🇦🇺 Australia' },
-    { value: 'DE', label: '🇩🇪 Germany' },
-    { value: 'FR', label: '🇫🇷 France' },
-    { value: 'JP', label: '🇯🇵 Japan' },
-    { value: 'SG', label: '🇸🇬 Singapore' },
-    { value: 'AE', label: '🇦🇪 United Arab Emirates' },
-  ];
+  // Initialize with fallback countries to prevent undefined values
+  const [countries, setCountries] = useState([
+    { value: 'IN', label: 'India', name: 'India', phonecode: '91', flag: '🇮🇳' },
+    { value: 'US', label: 'United States', name: 'United States', phonecode: '1', flag: '🇺🇸' },
+    { value: 'GB', label: 'United Kingdom', name: 'United Kingdom', phonecode: '44', flag: '🇬🇧' },
+    { value: 'CA', label: 'Canada', name: 'Canada', phonecode: '1', flag: '🇨🇦' },
+    { value: 'AU', label: 'Australia', name: 'Australia', phonecode: '61', flag: '🇦🇺' },
+  ]);
+  const [loadingCountries, setLoadingCountries] = useState(false);
+
+  // Load countries with phone codes on component mount
+  useEffect(() => {
+    const loadCountries = async () => {
+      setLoadingCountries(true);
+      try {
+        const response = await locationAPI.getCountries();
+        if (response.success && response.data && Array.isArray(response.data)) {
+          const countryOptions = response.data.map(country => ({
+            value: country.code,
+            label: country.name,
+            name: country.name, // Add name property for consistency
+            phonecode: country.phoneCode || '1', // Use phoneCode (camelCase) from API
+            flag: getCountryFlag(country.code)
+          }));
+          setCountries(countryOptions);
+        }
+      } catch (error) {
+        console.error('Failed to load countries:', error);
+        // Keep the fallback countries that are already set
+      } finally {
+        setLoadingCountries(false);
+      }
+    };
+
+    loadCountries();
+  }, []);
+
+  // Helper function to get country flag emoji
+  const getCountryFlag = (countryCode) => {
+    const flagMap = {
+      'IN': '🇮🇳', 'US': '🇺🇸', 'GB': '🇬🇧', 'CA': '🇨🇦', 'AU': '🇦🇺',
+      'DE': '🇩🇪', 'FR': '🇫🇷', 'JP': '🇯🇵', 'SG': '🇸🇬', 'AE': '🇦🇪',
+      'CN': '🇨🇳', 'BR': '🇧🇷', 'RU': '🇷🇺', 'IT': '🇮🇹', 'ES': '🇪🇸',
+      'MX': '🇲🇽', 'KR': '🇰🇷', 'NL': '🇳🇱', 'SE': '🇸🇪', 'NO': '🇳🇴',
+      'DK': '🇩🇰', 'FI': '🇫🇮', 'CH': '🇨🇭', 'AT': '🇦🇹', 'BE': '🇧🇪',
+      'PL': '🇵🇱', 'CZ': '🇨🇿', 'HU': '🇭🇺', 'PT': '🇵🇹', 'GR': '🇬🇷',
+      'IE': '🇮🇪', 'NZ': '🇳🇿', 'ZA': '🇿🇦', 'EG': '🇪🇬', 'NG': '🇳🇬',
+      'KE': '🇰🇪', 'GH': '🇬🇭', 'MA': '🇲🇦', 'TN': '🇹🇳', 'DZ': '🇩🇿',
+      'SA': '🇸🇦', 'AE': '🇦🇪', 'QA': '🇶🇦', 'KW': '🇰🇼', 'BH': '🇧🇭',
+      'OM': '🇴🇲', 'JO': '🇯🇴', 'LB': '🇱🇧', 'SY': '🇸🇾', 'IQ': '🇮🇶',
+      'IR': '🇮🇷', 'TR': '🇹🇷', 'IL': '🇮🇱', 'PK': '🇵🇰', 'BD': '🇧🇩',
+      'LK': '🇱🇰', 'MV': '🇲🇻', 'NP': '🇳🇵', 'BT': '🇧🇹', 'MM': '🇲🇲',
+      'TH': '🇹🇭', 'LA': '🇱🇦', 'KH': '🇰🇭', 'VN': '🇻🇳', 'MY': '🇲🇾',
+      'ID': '🇮🇩', 'PH': '🇵🇭', 'TW': '🇹🇼', 'HK': '🇭🇰', 'MO': '🇲🇴',
+      'MN': '🇲🇳', 'KZ': '🇰🇿', 'UZ': '🇺🇿', 'KG': '🇰🇬', 'TJ': '🇹🇯',
+      'TM': '🇹🇲', 'AF': '🇦🇫', 'UY': '🇺🇾', 'PY': '🇵🇾', 'BO': '🇧🇴',
+      'PE': '🇵🇪', 'EC': '🇪🇨', 'CO': '🇨🇴', 'VE': '🇻🇪', 'GY': '🇬🇾',
+      'SR': '🇸🇷', 'GF': '🇬🇫', 'CL': '🇨🇱', 'AR': '🇦🇷', 'FK': '🇫🇰',
+      'CU': '🇨🇺', 'JM': '🇯🇲', 'HT': '🇭🇹', 'DO': '🇩🇴', 'PR': '🇵🇷',
+      'TT': '🇹🇹', 'BB': '🇧🇧', 'GD': '🇬🇩', 'LC': '🇱🇨', 'VC': '🇻🇨',
+      'AG': '🇦🇬', 'KN': '🇰🇳', 'DM': '🇩🇲', 'BS': '🇧🇸', 'BZ': '🇧🇿',
+      'GT': '🇬🇹', 'SV': '🇸🇻', 'HN': '🇭🇳', 'NI': '🇳🇮', 'CR': '🇨🇷',
+      'PA': '🇵🇦', 'AW': '🇦🇼', 'CW': '🇨🇼', 'SX': '🇸🇽', 'BQ': '🇧🇶',
+      'AI': '🇦🇮', 'VG': '🇻🇬', 'VI': '🇻🇮', 'TC': '🇹🇨', 'KY': '🇰🇾',
+      'BM': '🇧🇲', 'GL': '🇬🇱', 'IS': '🇮🇸', 'FO': '🇫🇴', 'SJ': '🇸🇯',
+      'AX': '🇦🇽', 'EE': '🇪🇪', 'LV': '🇱🇻', 'LT': '🇱🇹', 'BY': '🇧🇾',
+      'UA': '🇺🇦', 'MD': '🇲🇩', 'RO': '🇷🇴', 'BG': '🇧🇬', 'RS': '🇷🇸',
+      'ME': '🇲🇪', 'BA': '🇧🇦', 'HR': '🇭🇷', 'SI': '🇸🇮', 'SK': '🇸🇰',
+      'LU': '🇱🇺', 'LI': '🇱🇮', 'MC': '🇲🇨', 'AD': '🇦🇩', 'SM': '🇸🇲',
+      'VA': '🇻🇦', 'MT': '🇲🇹', 'CY': '🇨🇾', 'AL': '🇦🇱', 'MK': '🇲🇰',
+      'XK': '🇽🇰', 'YU': '🇷🇸', 'CS': '🇷🇸', 'SU': '🇷🇺', 'DD': '🇩🇪',
+      'YU': '🇷🇸', 'CS': '🇷🇸', 'SU': '🇷🇺', 'DD': '🇩🇪'
+    };
+    return flagMap[countryCode] || '🏳️';
+  };
 
   // Enhanced field styling - matching organization registration
   const universalFieldStyle = {
@@ -110,7 +175,7 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
           sx={universalFieldStyle}
         />
 
-        {/* Phone Number */}
+        {/* Phone Number with Country Code */}
         <TextField
           fullWidth
           label="Phone Number"
@@ -119,13 +184,54 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
           error={!!formErrors.phoneNumber}
           helperText={formErrors.phoneNumber}
           placeholder="Enter your phone number"
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <Phone sx={{ color: '#6b7280' }} />
-              </InputAdornment>
-            ),
-          }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <FormControl sx={{ minWidth: 90, mr: 1 }}>
+                    <Select
+                      value={formData.countryCode || (countries.length > 0 ? `+${countries[0].phonecode}` : '+91')}
+                      onChange={(e) => {
+                      onFormChange('countryCode', e.target.value);
+                      // Find and set the country based on the selected code
+                      const selectedCountry = countries.find(c => `+${c.phonecode}` === e.target.value);
+                      if (selectedCountry) {
+                        onFormChange('country', selectedCountry.value);
+                      }
+                    }}
+                      variant="standard"
+                      sx={{
+                        '&:before': { borderBottom: 'none' },
+                        '&:after': { borderBottom: 'none' },
+                        '&:hover:before': { borderBottom: 'none' },
+                        '&:hover:after': { borderBottom: 'none' },
+                        '& .MuiSelect-select': {
+                          paddingTop: 0,
+                          paddingBottom: 0,
+                          fontSize: '0.875rem',
+                          fontWeight: 500,
+                        }
+                      }}
+                      MenuProps={{
+                        PaperProps: {
+                          sx: {
+                            maxHeight: 200,
+                            '& .MuiMenuItem-root': {
+                              fontSize: '0.875rem',
+                            }
+                          }
+                        }
+                      }}
+                    >
+                    {countries.map((country) => (
+                      <MenuItem key={country.value} value={`+${country.phonecode}`}>
+                        {country.flag} +{country.phonecode}
+                      </MenuItem>
+                    ))}
+                    </Select>
+                  </FormControl>
+                </InputAdornment>
+              ),
+            }}
           sx={universalFieldStyle}
         />
 
@@ -149,6 +255,101 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
           sx={universalFieldStyle}
         />
 
+        {/* Row: Date of Birth and Gender */}
+        <Box sx={{ 
+          display: 'flex', 
+          gap: { xs: 1, sm: 2 }, 
+          flexDirection: { xs: 'column', sm: 'row' },
+          alignItems: { xs: 'stretch', sm: 'flex-start' },
+          mb: 1
+        }}>
+          <TextField
+            fullWidth
+            label="Date of Birth"
+            type="date"
+            value={formData.dateOfBirth}
+            onChange={(e) => onFormChange('dateOfBirth', e.target.value)}
+            error={!!formErrors.dateOfBirth}
+            helperText={formErrors.dateOfBirth || "You must be at least 5 years old to register"}
+            inputProps={{
+              max: new Date().toISOString().split('T')[0] // Prevent future dates
+            }}
+            InputLabelProps={{
+              shrink: true,
+            }}
+            sx={{
+              ...universalFieldStyle,
+              '& .MuiInputBase-input': {
+                padding: '16.5px 14px',
+                fontSize: '1rem',
+                color: '#1f2937',
+                '&::-webkit-calendar-picker-indicator': {
+                  color: COLORS.PRIMARY,
+                  cursor: 'pointer',
+                }
+              },
+              '& .MuiInputLabel-root': {
+                color: '#6b7280',
+                '&.Mui-focused': {
+                  color: COLORS.PRIMARY,
+                }
+              }
+            }}
+          />
+
+          <FormControl 
+            fullWidth
+            sx={{ 
+              ...universalFieldStyle,
+              '& .MuiInputLabel-root': {
+                color: '#6b7280',
+                '&.Mui-focused': {
+                  color: COLORS.PRIMARY,
+                }
+              },
+              '& .MuiSelect-select': {
+                padding: '16.5px 14px',
+                fontSize: '1rem',
+                color: '#1f2937',
+                '&:focus': {
+                  backgroundColor: 'transparent',
+                }
+              },
+              '& .MuiOutlinedInput-notchedOutline': {
+                borderColor: '#d1d5db',
+                '&:hover': {
+                  borderColor: COLORS.PRIMARY,
+                }
+              }
+            }}
+          >
+            <InputLabel id="gender-label">Gender</InputLabel>
+            <Select
+              labelId="gender-label"
+              value={formData.gender}
+              label="Gender"
+              onChange={(e) => onFormChange('gender', e.target.value)}
+              error={!!formErrors.gender}
+              displayEmpty
+              startAdornment={
+                <InputAdornment position="start">
+                  <PersonOutline sx={{ color: '#6b7280' }} />
+                </InputAdornment>
+              }
+              renderValue={(selected) => {
+                if (!selected) {
+                  return <span style={{ color: '#9ca3af' }}>Select Gender</span>;
+                }
+                return selected.charAt(0).toUpperCase() + selected.slice(1);
+              }}
+            >
+              <MenuItem value="male">Male</MenuItem>
+              <MenuItem value="female">Female</MenuItem>
+              <MenuItem value="other">Other</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
+
         {/* Row: Country and City */}
         <Box sx={{ 
           display: 'flex', 
@@ -162,7 +363,14 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
               label="Country"
               onChange={(e) => onFormChange('country', e.target.value)}
               error={!!formErrors.country}
-              placeholder="Select your country"
+              displayEmpty
+              renderValue={(selected) => {
+                if (!selected) {
+                  return <span style={{ color: '#9ca3af' }}>Select a Country</span>;
+                }
+                const selectedCountry = countries.find(c => c.value === selected);
+                return selectedCountry ? selectedCountry.name : selected;
+              }}
               startAdornment={
                 <InputAdornment position="start">
                   <LocationOn sx={{ color: '#6b7280', mr: 1 }} />

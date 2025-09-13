@@ -29,10 +29,12 @@ import {
   Pending,
 } from '@mui/icons-material';
 import { COLORS, BORDER_RADIUS } from '../../../theme/constants';
+import { studentAPI } from '../../../services/api';
 
-const Step2OrganizationVerification = ({ formData, formErrors, onFormChange }) => {
+const Step2OrganizationVerification = ({ formData, formErrors, onFormChange, registrationToken }) => {
   const [isValidating, setIsValidating] = useState(false);
   const [showInvalidDialog, setShowInvalidDialog] = useState(false);
+  const [registrationType, setRegistrationType] = useState(formData.registrationType || 'organization');
 
   const academicLevels = [
     { value: 'high_school', label: 'High School' },
@@ -45,37 +47,34 @@ const Step2OrganizationVerification = ({ formData, formErrors, onFormChange }) =
     { value: 'other', label: 'Other' },
   ];
 
-  const handleOrganizationCodeChange = (value) => {
+  const handleOrganizationCodeChange = async (value) => {
     onFormChange('organizationCode', value);
     
-    // Simulate validation when code is entered
-    if (value.length >= 3) {
+    // Validate organization when code is entered
+    if (value.length >= 3 && registrationToken) {
       setIsValidating(true);
-      setTimeout(() => {
-        // Simulate API validation
-        const mockOrgData = {
-          'ORG001': { name: 'Tech University', status: 'verified' },
-          'ORG002': { name: 'Science College', status: 'pending' },
-          'ORG003': { name: 'Engineering Institute', status: 'not_found' },
-        };
+      try {
+        const response = await studentAPI.registerStep2({
+          organizationCode: value,
+          registrationToken: registrationToken
+        });
+
+        onFormChange('organizationName', response.data.organizationName);
+        onFormChange('isOrganizationValid', response.data.isOrganizationValid);
+        onFormChange('studentVerificationStatus', response.data.associationStatus);
         
-        const orgCode = value.toUpperCase();
-        const orgData = mockOrgData[orgCode];
-        
-        if (orgData) {
-          onFormChange('organizationName', orgData.name);
-          onFormChange('studentVerificationStatus', orgData.status);
-          onFormChange('isOrganizationValid', orgData.status === 'verified');
-        } else {
-          onFormChange('organizationName', '');
-          onFormChange('studentVerificationStatus', 'not_found');
-          onFormChange('isOrganizationValid', false);
-          // Show popup for invalid code
-          setShowInvalidDialog(true);
-        }
         setIsValidating(false);
-      }, 1000);
-    } else {
+      } catch (error) {
+        console.error('Organization verification failed:', error);
+        
+        onFormChange('organizationName', '');
+        onFormChange('isOrganizationValid', false);
+        onFormChange('studentVerificationStatus', 'not_found');
+        
+        setIsValidating(false);
+        setShowInvalidDialog(true);
+      }
+    } else if (value.length < 3) {
       onFormChange('isOrganizationValid', false);
       onFormChange('organizationName', '');
       onFormChange('studentVerificationStatus', '');
@@ -93,6 +92,21 @@ const Step2OrganizationVerification = ({ formData, formErrors, onFormChange }) =
 
   const handleTryAgain = () => {
     setShowInvalidDialog(false);
+  };
+
+  const handleRegistrationTypeChange = (type) => {
+    setRegistrationType(type);
+    onFormChange('registrationType', type);
+    
+    if (type === 'standalone') {
+      onFormChange('isStandalone', true);
+      onFormChange('organizationCode', '');
+      onFormChange('isOrganizationValid', false);
+      onFormChange('organizationName', '');
+      onFormChange('studentVerificationStatus', '');
+    } else {
+      onFormChange('isStandalone', false);
+    }
   };
 
   // Custom verification badge component
@@ -305,7 +319,7 @@ const Step2OrganizationVerification = ({ formData, formErrors, onFormChange }) =
             fontSize: { xs: '1.1rem', sm: '1.25rem' },
           }}
         >
-          Link to Institution
+          Registration Type
         </Typography>
         <Typography
           variant="body2"
@@ -314,44 +328,159 @@ const Step2OrganizationVerification = ({ formData, formErrors, onFormChange }) =
             fontSize: { xs: '0.8rem', sm: '0.875rem' },
           }}
         >
-          Enter your organization code to link your student account
+          Choose how you want to register
         </Typography>
       </Box>
 
-      {/* Form Fields */}
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, sm: 2, md: 2.5 } }}>
-        
-        {/* Organization Code Input */}
-        <TextField
-          fullWidth
-          label="Organization Code"
-          value={formData.organizationCode}
-          onChange={(e) => handleOrganizationCodeChange(e.target.value)}
-          error={!!formErrors.organizationCode}
-          helperText={formErrors.organizationCode}
-          placeholder="Enter your organization code"
-          sx={universalFieldStyle}
-          InputProps={{
-            endAdornment: formData.organizationCode && (
-              <InputAdornment position="end">
-                {isValidating ? (
-                  <CircularProgress size={20} sx={{ color: COLORS.PRIMARY }} />
-                ) : (
-                  <Search sx={{ color: '#9ca3af', fontSize: 20 }} />
-                )}
-              </InputAdornment>
-            ),
-          }}
-        />
+      {/* Registration Type Selection - Minimalistic */}
+      <Box sx={{ mb: 3 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          {/* Organization Registration Option */}
+          <Box
+            onClick={() => handleRegistrationTypeChange('organization')}
+            sx={{
+              p: 2,
+              border: `1px solid ${registrationType === 'organization' ? COLORS.PRIMARY : '#e5e7eb'}`,
+              borderRadius: 1.5,
+              cursor: 'pointer',
+              backgroundColor: registrationType === 'organization' ? 'rgba(102, 126, 234, 0.03)' : '#ffffff',
+              transition: 'all 0.15s ease',
+              '&:hover': {
+                borderColor: COLORS.PRIMARY,
+                backgroundColor: 'rgba(102, 126, 234, 0.03)',
+              },
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box
+                sx={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  backgroundColor: registrationType === 'organization' ? COLORS.PRIMARY : '#f3f4f6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  flexShrink: 0,
+                }}
+              >
+                <Business sx={{ fontSize: 16 }} />
+              </Box>
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#1f2937', mb: 0.25 }}>
+                  Link to Institution
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '0.875rem' }}>
+                  I have an organization code
+                </Typography>
+              </Box>
+              {registrationType === 'organization' && (
+                <CheckCircle sx={{ color: COLORS.PRIMARY, fontSize: 20 }} />
+              )}
+            </Box>
+          </Box>
 
-        {/* Organization Verification Badge */}
-        {formData.organizationName && (
-          <VerificationBadge
-            status={formData.studentVerificationStatus}
-            organizationName={formData.organizationName}
-            orgCode={formData.organizationCode.toUpperCase()}
+          {/* Standalone Registration Option */}
+          <Box
+            onClick={() => handleRegistrationTypeChange('standalone')}
+            sx={{
+              p: 2,
+              border: `1px solid ${registrationType === 'standalone' ? COLORS.PRIMARY : '#e5e7eb'}`,
+              borderRadius: 1.5,
+              cursor: 'pointer',
+              backgroundColor: registrationType === 'standalone' ? 'rgba(102, 126, 234, 0.03)' : '#ffffff',
+              transition: 'all 0.15s ease',
+              '&:hover': {
+                borderColor: COLORS.PRIMARY,
+                backgroundColor: 'rgba(102, 126, 234, 0.03)',
+              },
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box
+                sx={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  backgroundColor: registrationType === 'standalone' ? COLORS.PRIMARY : '#f3f4f6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  flexShrink: 0,
+                }}
+              >
+                <VerifiedUser sx={{ fontSize: 16 }} />
+              </Box>
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#1f2937', mb: 0.25 }}>
+                  Independent Student
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '0.875rem' }}>
+                  I don't have an organization code yet
+                </Typography>
+              </Box>
+              {registrationType === 'standalone' && (
+                <CheckCircle sx={{ color: COLORS.PRIMARY, fontSize: 20 }} />
+              )}
+            </Box>
+          </Box>
+        </Box>
+      </Box>
+
+      {/* Organization Registration Form Fields */}
+      {registrationType === 'organization' && (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, sm: 2, md: 2.5 } }}>
+          
+          {/* Organization Code Input */}
+          <TextField
+            fullWidth
+            label="Organization Code"
+            value={formData.organizationCode}
+            onChange={(e) => handleOrganizationCodeChange(e.target.value)}
+            error={!!formErrors.organizationCode}
+            helperText={formErrors.organizationCode}
+            placeholder="Enter your organization code"
+            sx={universalFieldStyle}
+            InputProps={{
+              endAdornment: formData.organizationCode && (
+                <InputAdornment position="end">
+                  {isValidating ? (
+                    <CircularProgress size={20} sx={{ color: COLORS.PRIMARY }} />
+                  ) : (
+                    <Search sx={{ color: '#9ca3af', fontSize: 20 }} />
+                  )}
+                </InputAdornment>
+              ),
+            }}
           />
-        )}
+
+          {/* Organization Verification Badge */}
+          {formData.organizationName && (
+            <VerificationBadge
+              status={formData.studentVerificationStatus}
+              organizationName={formData.organizationName}
+              orgCode={formData.organizationCode.toUpperCase()}
+            />
+          )}
+
+          {/* Test Instructions */}
+          <Box sx={{ 
+            p: 2, 
+            backgroundColor: '#f8fafc', 
+            borderRadius: BORDER_RADIUS.MD, 
+            border: '1px solid #e2e8f0' 
+          }}>
+            <Typography variant="body2" sx={{ color: '#6b7280', textAlign: 'center' }}>
+              <strong>Test Codes:</strong> ORG001 (Verified), ORG002 (Pending), ORG003 (Not Found)
+            </Typography>
+          </Box>
+        </Box>
+      )}
+
+      {/* Common Form Fields */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, sm: 2, md: 2.5 } }}>
 
         {/* Academic Level */}
         <Box>
@@ -390,32 +519,22 @@ const Step2OrganizationVerification = ({ formData, formErrors, onFormChange }) =
           </FormControl>
         </Box>
 
-        {/* Info Box */}
+        {/* Info Box - Minimalistic */}
         <Box
           sx={{
-            p: 2.5,
-            backgroundColor: 'rgba(102, 126, 234, 0.05)',
-            borderRadius: 2,
-            border: '1px solid rgba(102, 126, 234, 0.1)',
+            p: 2,
+            backgroundColor: '#f8fafc',
+            borderRadius: 1.5,
+            border: '1px solid #e2e8f0',
           }}
         >
           <Typography
             variant="body2"
-            sx={{ color: '#555555', fontSize: '0.875rem' }}
+            sx={{ color: '#6b7280', fontSize: '0.875rem' }}
           >
-            <strong style={{ color: '#333333' }}>Note:</strong> Your Org Code ensures you're mapped to the correct department & batch. If you're not affiliated with any institution, you can continue as a standalone student.
-          </Typography>
-        </Box>
-
-        {/* Test Instructions */}
-        <Box sx={{ 
-          p: 2, 
-          backgroundColor: '#f8fafc', 
-          borderRadius: BORDER_RADIUS.MD, 
-          border: '1px solid #e2e8f0' 
-        }}>
-          <Typography variant="body2" sx={{ color: '#6b7280', textAlign: 'center' }}>
-            <strong>Test Codes:</strong> ORG001 (Verified), ORG002 (Pending), ORG003 (Not Found)
+            {registrationType === 'organization' 
+              ? "Your organization code links you to your institution's tools and classes." 
+              : "You'll have access to public tools and can be invited by teachers later."}
           </Typography>
         </Box>
       </Box>

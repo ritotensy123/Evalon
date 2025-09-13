@@ -3,8 +3,9 @@ require('dotenv').config();
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      dbName: process.env.MONGODB_DB_NAME || 'evalon'
+    const mongoUri = process.env.MONGODB_URI || 'mongodb+srv://ritotensy:redriders@evalon.u8jqfbo.mongodb.net/?retryWrites=true&w=majority&appName=Evalon';
+    const conn = await mongoose.connect(mongoUri, {
+      dbName: 'evalon'
     });
 
     console.log(`MongoDB Connected: ${conn.connection.host}`);

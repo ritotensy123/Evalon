@@ -36,6 +36,8 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
   const [registrationToken, setRegistrationToken] = useState(null);
   const [backendConnected, setBackendConnected] = useState(false);
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
+  const [tempLogoPath, setTempLogoPath] = useState(null);
+  const [logoTempKey, setLogoTempKey] = useState(null);
   
   // Enhanced form data structure
   const [formData, setFormData] = useState({
@@ -56,6 +58,8 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
     countryCode: '+91',
     password: '',
     confirmPassword: '',
+    emailOTP: '',
+    phoneOTP: '',
     emailVerified: false,
     phoneVerified: false,
     
@@ -171,8 +175,37 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
             showNotification('Please verify both email and phone before proceeding', 'warning');
             return;
           }
-        } else {
-        // Step 3: Setup Preferences
+        } else if (activeStep === 2) {
+        // Step 3: Complete Registration
+        if (!registrationToken) {
+          showNotification('Registration session expired. Please start over.', 'error');
+          return;
+        }
+
+        const completeData = {
+          registrationToken: registrationToken,
+          emailVerified: formData.emailVerified || false,
+          phoneVerified: formData.phoneVerified || false
+        };
+
+        const response = await organizationAPI.registerStep3(completeData);
+        
+        if (response.success) {
+          console.log('Registration completed:', response.data);
+          showNotification('Organization registered successfully!', 'success');
+          
+          // Store the auth token and redirect to dashboard
+          localStorage.setItem('authToken', response.data.token);
+          localStorage.setItem('userType', 'organization_admin');
+          localStorage.setItem('organizationId', response.data.organization.id);
+          
+          // Redirect to dashboard
+          setTimeout(() => {
+            window.location.href = '/dashboard';
+          }, 2000);
+        }
+      } else {
+        // Step 4: Success page (if needed)
         setActiveStep(3);
       }
 
@@ -234,9 +267,8 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
         if (!formData.password) errors.password = 'Password Is Required';
         if (formData.password.length < 8) errors.password = 'Password Must Be At Least 8 Characters';
         if (formData.password !== formData.confirmPassword) errors.confirmPassword = 'Passwords Do Not Match';
-        // Temporarily commented out for development - uncomment for production
-        // if (!formData.emailVerified) errors.emailVerified = 'Please Verify Your Email';
-        // if (!formData.phoneVerified) errors.phoneVerified = 'Please Verify Your Phone Number';
+        if (!formData.emailVerified) errors.emailVerified = 'Please Verify Your Email';
+        if (!formData.phoneVerified) errors.phoneVerified = 'Please Verify Your Phone Number';
         break;
       case 2: // Setup Preferences
         if (!formData.institutionStructure) errors.institutionStructure = 'Please Select Institution Structure';
@@ -295,7 +327,7 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
         addSubAdmins: formData.addSubAdmins,
         timeZone: formData.timeZone,
         twoFactorAuth: formData.twoFactorAuth,
-        logo: formData.logo,
+        logoTempKey: logoTempKey, // Send temp key for logo finalization
         registrationToken: registrationToken
       };
 
@@ -331,7 +363,7 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
           />
         );
       case 1:
-        console.log('Rendering Step2 with registrationToken:', registrationToken);
+        // console.log('Rendering Step2 with registrationToken:', registrationToken);
         return (
           <Step2AdminDetails
             formData={formData}
@@ -347,6 +379,7 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
             formErrors={formErrors}
             onFormChange={handleFormChange}
             orgCode={orgCode}
+            onLogoPathChange={setLogoTempKey}
           />
         );
       default:

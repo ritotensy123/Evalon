@@ -4,28 +4,38 @@ const {
   registerStep1,
   registerStep2,
   registerStep3,
+  registerStep4,
+  registerTeacher,
+  getTeacherById,
+  getAllTeachers,
+  updateTeacher,
+  deleteTeacher,
   sendEmailOTPForTeacher,
   sendPhoneOTPForTeacher,
   verifyEmailOTPForTeacher,
-  verifyPhoneOTPForTeacher,
-  registerStep4,
-  getRegistrationStatus
+  verifyPhoneOTPForTeacher
 } = require('../controllers/teacherController');
 
-// Teacher Registration Routes
+// Multi-step registration routes
 router.post('/register/step1', registerStep1);
 router.post('/register/step2', registerStep2);
 router.post('/register/step3', registerStep3);
 router.post('/register/step4', registerStep4);
 
-// OTP Routes
+// Legacy single-step registration
+router.post('/register', registerTeacher);
+
+// OTP verification routes
 router.post('/send-email-otp', sendEmailOTPForTeacher);
 router.post('/send-phone-otp', sendPhoneOTPForTeacher);
 router.post('/verify-email-otp', verifyEmailOTPForTeacher);
 router.post('/verify-phone-otp', verifyPhoneOTPForTeacher);
 
-// Status Route
-router.get('/registration-status', getRegistrationStatus);
+router.get('/:teacherId', getTeacherById);
+router.get('/', getAllTeachers);
+
+// Protected routes (require authentication)
+// router.put('/:teacherId', auth, updateTeacher);
+// router.delete('/:teacherId', auth, deleteTeacher);
 
 module.exports = router;
-

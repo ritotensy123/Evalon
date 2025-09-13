@@ -13,6 +13,8 @@ import {
   InputAdornment,
   useTheme,
   useMediaQuery,
+  Alert,
+  CircularProgress,
 } from '@mui/material';
 import {
   Visibility,
@@ -21,19 +23,27 @@ import {
   School,
   TrendingUp,
   Security,
+  AdminPanelSettings,
+  Person,
 } from '@mui/icons-material';
 import { COLORS, BORDER_RADIUS, SHADOWS, GRADIENTS } from '../theme/constants';
+import { useAuth } from '../contexts/AuthContext';
 
-const LoginPage = ({ onNavigateToLanding, onNavigateToRegister }) => {
+const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDashboard }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { login } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     rememberMe: false,
   });
+  const [formErrors, setFormErrors] = useState({});
+  const [userType, setUserType] = useState('organization_admin');
 
   useEffect(() => {
     // Quick loading animation
@@ -61,29 +71,59 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    // Clear previous errors
+    setError('');
+    setFormErrors({});
+    
     // Basic validation
     const errors = {};
-    if (!formData.email.trim()) errors.email = 'Email is required';
-    if (!formData.password.trim()) errors.password = 'Password is required';
+    if (!formData.email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      errors.email = 'Please enter a valid email address';
+    }
+    
+    if (!formData.password.trim()) {
+      errors.password = 'Password is required';
+    } else if (formData.password.length < 6) {
+      errors.password = 'Password must be at least 6 characters';
+    }
     
     if (Object.keys(errors).length > 0) {
-      // setFormErrors(errors); // This state doesn't exist in the original file
+      setFormErrors(errors);
       return;
     }
     
-    // setIsLoading(true); // This state doesn't exist in the original file
+    setIsLoading(true);
     
-    // Simulate API call
-    setTimeout(() => {
-      // setIsLoading(false); // This state doesn't exist in the original file
-      // Handle successful login
-      onNavigateToLanding();
-    }, 2000);
+    try {
+      console.log('Attempting login with:', { email: formData.email, userType });
+      const result = await login(formData.email, formData.password, userType);
+      
+      console.log('Login result:', result);
+      if (result.success) {
+        console.log('Login successful, calling onNavigateToDashboard');
+        // Login successful - navigate to dashboard
+        if (onNavigateToDashboard) {
+          console.log('Calling onNavigateToDashboard callback');
+          onNavigateToDashboard();
+          console.log('onNavigateToDashboard callback called');
+        } else {
+          console.log('onNavigateToDashboard callback is not available');
+        }
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      setError(error.message || 'Login failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
   };
+
 
   return (
     <Box
@@ -577,6 +617,194 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister }) => {
                 </Typography>
               </Box>
 
+              {/* User Type Selection - Horizontal Compact Design */}
+              <Box 
+                sx={{ 
+                  mb: 3,
+                  opacity: isLoaded ? 1 : 0,
+                  transform: isLoaded ? 'translateY(0)' : 'translateY(10px)',
+                  transition: 'opacity 0.4s ease 0.2s, transform 0.4s ease 0.2s',
+                }}
+              >
+                <Typography variant="body2" sx={{ mb: 1.5, color: 'text.secondary', fontWeight: 500, fontSize: '0.875rem' }}>
+                  I am a:
+                </Typography>
+                
+                {/* Horizontal Compact Selection */}
+                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'space-between' }}>
+                  {/* Organization Admin */}
+                  <Box
+                    onClick={() => setUserType('organization_admin')}
+                    sx={{
+                      flex: 1,
+                      p: 1.5,
+                      borderRadius: BORDER_RADIUS.MD,
+                      border: userType === 'organization_admin' ? `2px solid ${COLORS.PRIMARY}` : '1px solid #e2e8f0',
+                      backgroundColor: userType === 'organization_admin' ? 'rgba(102, 126, 234, 0.08)' : 'transparent',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      textAlign: 'center',
+                      '&:hover': {
+                        borderColor: COLORS.PRIMARY,
+                        backgroundColor: userType === 'organization_admin' ? 'rgba(102, 126, 234, 0.12)' : 'rgba(102, 126, 234, 0.04)',
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 2px 8px rgba(102, 126, 234, 0.15)',
+                      },
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: '50%',
+                        backgroundColor: userType === 'organization_admin' ? COLORS.PRIMARY : '#f8fafc',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        mx: 'auto',
+                        mb: 1,
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <AdminPanelSettings 
+                        sx={{ 
+                          fontSize: 14, 
+                          color: userType === 'organization_admin' ? 'white' : COLORS.TEXT_SECONDARY,
+                          transition: 'color 0.2s ease',
+                        }} 
+                      />
+                    </Box>
+                    <Typography variant="body2" sx={{ 
+                      fontWeight: userType === 'organization_admin' ? 600 : 500, 
+                      color: userType === 'organization_admin' ? COLORS.PRIMARY : COLORS.TEXT_PRIMARY,
+                      fontSize: '0.75rem',
+                      lineHeight: 1.2,
+                    }}>
+                      Admin
+                    </Typography>
+                  </Box>
+
+                  {/* Teacher */}
+                  <Box
+                    onClick={() => setUserType('teacher')}
+                    sx={{
+                      flex: 1,
+                      p: 1.5,
+                      borderRadius: BORDER_RADIUS.MD,
+                      border: userType === 'teacher' ? `2px solid ${COLORS.PRIMARY}` : '1px solid #e2e8f0',
+                      backgroundColor: userType === 'teacher' ? 'rgba(102, 126, 234, 0.08)' : 'transparent',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      textAlign: 'center',
+                      '&:hover': {
+                        borderColor: COLORS.PRIMARY,
+                        backgroundColor: userType === 'teacher' ? 'rgba(102, 126, 234, 0.12)' : 'rgba(102, 126, 234, 0.04)',
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 2px 8px rgba(102, 126, 234, 0.15)',
+                      },
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: '50%',
+                        backgroundColor: userType === 'teacher' ? COLORS.PRIMARY : '#f8fafc',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        mx: 'auto',
+                        mb: 1,
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <School 
+                        sx={{ 
+                          fontSize: 14, 
+                          color: userType === 'teacher' ? 'white' : COLORS.TEXT_SECONDARY,
+                          transition: 'color 0.2s ease',
+                        }} 
+                      />
+                    </Box>
+                    <Typography variant="body2" sx={{ 
+                      fontWeight: userType === 'teacher' ? 600 : 500, 
+                      color: userType === 'teacher' ? COLORS.PRIMARY : COLORS.TEXT_PRIMARY,
+                      fontSize: '0.75rem',
+                      lineHeight: 1.2,
+                    }}>
+                      Teacher
+                    </Typography>
+                  </Box>
+
+                  {/* Student */}
+                  <Box
+                    onClick={() => setUserType('student')}
+                    sx={{
+                      flex: 1,
+                      p: 1.5,
+                      borderRadius: BORDER_RADIUS.MD,
+                      border: userType === 'student' ? `2px solid ${COLORS.PRIMARY}` : '1px solid #e2e8f0',
+                      backgroundColor: userType === 'student' ? 'rgba(102, 126, 234, 0.08)' : 'transparent',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      textAlign: 'center',
+                      '&:hover': {
+                        borderColor: COLORS.PRIMARY,
+                        backgroundColor: userType === 'student' ? 'rgba(102, 126, 234, 0.12)' : 'rgba(102, 126, 234, 0.04)',
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 2px 8px rgba(102, 126, 234, 0.15)',
+                      },
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: '50%',
+                        backgroundColor: userType === 'student' ? COLORS.PRIMARY : '#f8fafc',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        mx: 'auto',
+                        mb: 1,
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <Person 
+                        sx={{ 
+                          fontSize: 14, 
+                          color: userType === 'student' ? 'white' : COLORS.TEXT_SECONDARY,
+                          transition: 'color 0.2s ease',
+                        }} 
+                      />
+                    </Box>
+                    <Typography variant="body2" sx={{ 
+                      fontWeight: userType === 'student' ? 600 : 500, 
+                      color: userType === 'student' ? COLORS.PRIMARY : COLORS.TEXT_PRIMARY,
+                      fontSize: '0.75rem',
+                      lineHeight: 1.2,
+                    }}>
+                      Student
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+
+              {/* Error Alert */}
+              {error && (
+                <Alert 
+                  severity="error" 
+                  sx={{ 
+                    mb: 2,
+                    opacity: isLoaded ? 1 : 0,
+                    transform: isLoaded ? 'translateY(0)' : 'translateY(10px)',
+                    transition: 'opacity 0.4s ease 0.2s, transform 0.4s ease 0.2s',
+                  }}
+                >
+                  {error}
+                </Alert>
+              )}
+
               {/* Login Form */}
               <Box 
                 component="form" 
@@ -594,6 +822,8 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister }) => {
                   type="email"
                   value={formData.email}
                   onChange={handleInputChange('email')}
+                  error={!!formErrors.email}
+                  helperText={formErrors.email}
                   sx={{
                     mb: 2,
                     '& .MuiOutlinedInput-root': {
@@ -625,6 +855,8 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister }) => {
                   type={showPassword ? 'text' : 'password'}
                   value={formData.password}
                   onChange={handleInputChange('password')}
+                  error={!!formErrors.password}
+                  helperText={formErrors.password}
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
@@ -725,6 +957,7 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister }) => {
                   fullWidth
                   variant="contained"
                   size="large"
+                  disabled={isLoading}
                   sx={{
                     py: 1.5,
                     borderRadius: BORDER_RADIUS.LG,
@@ -740,10 +973,21 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister }) => {
                     '&:active': {
                       transform: 'translateY(0)',
                     },
+                    '&:disabled': {
+                      background: '#e2e8f0',
+                      color: '#a0aec0',
+                    },
                     transition: 'all 0.2s ease',
                   }}
                 >
-                  LOGIN
+                  {isLoading ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CircularProgress size={20} color="inherit" />
+                      LOGGING IN...
+                    </Box>
+                  ) : (
+                    'LOGIN'
+                  )}
                 </Button>
               </Box>
 

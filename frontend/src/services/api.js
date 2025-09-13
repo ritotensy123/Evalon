@@ -85,6 +85,46 @@ export const organizationAPI = {
     }
   },
 
+  // Send Email OTP
+  sendEmailOTP: async (data) => {
+    try {
+      const response = await api.post('/auth/send-email-otp', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to send email OTP' };
+    }
+  },
+
+  // Verify Email OTP
+  verifyEmailOTP: async (data) => {
+    try {
+      const response = await api.post('/register/verify-email-otp', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to verify email OTP' };
+    }
+  },
+
+  // Send Phone OTP
+  sendPhoneOTP: async (data) => {
+    try {
+      const response = await api.post('/auth/send-phone-otp', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to send phone OTP' };
+    }
+  },
+
+  // Verify Phone OTP
+  verifyPhoneOTP: async (data) => {
+    try {
+      const response = await api.post('/register/verify-phone-otp', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to verify phone OTP' };
+    }
+  },
+
   // Get Organization by Code
   getOrganizationByCode: async (orgCode) => {
     try {
@@ -321,98 +361,6 @@ export const otpAPI = {
   },
 };
 
-// Teacher Registration API
-export const teacherAPI = {
-  // Step 1: Basic Details
-  registerStep1: async (data) => {
-    try {
-      const response = await teacherApi.post('/register/step1', data);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to register basic details' };
-    }
-  },
-
-  // Step 2: Professional Details
-  registerStep2: async (data) => {
-    try {
-      const response = await teacherApi.post('/register/step2', data);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to register professional details' };
-    }
-  },
-
-  // Step 3: Organization Link
-  registerStep3: async (data) => {
-    try {
-      const response = await teacherApi.post('/register/step3', data);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to link organization' };
-    }
-  },
-
-  // Step 4: Complete Registration
-  registerStep4: async (data) => {
-    try {
-      const response = await teacherApi.post('/register/step4', data);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to complete registration' };
-    }
-  },
-
-  // Send Email OTP
-  sendEmailOTP: async (emailAddress) => {
-    try {
-      const response = await teacherApi.post('/send-email-otp', { emailAddress });
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to send email OTP' };
-    }
-  },
-
-  // Send Phone OTP
-  sendPhoneOTP: async (phoneNumber, countryCode) => {
-    try {
-      const response = await teacherApi.post('/send-phone-otp', { phoneNumber, countryCode });
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to send phone OTP' };
-    }
-  },
-
-  // Verify Email OTP
-  verifyEmailOTP: async (emailOTP) => {
-    try {
-      const response = await teacherApi.post('/verify-email-otp', { emailOTP });
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to verify email OTP' };
-    }
-  },
-
-  // Verify Phone OTP
-  verifyPhoneOTP: async (phoneOTP) => {
-    try {
-      const response = await teacherApi.post('/verify-phone-otp', { phoneOTP });
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to verify phone OTP' };
-    }
-  },
-
-  // Get Registration Status
-  getRegistrationStatus: async () => {
-    try {
-      const response = await teacherApi.get('/registration-status');
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to get registration status' };
-    }
-  },
-};
 
 // Health Check API
 export const healthAPI = {
@@ -422,6 +370,259 @@ export const healthAPI = {
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Backend server is not running' };
+    }
+  },
+};
+
+// Teacher Registration API
+const teacherAxios = axios.create({
+  baseURL: 'http://localhost:5001/api/teachers',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,
+});
+
+// Student Registration API
+const studentAxios = axios.create({
+  baseURL: 'http://localhost:5001/api/students',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,
+});
+
+// Add interceptors for teacher API
+teacherAxios.interceptors.request.use(
+  (config) => {
+    console.log(`🚀 Teacher API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    return config;
+  },
+  (error) => {
+    console.error('❌ Teacher API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+teacherAxios.interceptors.response.use(
+  (response) => {
+    console.log(`✅ Teacher API Response: ${response.status} ${response.config.url}`);
+    return response;
+  },
+  (error) => {
+    console.error('❌ Teacher API Response Error:', error.response?.data || error.message);
+    return Promise.reject(error);
+  }
+);
+
+// Add interceptors for student API
+studentAxios.interceptors.request.use(
+  (config) => {
+    console.log(`🚀 Student API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    return config;
+  },
+  (error) => {
+    console.error('❌ Student API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+studentAxios.interceptors.response.use(
+  (response) => {
+    console.log(`✅ Student API Response: ${response.status} ${response.config.url}`);
+    return response;
+  },
+  (error) => {
+    console.error('❌ Student API Response Error:', error.response?.data || error.message);
+    return Promise.reject(error);
+  }
+);
+
+export const teacherAPI = {
+  // Step 1: Basic Details
+  registerStep1: async (data) => {
+    try {
+      const response = await teacherAxios.post('/register/step1', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to register teacher basic details' };
+    }
+  },
+
+  // Step 2: Professional Details
+  registerStep2: async (data) => {
+    try {
+      const response = await teacherAxios.post('/register/step2', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to register teacher professional details' };
+    }
+  },
+
+  // Step 3: Organization Link
+  registerStep3: async (data) => {
+    try {
+      const response = await teacherAxios.post('/register/step3', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to link teacher to organization' };
+    }
+  },
+
+  // Step 4: Security Verification
+  registerStep4: async (data) => {
+    try {
+      const response = await teacherAxios.post('/register/step4', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to complete teacher registration' };
+    }
+  },
+
+  // Send Email OTP
+  sendEmailOTP: async (data) => {
+    try {
+      const response = await teacherAxios.post('/send-email-otp', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to send email OTP' };
+    }
+  },
+
+  // Send Phone OTP
+  sendPhoneOTP: async (data) => {
+    try {
+      const response = await teacherAxios.post('/send-phone-otp', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to send phone OTP' };
+    }
+  },
+
+  // Verify Email OTP
+  verifyEmailOTP: async (data) => {
+    try {
+      const response = await teacherAxios.post('/verify-email-otp', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to verify email OTP' };
+    }
+  },
+
+  // Verify Phone OTP
+  verifyPhoneOTP: async (data) => {
+    try {
+      const response = await teacherAxios.post('/verify-phone-otp', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to verify phone OTP' };
+    }
+  },
+
+  // Get Registration Status
+  getRegistrationStatus: async (sessionId) => {
+    try {
+      const response = await teacherAxios.get('/registration-status', {
+        params: { sessionId }
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to get registration status' };
+    }
+  },
+};
+
+// Student Registration API
+export const studentAPI = {
+  // Step 1: Basic Details
+  registerStep1: async (data) => {
+    try {
+      const response = await studentAxios.post('/register/step1', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to register basic details' };
+    }
+  },
+
+  // Step 2: Organization Verification
+  registerStep2: async (data) => {
+    try {
+      const response = await studentAxios.post('/register/step2', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to verify organization' };
+    }
+  },
+
+  // Step 3: Security Verification
+  registerStep3: async (data) => {
+    try {
+      const response = await studentAxios.post('/register/step3', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to complete security verification' };
+    }
+  },
+
+  // Step 4: Auto Mapping & Complete Registration
+  registerStep4: async (data) => {
+    try {
+      const response = await studentAxios.post('/register/step4', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to complete student registration' };
+    }
+  },
+
+  // Send Email OTP
+  sendEmailOTP: async (data) => {
+    try {
+      const response = await studentAxios.post('/send-email-otp', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to send email OTP' };
+    }
+  },
+
+  // Send Phone OTP
+  sendPhoneOTP: async (data) => {
+    try {
+      const response = await studentAxios.post('/send-phone-otp', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to send phone OTP' };
+    }
+  },
+
+  // Verify Email OTP
+  verifyEmailOTP: async (data) => {
+    try {
+      const response = await studentAxios.post('/verify-email-otp', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to verify email OTP' };
+    }
+  },
+
+  // Verify Phone OTP
+  verifyPhoneOTP: async (data) => {
+    try {
+      const response = await studentAxios.post('/verify-phone-otp', data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to verify phone OTP' };
+    }
+  },
+
+  // Get Registration Status
+  getRegistrationStatus: async (sessionId) => {
+    try {
+      const response = await studentAxios.get('/registration-status', {
+        params: { sessionId }
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to get registration status' };
     }
   },
 };

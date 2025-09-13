@@ -13,9 +13,11 @@ const connectDB = require('./config/database');
 const { initializeFirebase } = require('./config/firebase');
 
 // Import routes
+const authRoutes = require('./routes/authRoutes');
 const organizationRoutes = require('./routes/organizationRoutes');
 const locationRoutes = require('./routes/locationRoutes');
 const teacherRoutes = require('./routes/teacherRoutes');
+const studentRoutes = require('./routes/studentRoutes');
 
 const app = express();
 
@@ -102,9 +104,11 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
+app.use('/api/auth', authRoutes);
 app.use('/api/organizations', organizationRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/teachers', teacherRoutes);
+app.use('/api/students', studentRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
