@@ -25,6 +25,8 @@ import {
   Security,
   AdminPanelSettings,
   Person,
+  CheckCircle,
+  Error,
 } from '@mui/icons-material';
 import { COLORS, BORDER_RADIUS, SHADOWS, GRADIENTS } from '../theme/constants';
 import { useAuth } from '../contexts/AuthContext';
@@ -44,6 +46,7 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
   });
   const [formErrors, setFormErrors] = useState({});
   const [userType, setUserType] = useState('organization_admin');
+  const [emailValidation, setEmailValidation] = useState({ isValid: null });
 
   useEffect(() => {
     // Quick loading animation
@@ -55,10 +58,44 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
   }, []);
 
   const handleInputChange = (field) => (event) => {
+    const value = event.target.value;
     setFormData({
       ...formData,
-      [field]: event.target.value,
+      [field]: value,
     });
+
+    // Real-time email validation
+    if (field === 'email') {
+      validateEmail(value);
+    }
+  };
+
+  const validateEmail = (email) => {
+    if (!email) {
+      setEmailValidation({ isValid: null });
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const isValid = emailRegex.test(email);
+    
+    setEmailValidation({ isValid });
+  };
+
+  // Handle user type change and clear form data
+  const handleUserTypeChange = (newUserType) => {
+    setUserType(newUserType);
+    // Clear form data when switching user types
+    setFormData({
+      email: '',
+      password: '',
+      rememberMe: false,
+    });
+    // Clear any existing errors
+    setFormErrors({});
+    setError('');
+    // Clear email validation
+    setEmailValidation({ isValid: null });
   };
 
   const handleCheckboxChange = (event) => {
@@ -634,7 +671,7 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
                 <Box sx={{ display: 'flex', gap: 1, justifyContent: 'space-between' }}>
                   {/* Organization Admin */}
                   <Box
-                    onClick={() => setUserType('organization_admin')}
+                    onClick={() => handleUserTypeChange('organization_admin')}
                     sx={{
                       flex: 1,
                       p: 1.5,
@@ -649,6 +686,10 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
                         backgroundColor: userType === 'organization_admin' ? 'rgba(102, 126, 234, 0.12)' : 'rgba(102, 126, 234, 0.04)',
                         transform: 'translateY(-1px)',
                         boxShadow: '0 2px 8px rgba(102, 126, 234, 0.15)',
+                      },
+                      '&:active': {
+                        transform: 'translateY(0) scale(0.98)',
+                        transition: 'transform 0.1s ease',
                       },
                     }}
                   >
@@ -686,7 +727,7 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
 
                   {/* Teacher */}
                   <Box
-                    onClick={() => setUserType('teacher')}
+                    onClick={() => handleUserTypeChange('teacher')}
                     sx={{
                       flex: 1,
                       p: 1.5,
@@ -701,6 +742,10 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
                         backgroundColor: userType === 'teacher' ? 'rgba(102, 126, 234, 0.12)' : 'rgba(102, 126, 234, 0.04)',
                         transform: 'translateY(-1px)',
                         boxShadow: '0 2px 8px rgba(102, 126, 234, 0.15)',
+                      },
+                      '&:active': {
+                        transform: 'translateY(0) scale(0.98)',
+                        transition: 'transform 0.1s ease',
                       },
                     }}
                   >
@@ -738,7 +783,7 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
 
                   {/* Student */}
                   <Box
-                    onClick={() => setUserType('student')}
+                    onClick={() => handleUserTypeChange('student')}
                     sx={{
                       flex: 1,
                       p: 1.5,
@@ -753,6 +798,10 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
                         backgroundColor: userType === 'student' ? 'rgba(102, 126, 234, 0.12)' : 'rgba(102, 126, 234, 0.04)',
                         transform: 'translateY(-1px)',
                         boxShadow: '0 2px 8px rgba(102, 126, 234, 0.15)',
+                      },
+                      '&:active': {
+                        transform: 'translateY(0) scale(0.98)',
+                        transition: 'transform 0.1s ease',
                       },
                     }}
                   >
@@ -824,17 +873,40 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
                   onChange={handleInputChange('email')}
                   error={!!formErrors.email}
                   helperText={formErrors.email}
+                  InputProps={{
+                    endAdornment: formData.email && (
+                      <InputAdornment position="end">
+                        {emailValidation.isValid === true && (
+                          <CheckCircle sx={{ fontSize: 20, color: COLORS.SUCCESS }} />
+                        )}
+                        {emailValidation.isValid === false && (
+                          <Error sx={{ fontSize: 20, color: COLORS.ERROR }} />
+                        )}
+                      </InputAdornment>
+                    ),
+                  }}
                   sx={{
                     mb: 2,
                     '& .MuiOutlinedInput-root': {
                       borderRadius: BORDER_RADIUS.MD,
                       transition: 'all 0.2s ease',
+                      ...(emailValidation.isValid === true && {
+                        '& .MuiOutlinedInput-notchedOutline': {
+                          borderColor: COLORS.SUCCESS,
+                        },
+                      }),
+                      ...(emailValidation.isValid === false && {
+                        '& .MuiOutlinedInput-notchedOutline': {
+                          borderColor: COLORS.ERROR,
+                        },
+                      }),
                       '&:hover': {
                         transform: 'translateY(-1px)',
                         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
                       },
                       '&:hover .MuiOutlinedInput-notchedOutline': {
-                        borderColor: COLORS.PRIMARY,
+                        borderColor: emailValidation.isValid === true ? COLORS.SUCCESS : 
+                                   emailValidation.isValid === false ? COLORS.ERROR : COLORS.PRIMARY,
                         borderWidth: '2px',
                       },
                       '&.Mui-focused': {
@@ -842,7 +914,8 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
                         boxShadow: '0 2px 8px rgba(102, 126, 234, 0.15)',
                       },
                       '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                        borderColor: COLORS.PRIMARY,
+                        borderColor: emailValidation.isValid === true ? COLORS.SUCCESS : 
+                                   emailValidation.isValid === false ? COLORS.ERROR : COLORS.PRIMARY,
                         borderWidth: '2px',
                       },
                     },

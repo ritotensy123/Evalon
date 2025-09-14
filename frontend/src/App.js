@@ -23,7 +23,7 @@ const AppContent = () => {
     
     // Only auto-redirect if not manually navigating
     if (!manualNavigation) {
-      if (isAuthenticated && currentPage === 'landing') {
+      if (isAuthenticated && (currentPage === 'landing' || currentPage === 'login')) {
         console.log('User is authenticated, setting page to dashboard');
         setCurrentPage('dashboard');
       } else if (!isAuthenticated && !isLoading && currentPage === 'dashboard') {
@@ -31,7 +31,7 @@ const AppContent = () => {
         setCurrentPage('landing');
       }
     }
-  }, [isAuthenticated, isLoading, manualNavigation]);
+  }, [isAuthenticated, isLoading, manualNavigation, currentPage]);
 
   // Debug authentication state changes
   useEffect(() => {
@@ -79,8 +79,8 @@ const AppContent = () => {
   const handleLoginSuccess = React.useCallback(() => {
     console.log('Login successful, redirecting to dashboard...');
     console.log('Current page before redirect:', currentPage);
-    // Set manual navigation flag to prevent useEffect from overriding
-    setManualNavigation(true);
+    // Clear manual navigation flag to allow auto-redirect
+    setManualNavigation(false);
     // Force navigation to dashboard
     setCurrentPage('dashboard');
     console.log('Current page after redirect should be: dashboard');

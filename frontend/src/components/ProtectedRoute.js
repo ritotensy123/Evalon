@@ -28,8 +28,26 @@ const ProtectedRoute = ({ children, requiredRole = null }) => {
 
   // Redirect to login if not authenticated
   if (!isAuthenticated) {
-    window.location.href = '/login';
-    return null;
+    // Use React state navigation instead of window.location
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: '100vh',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        }}
+      >
+        <Typography variant="h5" sx={{ color: 'white', fontWeight: 500, mb: 2 }}>
+          Authentication Required
+        </Typography>
+        <Typography variant="body1" sx={{ color: 'white', opacity: 0.8 }}>
+          Please log in to access this page.
+        </Typography>
+      </Box>
+    );
   }
 
   // Check role-based access if required

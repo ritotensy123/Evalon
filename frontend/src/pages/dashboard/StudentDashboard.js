@@ -72,12 +72,12 @@ const StudentDashboard = () => {
   const handleLogout = async () => {
     try {
       await authService.logout();
-      window.location.href = '/login';
+      // The AuthContext will handle the navigation automatically
     } catch (error) {
       console.error('Logout error:', error);
       // Force logout even if API call fails
       localStorage.clear();
-      window.location.href = '/login';
+      // The AuthContext will handle the navigation automatically
     }
   };
 

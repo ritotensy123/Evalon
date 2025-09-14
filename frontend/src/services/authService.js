@@ -41,7 +41,8 @@ authAPI.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('authToken');
       localStorage.removeItem('userData');
-      window.location.href = '/login';
+      localStorage.removeItem('dashboardData');
+      // Let the AuthContext handle the navigation
     }
     
     return Promise.reject(error);
@@ -198,10 +199,11 @@ export const authService = {
     }
   },
 
-  // Redirect to appropriate dashboard
+  // Get dashboard route (for future use with React Router)
   redirectToDashboard: () => {
     const dashboardRoute = authService.getDashboardRoute();
-    window.location.href = dashboardRoute;
+    // This will be handled by the App component's state management
+    return dashboardRoute;
   }
 };
 
