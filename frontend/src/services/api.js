@@ -627,4 +627,194 @@ export const studentAPI = {
   },
 };
 
+// User Management API
+const userManagementApi = axios.create({
+  baseURL: 'http://localhost:5001/api/user-management',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,
+});
+
+// Add interceptors for user management API
+userManagementApi.interceptors.request.use(
+  (config) => {
+    console.log(`👥 User Management API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    
+    // Add token to requests if available
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    
+    return config;
+  },
+  (error) => {
+    console.error('❌ User Management API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+userManagementApi.interceptors.response.use(
+  (response) => {
+    console.log(`✅ User Management API Response: ${response.status} ${response.config.url}`);
+    return response;
+  },
+  (error) => {
+    console.error('❌ User Management API Response Error:', error.response?.data || error.message);
+    
+    // Handle token expiration - let AuthContext handle logout
+    if (error.response?.status === 401) {
+      // Don't automatically redirect, let the AuthContext handle it
+      console.log('Token expired or invalid, AuthContext will handle logout');
+    }
+    
+    return Promise.reject(error);
+  }
+);
+
+export const userManagementAPI = {
+  // Get all users for organization
+  getAllUsers: async (organizationId, params = {}) => {
+    try {
+      const response = await userManagementApi.get(`/organization/${organizationId}/users`, { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch users' };
+    }
+  },
+
+  // Get user by ID
+  getUserById: async (userId) => {
+    try {
+      const response = await userManagementApi.get(`/users/${userId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch user' };
+    }
+  },
+
+  // Create new user
+  createUser: async (userData) => {
+    try {
+      const response = await userManagementApi.post('/users', userData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to create user' };
+    }
+  },
+
+  // Update user
+  updateUser: async (userId, userData) => {
+    try {
+      const response = await userManagementApi.put(`/users/${userId}`, userData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update user' };
+    }
+  },
+
+  // Delete user (deactivate)
+  deleteUser: async (userId) => {
+    try {
+      const response = await userManagementApi.delete(`/users/${userId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to delete user' };
+    }
+  },
+
+  // Bulk create users
+  bulkCreateUsers: async (users, organizationId) => {
+    try {
+      const response = await userManagementApi.post('/users/bulk', { users, organizationId });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to bulk create users' };
+    }
+  },
+
+  // Send invitation
+  sendInvitation: async (invitationData) => {
+    try {
+      const response = await userManagementApi.post('/invitations', invitationData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to send invitation' };
+    }
+  },
+
+  // Get invitation by token
+  getInvitation: async (token) => {
+    try {
+      const response = await userManagementApi.get(`/invitations/${token}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to get invitation' };
+    }
+  },
+
+  // Accept invitation
+  acceptInvitation: async (token, userData) => {
+    try {
+      const response = await userManagementApi.post(`/invitations/${token}/accept`, userData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to accept invitation' };
+    }
+  },
+
+  // Get user statistics
+  getUserStats: async (organizationId) => {
+    try {
+      const response = await userManagementApi.get(`/organization/${organizationId}/stats`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch user statistics' };
+    }
+  },
+
+  // Get role distribution
+  getRoleDistribution: async (organizationId) => {
+    try {
+      const response = await userManagementApi.get(`/organization/${organizationId}/role-distribution`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch role distribution' };
+    }
+  },
+
+  // Get recent activity
+  getRecentActivity: async (organizationId, limit = 10) => {
+    try {
+      const response = await userManagementApi.get(`/organization/${organizationId}/recent-activity`, {
+        params: { limit }
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch recent activity' };
+    }
+  },
+
+  // Get users by role
+  getUsersByRole: async (organizationId, role) => {
+    try {
+      const response = await userManagementApi.get(`/organization/${organizationId}/users/role/${role}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch users by role' };
+    }
+  },
+
+  // Update user role
+  updateUserRole: async (userId, roleData) => {
+    try {
+      const response = await userManagementApi.put(`/users/${userId}/role`, roleData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update user role' };
+    }
+  },
+};
+
 export default api;

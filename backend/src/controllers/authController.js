@@ -3,6 +3,7 @@ const Organization = require('../models/Organization');
 const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
 const { generateToken } = require('../middleware/auth');
+const admin = require('firebase-admin');
 
 // Login user
 const login = async (req, res) => {
@@ -34,6 +35,18 @@ const login = async (req, res) => {
       });
     }
     
+    // Ensure userId is populated for dashboard data
+    await user.populate('userId');
+    
+    // Check if userId is properly populated
+    if (!user.userId) {
+      console.error('User userId is null or not populated:', user._id);
+      return res.status(500).json({
+        success: false,
+        message: 'User data is incomplete. Please contact support.'
+      });
+    }
+    
     // Check if account is active
     if (!user.isActive) {
       return res.status(401).json({
@@ -60,7 +73,7 @@ const login = async (req, res) => {
       });
     }
     
-    // Update last login
+    // Update last login (don't change firstLogin here - it should only be changed when setup is completed)
     user.lastLogin = new Date();
     await user.save();
     
@@ -72,14 +85,56 @@ const login = async (req, res) => {
     
     // Prepare response based on user type
     let dashboardData = {};
+    let organizationData = {};
+    let organization = null; // Declare organization variable outside switch
     
     switch (user.userType) {
       case 'organization_admin':
+        // Get full organization data for setup wizard
+        organization = await Organization.findById(user.userId);
+        
+        if (!organization) {
+          console.error('Organization not found for user:', user.userId);
+          return res.status(500).json({
+            success: false,
+            message: 'Organization data not found. Please contact support.'
+          });
+        }
+        
+        organizationData = {
+          id: organization._id,
+          name: organization.name,
+          orgCode: organization.orgCode,
+          email: organization.email,
+          phone: organization.phone,
+          website: organization.website,
+          description: organization.description,
+          address: organization.address,
+          foundedYear: organization.foundedYear,
+          logo: organization.logo,
+          departments: organization.departments || [],
+          adminPermissions: organization.adminPermissions || {},
+          securitySettings: organization.securitySettings || {},
+          notificationSettings: organization.notificationSettings || {},
+          subAdmins: organization.subAdmins || [],
+          setupCompleted: organization.setupCompleted || false,
+          setupCompletedAt: organization.setupCompletedAt,
+          setupSkipped: organization.setupSkipped || false,
+          country: organization.country,
+          state: organization.state,
+          city: organization.city,
+          pincode: organization.pincode,
+          studentStrength: organization.studentStrength,
+          isGovernmentRecognized: organization.isGovernmentRecognized,
+          institutionStructure: organization.institutionStructure
+        };
+        
         dashboardData = {
-          organizationId: user.userId._id,
-          organizationName: user.userId.organizationName,
-          organizationCode: user.userId.organizationCode,
-          role: 'Organization Admin'
+          organizationId: organization._id,
+          organizationName: organization.name,
+          organizationCode: organization.orgCode,
+          role: 'Organization Admin',
+          setupCompleted: organization.setupCompleted || false
         };
         break;
         
@@ -124,9 +179,12 @@ const login = async (req, res) => {
           userType: user.userType,
           profile: user.profile,
           isEmailVerified: user.isEmailVerified,
-          lastLogin: user.lastLogin
+          lastLogin: user.lastLogin,
+          firstLogin: user.firstLogin,
+          organizationId: user.userType === 'organization_admin' ? organization._id : user.userId.organizationId
         },
-        dashboard: dashboardData
+        dashboard: dashboardData,
+        organization: organizationData
       }
     });
     
@@ -316,11 +374,263 @@ const verifyToken = async (req, res) => {
   }
 };
 
+// Google Sign-In authentication
+const googleSignIn = async (req, res) => {
+  try {
+    const { credential, userType } = req.body;
+    
+    // Validate input
+    if (!credential) {
+      return res.status(400).json({
+        success: false,
+        message: 'Google credential is required.'
+      });
+    }
+    
+    if (!userType) {
+      return res.status(400).json({
+        success: false,
+        message: 'User type is required.'
+      });
+    }
+    
+    // Verify Google ID token (with fallback for mock tokens)
+    let googleEmail;
+    
+    try {
+      // Check if it's a test token or Firebase ID token
+      if (credential === 'test-firebase-token') {
+        // It's a test token, use a test email
+        googleEmail = 'test@example.com';
+        console.log('Using test Firebase token:', googleEmail);
+      } else if (credential.split('.').length !== 3) {
+        // It's a mock credential (base64 encoded JSON), decode it directly
+        const mockPayload = JSON.parse(atob(credential));
+        googleEmail = mockPayload.email;
+        console.log('Using mock Google credential for testing:', googleEmail);
+      } else {
+        // It's a Firebase ID token, verify it
+        const decodedToken = await admin.auth().verifyIdToken(credential);
+        googleEmail = decodedToken.email;
+        console.log('Using Firebase ID token:', googleEmail);
+      }
+    } catch (error) {
+      console.error('Firebase token verification failed:', error);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid Firebase token.'
+      });
+    }
+    
+    console.log('Google Sign-In attempt:', { email: googleEmail, userType });
+    
+    // Find user by email and user type
+    console.log('🔍 Searching for user with email:', googleEmail, 'and type:', userType);
+    const user = await User.findByEmailAndType(googleEmail, userType);
+    console.log('🔍 Found user:', user ? { 
+      id: user._id, 
+      email: user.email, 
+      userType: user.userType, 
+      userId: user.userId,
+      userModel: user.userModel,
+      userTypeEmail: user.userTypeEmail,
+      rawUserId: user.userId ? user.userId.toString() : 'null'
+    } : 'No user found');
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: `No ${userType} account found with email ${googleEmail}. Please register first.`
+      });
+    }
+    
+    // userId should already be populated by findByEmailAndType method
+    
+    // Check if userId is properly populated
+    if (!user.userId) {
+      console.error('User userId is null or not populated:', user._id);
+      return res.status(500).json({
+        success: false,
+        message: 'User data is incomplete. Please contact support.'
+      });
+    }
+    
+    // Check if account is active
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account is deactivated. Please contact support.'
+      });
+    }
+    
+    // Check if email is verified
+    if (!user.isEmailVerified) {
+      return res.status(401).json({
+        success: false,
+        message: 'Email not verified. Please verify your email first.'
+      });
+    }
+    
+    // Generate JWT token
+    const token = generateToken(user._id, user.userType);
+    
+    // Get dashboard data based on user type
+    let dashboardData = null;
+    let organizationData = null;
+    
+    try {
+      if (user.userType === 'organization_admin') {
+        // Get organization dashboard data
+        console.log('🔍 Looking for organization with userId:', user.userId);
+        console.log('🔍 UserId type:', typeof user.userId, 'UserId value:', user.userId);
+        console.log('🔍 UserModel:', user.userModel);
+        console.log('🔍 Full user object:', JSON.stringify(user, null, 2));
+        
+        // Check if userId is populated or just an ObjectId
+        let organizationId = user.userId;
+        if (user.userId && user.userId._id) {
+          organizationId = user.userId._id;
+          console.log('🔍 UserId is populated, using _id:', organizationId);
+        } else {
+          console.log('🔍 UserId is not populated, using raw value:', organizationId);
+        }
+        
+        console.log('🔍 Final organizationId to search:', organizationId);
+        const organization = await Organization.findById(organizationId);
+        console.log('🔍 Found organization:', organization ? { id: organization._id, name: organization.name } : 'No organization found');
+        
+        // Also try to find all organizations to debug
+        const allOrgs = await Organization.find({});
+        console.log('🔍 All organizations in database:', allOrgs.map(org => ({ id: org._id, name: org.name })));
+        if (organization) {
+          organizationData = {
+            id: organization._id,
+            name: organization.name,
+            orgCode: organization.orgCode,
+            email: organization.email,
+            phone: organization.phone,
+            website: organization.website,
+            description: organization.description,
+            address: organization.address,
+            foundedYear: organization.foundedYear,
+            logo: organization.logo,
+            departments: organization.departments || [],
+            adminPermissions: organization.adminPermissions || {},
+            securitySettings: organization.securitySettings || {},
+            notificationSettings: organization.notificationSettings || {},
+            subAdmins: organization.subAdmins || [],
+            setupCompleted: organization.setupCompleted || false,
+            setupCompletedAt: organization.setupCompletedAt,
+            setupSkipped: organization.setupSkipped || false,
+            country: organization.country,
+            state: organization.state,
+            city: organization.city,
+            pincode: organization.pincode,
+            studentStrength: organization.studentStrength,
+            isGovernmentRecognized: organization.isGovernmentRecognized,
+            institutionStructure: organization.institutionStructure
+          };
+          
+          // Get organization statistics
+          const totalTeachers = await Teacher.countDocuments({ organizationId: organization._id });
+          const totalStudents = await Student.countDocuments({ organizationId: organization._id });
+          const totalUsers = await User.countDocuments({ userId: organization._id, userType: 'organization_admin' });
+          
+          dashboardData = {
+            organizationId: organization._id,
+            organizationName: organization.name,
+            organizationCode: organization.orgCode,
+            role: 'Organization Admin',
+            setupCompleted: organization.setupCompleted || false
+          };
+        }
+      } else if (user.userType === 'teacher') {
+        // Get teacher dashboard data
+        const teacher = await Teacher.findById(user.userId);
+        if (teacher) {
+          const totalStudents = await Student.countDocuments({ 
+            organizationId: teacher.organizationId,
+            assignedTeachers: user._id 
+          });
+          
+          dashboardData = {
+            teacherId: teacher._id,
+            organizationId: teacher.organizationId,
+            organizationName: teacher.organizationName,
+            subjects: teacher.subjects,
+            role: 'Teacher'
+          };
+        }
+      } else if (user.userType === 'student') {
+        // Get student dashboard data
+        const student = await Student.findById(user.userId);
+        if (student) {
+          dashboardData = {
+            studentId: student._id,
+            organizationId: student.organizationId,
+            organizationName: student.organizationName,
+            academicLevel: student.academicLevel,
+            grade: student.grade,
+            role: 'Student'
+          };
+        }
+      }
+    } catch (dashboardError) {
+      console.error('Error fetching dashboard data:', dashboardError);
+      // Continue with login even if dashboard data fails
+    }
+    
+    // Update last login
+    user.lastLogin = new Date();
+    await user.save();
+    
+    console.log('Google Sign-In successful:', { email: googleEmail, userType });
+    
+    const responseData = {
+      success: true,
+      message: 'Google Sign-In successful',
+      data: {
+        token,
+        user: {
+          id: user._id,
+          email: user.email,
+          userType: user.userType,
+          profile: user.profile,
+          isEmailVerified: user.isEmailVerified,
+          lastLogin: user.lastLogin,
+          firstLogin: user.firstLogin,
+          organizationId: user.userType === 'organization_admin' ? 
+            (user.userId && user.userId._id ? user.userId._id : user.userId) : 
+            (dashboardData?.organizationId || null)
+        },
+        dashboard: dashboardData,
+        organization: organizationData
+      }
+    };
+    
+    console.log('🔍 Google Sign-In response data:', {
+      user: responseData.data.user,
+      hasDashboard: !!responseData.data.dashboard,
+      hasOrganization: !!responseData.data.organization
+    });
+    
+    res.json(responseData);
+    
+  } catch (error) {
+    console.error('Google Sign-In error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Google Sign-In failed. Please try again.'
+    });
+  }
+};
+
 module.exports = {
   login,
   getProfile,
   updateProfile,
   changePassword,
   logout,
-  verifyToken
+  verifyToken,
+  googleSignIn
 };

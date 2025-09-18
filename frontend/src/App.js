@@ -8,6 +8,7 @@ import OrganisationRegistration from './pages/onboarding/OrganisationRegistratio
 import TeacherRegistration from './pages/onboarding/TeacherRegistration';
 import StudentRegistration from './pages/onboarding/StudentRegistration';
 import Dashboard from './pages/Dashboard';
+import SystemSetupWizard from './components/setup/SystemSetupWizard';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -75,6 +76,11 @@ const AppContent = () => {
     setCurrentPage('dashboard');
   }, []);
 
+  const handleNavigateToSetup = React.useCallback(() => {
+    setManualNavigation(true);
+    setCurrentPage('setup-wizard');
+  }, []);
+
   // Handle successful login
   const handleLoginSuccess = React.useCallback(() => {
     console.log('Login successful, redirecting to dashboard...');
@@ -133,6 +139,15 @@ const AppContent = () => {
             onNavigateToLanding={handleNavigateToLanding}
             onNavigateToLogin={handleNavigateToLogin}
           />
+        );
+      case 'setup-wizard':
+        return (
+          <ProtectedRoute>
+            <SystemSetupWizard
+              onComplete={handleNavigateToDashboard}
+              onSkip={handleNavigateToDashboard}
+            />
+          </ProtectedRoute>
         );
       case 'dashboard':
         return (

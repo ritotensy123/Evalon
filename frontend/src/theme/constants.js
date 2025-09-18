@@ -1,18 +1,18 @@
 // Evalon Design System - Constants and Design Tokens
 
 export const COLORS = {
-  // Primary Colors
-  PRIMARY: '#667eea',
-  PRIMARY_LIGHT: '#8b9ef8',
-  PRIMARY_DARK: '#5a67d8',
+  // Primary Colors - Light purple/blue theme
+  PRIMARY: '#8b5cf6',
+  PRIMARY_LIGHT: '#a78bfa',
+  PRIMARY_DARK: '#7c3aed',
   
   // Secondary Colors
-  SECONDARY: '#764ba2',
-  SECONDARY_LIGHT: '#9b6bb8',
-  SECONDARY_DARK: '#6b46c1',
+  SECONDARY: '#6366f1',
+  SECONDARY_LIGHT: '#818cf8',
+  SECONDARY_DARK: '#4f46e5',
   
   // Text Colors
-  TEXT_PRIMARY: '#111827',
+  TEXT_PRIMARY: '#1f2937',
   TEXT_SECONDARY: '#6b7280',
   TEXT_DISABLED: '#9ca3af',
   

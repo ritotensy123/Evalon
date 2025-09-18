@@ -9,7 +9,10 @@ const {
   updateOrganization,
   deleteOrganization,
   uploadLogo,
-  upload
+  upload,
+  completeSetup,
+  getSetupStatus,
+  skipSetup
 } = require('../controllers/organizationController');
 
 const {
@@ -30,6 +33,11 @@ router.post('/register/step3', completeRegistration);
 router.post('/upload/logo', upload.single('file'), uploadLogo);
 router.get('/code/:orgCode', getOrganizationByCode);
 router.get('/', getAllOrganizations);
+
+// Setup wizard routes
+router.post('/complete-setup', completeSetup);
+router.get('/:organizationId/setup-status', getSetupStatus);
+router.post('/skip-setup', skipSetup);
 
 // Protected routes (require authentication)
 // router.put('/:orgId', auth, updateOrganization);

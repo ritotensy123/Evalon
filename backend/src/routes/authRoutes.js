@@ -5,6 +5,7 @@ const { authenticate } = require('../middleware/auth');
 
 // Public routes
 router.post('/login', authController.login);
+router.post('/google', authController.googleSignIn);
 router.post('/logout', authController.logout);
 
 // Protected routes (require authentication)

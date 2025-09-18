@@ -52,22 +52,38 @@ authAPI.interceptors.response.use(
 // Authentication service
 export const authService = {
   // Login user
-  login: async (email, password, userType = null) => {
+  login: async (email, password, userType = null, googleCredential = null) => {
     try {
-      const response = await authAPI.post('/login', { email, password, userType });
+      let response;
+      
+      if (googleCredential && googleCredential !== 'null' && googleCredential !== null) {
+        // Google Sign-In
+        console.log('🔐 Using Google Sign-In endpoint');
+        response = await authAPI.post('/google', { 
+          credential: googleCredential, 
+          userType 
+        });
+      } else {
+        // Regular login
+        response = await authAPI.post('/login', { email, password, userType });
+      }
       
       if (response.data.success) {
-        const { token, user, dashboard } = response.data.data;
+        const { token, user, dashboard, organization } = response.data.data;
         
         // Store token and user data
         localStorage.setItem('authToken', token);
         localStorage.setItem('userData', JSON.stringify(user));
         localStorage.setItem('dashboardData', JSON.stringify(dashboard));
+        if (organization) {
+          localStorage.setItem('organizationData', JSON.stringify(organization));
+        }
         
         return {
           success: true,
           user,
           dashboard,
+          organization,
           token
         };
       }
@@ -90,6 +106,7 @@ export const authService = {
       localStorage.removeItem('authToken');
       localStorage.removeItem('userData');
       localStorage.removeItem('dashboardData');
+      localStorage.removeItem('organizationData');
     }
   },
 
@@ -165,6 +182,17 @@ export const authService = {
       return dashboardData ? JSON.parse(dashboardData) : null;
     } catch (error) {
       console.error('Error parsing dashboard data:', error);
+      return null;
+    }
+  },
+
+  // Get stored organization data
+  getStoredOrganizationData: () => {
+    try {
+      const organizationData = localStorage.getItem('organizationData');
+      return organizationData ? JSON.parse(organizationData) : null;
+    } catch (error) {
+      console.error('Error parsing organization data:', error);
       return null;
     }
   },

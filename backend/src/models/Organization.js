@@ -151,6 +151,114 @@ const organizationSchema = new mongoose.Schema({
     }
   },
   
+  // Setup Wizard Fields
+  setupCompleted: {
+    type: Boolean,
+    default: false
+  },
+  setupCompletedAt: {
+    type: Date
+  },
+  setupSkipped: {
+    type: Boolean,
+    default: false
+  },
+  
+  // Admin Permissions
+  adminPermissions: {
+    type: Map,
+    of: Boolean,
+    default: {}
+  },
+  
+  // Security Settings
+  securitySettings: {
+    twoFactorAuth: {
+      type: Boolean,
+      default: false
+    },
+    sessionTimeout: {
+      type: Number,
+      default: 30
+    },
+    passwordPolicy: {
+      type: String,
+      enum: ['low', 'medium', 'high'],
+      default: 'medium'
+    },
+    loginAttempts: {
+      type: Number,
+      default: 5
+    },
+    ipWhitelist: {
+      type: Boolean,
+      default: false
+    },
+    auditLogging: {
+      type: Boolean,
+      default: true
+    }
+  },
+  
+  // Notification Settings
+  notificationSettings: {
+    emailNotifications: {
+      type: Boolean,
+      default: true
+    },
+    smsNotifications: {
+      type: Boolean,
+      default: false
+    },
+    pushNotifications: {
+      type: Boolean,
+      default: true
+    },
+    systemAlerts: {
+      type: Boolean,
+      default: true
+    },
+    weeklyReports: {
+      type: Boolean,
+      default: true
+    },
+    monthlyReports: {
+      type: Boolean,
+      default: true
+    }
+  },
+  
+  // Sub-Administrators
+  subAdmins: [{
+    name: {
+      type: String,
+      required: true
+    },
+    email: {
+      type: String,
+      required: true
+    },
+    role: {
+      type: String,
+      enum: ['super_admin', 'admin', 'department_admin', 'content_manager'],
+      default: 'department_admin'
+    },
+    permissions: {
+      type: Map,
+      of: Boolean,
+      default: {}
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'active', 'inactive'],
+      default: 'pending'
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  
   // Statistics
   stats: {
     totalStudents: {

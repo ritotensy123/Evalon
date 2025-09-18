@@ -16,6 +16,7 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState(null);
+  const [organizationData, setOrganizationData] = useState(null);
 
   useEffect(() => {
     checkAuthStatus();
@@ -28,10 +29,12 @@ export const AuthProvider = ({ children }) => {
       if (authService.isAuthenticated()) {
         const userData = authService.getStoredUserData();
         const dashboardData = authService.getStoredDashboardData();
+        const organizationData = authService.getStoredOrganizationData();
         
         if (userData) {
           setUser(userData);
           setDashboardData(dashboardData);
+          setOrganizationData(organizationData);
           setIsAuthenticated(true);
         } else {
           // Clear invalid data
@@ -46,16 +49,22 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const login = async (email, password, userType) => {
+  const login = async (email, password, userType, googleCredential = null) => {
     try {
       console.log('AuthContext: Starting login process');
-      const result = await authService.login(email, password, userType);
+      console.log('AuthContext: Login params:', { email, userType, hasGoogleCredential: !!googleCredential });
+      const result = await authService.login(email, password, userType, googleCredential);
       
       console.log('AuthContext: Login API result:', result);
       if (result.success) {
         console.log('AuthContext: Setting user and auth state');
+        console.log('AuthContext: User data:', result.user);
+        console.log('AuthContext: Dashboard data:', result.dashboard);
+        console.log('AuthContext: Organization data:', result.organization);
+        
         setUser(result.user);
         setDashboardData(result.dashboard);
+        setOrganizationData(result.organization);
         setIsAuthenticated(true);
         console.log('AuthContext: Auth state updated, isAuthenticated should be true');
         
@@ -82,6 +91,7 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setUser(null);
       setDashboardData(null);
+      setOrganizationData(null);
       setIsAuthenticated(false);
     }
   };
@@ -96,15 +106,22 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('dashboardData', JSON.stringify(data));
   };
 
+  const updateOrganizationData = (data) => {
+    setOrganizationData(data);
+    localStorage.setItem('organizationData', JSON.stringify(data));
+  };
+
   const value = {
     user,
     isAuthenticated,
     isLoading,
     dashboardData,
+    organizationData,
     login,
     logout,
     updateUser,
     updateDashboardData,
+    updateOrganizationData,
     checkAuthStatus
   };
 

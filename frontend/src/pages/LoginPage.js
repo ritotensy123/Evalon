@@ -30,6 +30,7 @@ import {
 } from '@mui/icons-material';
 import { COLORS, BORDER_RADIUS, SHADOWS, GRADIENTS } from '../theme/constants';
 import { useAuth } from '../contexts/AuthContext';
+import googleAuthService from '../services/googleAuthService';
 
 const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDashboard }) => {
   const theme = useTheme();
@@ -47,6 +48,8 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
   const [formErrors, setFormErrors] = useState({});
   const [userType, setUserType] = useState('organization_admin');
   const [emailValidation, setEmailValidation] = useState({ isValid: null });
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
 
   useEffect(() => {
     // Quick loading animation
@@ -54,8 +57,41 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
       setIsLoaded(true);
     }, 100);
 
+    // Initialize Google Sign-In
+    const initializeGoogleSignIn = async () => {
+      try {
+        console.log('🚀 Initializing Google Sign-In...');
+        googleAuthService.setOnGoogleSignIn(handleGoogleSignIn);
+        const hasRedirectResult = await googleAuthService.initialize();
+        
+        console.log('🚀 Has redirect result:', hasRedirectResult);
+        
+        if (hasRedirectResult) {
+          console.log('✅ Redirect result handled, user should be logged in');
+          console.log('✅ Current user type selection:', userType);
+        } else {
+          console.log('ℹ️ No redirect result, normal initialization');
+        }
+      } catch (error) {
+        console.error('Failed to initialize Google Sign-In:', error);
+      }
+    };
+
+    initializeGoogleSignIn();
+
     return () => clearTimeout(timer);
   }, []);
+
+  // Auto-clear loading state after timeout
+  useEffect(() => {
+    if (isLoggingIn) {
+      const timer = setTimeout(() => {
+        setIsLoggingIn(false);
+      }, 10000); // 10 second timeout
+
+      return () => clearTimeout(timer);
+    }
+  }, [isLoggingIn]);
 
   const handleInputChange = (field) => (event) => {
     const value = event.target.value;
@@ -132,6 +168,7 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
     }
     
     setIsLoading(true);
+    setIsLoggingIn(true);
     
     try {
       console.log('Attempting login with:', { email: formData.email, userType });
@@ -140,7 +177,7 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
       console.log('Login result:', result);
       if (result.success) {
         console.log('Login successful, calling onNavigateToDashboard');
-        // Login successful - navigate to dashboard
+        // Keep loading state active while navigating to dashboard
         if (onNavigateToDashboard) {
           console.log('Calling onNavigateToDashboard callback');
           onNavigateToDashboard();
@@ -152,6 +189,7 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
     } catch (error) {
       console.error('Login error:', error);
       setError(error.message || 'Login failed. Please try again.');
+      setIsLoggingIn(false);
     } finally {
       setIsLoading(false);
     }
@@ -159,6 +197,87 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
 
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
+  };
+
+  // Handle Google Sign-In
+  const handleGoogleSignIn = async (userInfo, credential, redirectUserType, error) => {
+    try {
+      console.log('🎯 handleGoogleSignIn called with:', { userInfo, credential, redirectUserType, error });
+      setIsGoogleSigningIn(true);
+      setError('');
+
+      if (error) {
+        console.log('❌ Error in handleGoogleSignIn:', error);
+        setError(error);
+        return;
+      }
+
+      if (!userInfo || !credential) {
+        console.log('❌ Missing userInfo or credential:', { userInfo, credential });
+        setError('Google Sign-In was cancelled or failed.');
+        return;
+      }
+
+      // Use the user type from redirect if available, otherwise use the current selection
+      const finalUserType = redirectUserType || userType;
+
+      console.log('🎯 Google Sign-In user info:', userInfo);
+      console.log('🎯 Selected user type:', finalUserType);
+      console.log('🎯 Redirect user type:', redirectUserType);
+      console.log('🎯 Current user type:', userType);
+
+      // Call the login function with Google credentials
+      const result = await login(userInfo.email, null, finalUserType, credential);
+      
+      console.log('🎯 Google Sign-In login result:', result);
+      
+      if (result.success) {
+        console.log('🎯 Google Sign-In successful, calling onNavigateToDashboard');
+        console.log('🎯 User data from login:', result.user);
+        console.log('🎯 Dashboard data from login:', result.dashboard);
+        console.log('🎯 Organization data from login:', result.organization);
+        
+        if (onNavigateToDashboard) {
+          console.log('🎯 Calling onNavigateToDashboard callback');
+          onNavigateToDashboard();
+          console.log('🎯 onNavigateToDashboard callback called');
+        } else {
+          console.log('🎯 onNavigateToDashboard callback is not available');
+        }
+      } else {
+        console.log('🎯 Google Sign-In login failed:', result.message);
+        setError(result.message || 'Google Sign-In failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Google Sign-In error:', error);
+      setError(error.message || 'Google Sign-In failed. Please try again.');
+    } finally {
+      setIsGoogleSigningIn(false);
+    }
+  };
+
+  // Handle Google Sign-In button click
+  const handleGoogleSignInClick = async () => {
+    try {
+      setIsGoogleSigningIn(true);
+      setError('');
+
+      // Validate user type is selected
+      if (!userType) {
+        setError('Please Select Your Role (Admin, Teacher, Or Student) Before Signing In With Google');
+        setIsGoogleSigningIn(false);
+        return;
+      }
+
+      console.log('🎯 Starting Google Sign-In with user type:', userType);
+      
+      // Trigger Google Sign-In with the selected user type
+      await googleAuthService.signIn(userType);
+    } catch (error) {
+      console.error('Google Sign-In click error:', error);
+      setError('Failed to initialize Google Sign-In. Please try again.');
+      setIsGoogleSigningIn(false);
+    }
   };
 
 
@@ -173,6 +292,44 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
         overflow: 'hidden',
       }}
     >
+      {/* Loading Overlay */}
+      {isLoggingIn && (
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            backdropFilter: 'blur(2px)',
+          }}
+        >
+          <CircularProgress
+            size={40}
+            thickness={4}
+            sx={{
+              color: COLORS.PRIMARY,
+              mb: 2,
+            }}
+          />
+          <Typography
+            variant="body2"
+            sx={{
+              color: COLORS.TEXT_SECONDARY,
+              fontWeight: 500,
+              fontSize: '0.9rem',
+            }}
+          >
+            Loading your dashboard...
+          </Typography>
+        </Box>
+      )}
       {/* Minimal Floating Background Elements */}
       <Box
         sx={{
@@ -837,6 +994,7 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
                     </Typography>
                   </Box>
                 </Box>
+                
               </Box>
 
               {/* Error Alert */}
@@ -1030,7 +1188,7 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
                   fullWidth
                   variant="contained"
                   size="large"
-                  disabled={isLoading}
+                  disabled={isLoading || isLoggingIn}
                   sx={{
                     py: 1.5,
                     borderRadius: BORDER_RADIUS.LG,
@@ -1047,16 +1205,18 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
                       transform: 'translateY(0)',
                     },
                     '&:disabled': {
-                      background: '#e2e8f0',
-                      color: '#a0aec0',
+                      background: userType ? '#e2e8f0' : '#f8f9fa',
+                      color: userType ? '#a0aec0' : '#6c757d',
+                      borderColor: userType ? '#e2e8f0' : '#dee2e6',
+                      cursor: userType ? 'not-allowed' : 'not-allowed',
                     },
                     transition: 'all 0.2s ease',
                   }}
                 >
-                  {isLoading ? (
+                  {isLoading || isLoggingIn ? (
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <CircularProgress size={20} color="inherit" />
-                      LOGGING IN...
+                      {isLoggingIn ? 'LOADING...' : 'LOGGING IN...'}
                     </Box>
                   ) : (
                     'LOGIN'
@@ -1099,10 +1259,8 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
                 <Button
                   variant="outlined"
                   fullWidth
-                  onClick={() => {
-                    // Handle Google sign in
-                    console.log('Google sign in clicked');
-                  }}
+                  disabled={isGoogleSigningIn || !userType}
+                  onClick={handleGoogleSignInClick}
                   sx={{
                     border: '1px solid #dadce0',
                     borderRadius: '24px',
@@ -1161,8 +1319,35 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
                       />
                     </svg>
                   </Box>
-                  Sign in with Google
+                  {isGoogleSigningIn ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CircularProgress size={16} color="inherit" />
+                      Signing in...
+                    </Box>
+                  ) : !userType ? (
+                    'Select Your Role First'
+                  ) : (
+                    'Sign In With Google'
+                  )}
                 </Button>
+                
+                {/* Subtle helper text for Google Sign-In */}
+                {!userType && (
+                  <Typography 
+                    variant="caption" 
+                    sx={{ 
+                      display: 'block',
+                      textAlign: 'center',
+                      color: COLORS.TEXT_SECONDARY,
+                      fontSize: '0.7rem',
+                      mt: 1,
+                      opacity: 0.6,
+                      fontStyle: 'italic'
+                    }}
+                  >
+                    Please Select Your Role Above Before Using Google Sign-In
+                  </Typography>
+                )}
               </Box>
 
               {/* Sign Up Link */}

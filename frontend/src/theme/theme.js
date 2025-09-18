@@ -4,15 +4,15 @@ import { createTheme } from '@mui/material/styles';
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#667eea', // Primary brand color
-      light: '#8b9ef8',
-      dark: '#5a67d8',
+      main: '#8b5cf6', // Primary brand color - Light purple
+      light: '#a78bfa',
+      dark: '#7c3aed',
       contrastText: '#ffffff',
     },
     secondary: {
-      main: '#764ba2', // Secondary brand color
-      light: '#9b6bb8',
-      dark: '#6b46c1',
+      main: '#6366f1', // Secondary brand color - Indigo
+      light: '#818cf8',
+      dark: '#4f46e5',
       contrastText: '#ffffff',
     },
     background: {
@@ -137,6 +137,14 @@ const theme = createTheme({
           fontSize: '0.875rem',
           minHeight: 48,
           transition: 'all 0.2s ease',
+          '&:focus': {
+            outline: 'none',
+            boxShadow: 'none',
+          },
+          '&:focus-visible': {
+            outline: 'none',
+            boxShadow: 'none',
+          },
         },
         contained: {
           boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
@@ -177,6 +185,14 @@ const theme = createTheme({
             boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
             transform: 'translateY(-2px)',
           },
+          '&:focus': {
+            outline: 'none',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          },
+          '&:focus-visible': {
+            outline: 'none',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          },
         },
       },
     },
@@ -185,6 +201,14 @@ const theme = createTheme({
         root: {
           boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
           borderRadius: 16,
+          '&:focus': {
+            outline: 'none',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          },
+          '&:focus-visible': {
+            outline: 'none',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          },
         },
       },
     },

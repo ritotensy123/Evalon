@@ -1,0 +1,620 @@
+/* User Management Styles */
+
+/* User Management Container */
+.user-management-container {
+  @apply space-y-6;
+}
+
+/* User Management Header */
+.user-management-header {
+  @apply flex items-center justify-between;
+}
+
+.user-management-title {
+  @apply text-2xl font-bold text-gray-900;
+}
+
+.user-management-subtitle {
+  @apply text-gray-600;
+}
+
+.user-management-actions {
+  @apply flex items-center gap-3;
+}
+
+/* User Management Tabs */
+.user-management-tabs {
+  @apply bg-white rounded-xl border border-gray-200 shadow-sm;
+}
+
+.user-management-tab-nav {
+  @apply border-b border-gray-200;
+}
+
+.user-management-tab-list {
+  @apply flex space-x-8 px-6;
+}
+
+.user-management-tab {
+  @apply flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors;
+}
+
+.user-management-tab.active {
+  @apply border-purple-500 text-purple-600;
+}
+
+.user-management-tab.inactive {
+  @apply border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300;
+}
+
+.user-management-tab-content {
+  @apply p-6;
+}
+
+/* User Form Styles */
+.user-form-overlay {
+  @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4;
+}
+
+.user-form-container {
+  @apply bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto;
+}
+
+.user-form-header {
+  @apply flex items-center justify-between p-6 border-b border-gray-200;
+}
+
+.user-form-header-content {
+  @apply flex items-center gap-3;
+}
+
+.user-form-icon {
+  @apply w-10 h-10 rounded-lg flex items-center justify-center;
+}
+
+.user-form-icon.add {
+  @apply bg-purple-100 text-purple-600;
+}
+
+.user-form-icon.edit {
+  @apply bg-blue-100 text-blue-600;
+}
+
+.user-form-title {
+  @apply text-xl font-bold text-gray-900;
+}
+
+.user-form-subtitle {
+  @apply text-sm text-gray-600;
+}
+
+.user-form-content {
+  @apply p-6 space-y-6;
+}
+
+.user-form-section {
+  @apply space-y-4;
+}
+
+.user-form-section-title {
+  @apply text-lg font-semibold text-gray-900 flex items-center gap-2;
+}
+
+.user-form-grid {
+  @apply grid grid-cols-1 md:grid-cols-2 gap-4;
+}
+
+.user-form-field {
+  @apply space-y-1;
+}
+
+.user-form-label {
+  @apply block text-sm font-medium text-gray-700;
+}
+
+.user-form-input {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent;
+}
+
+.user-form-input.error {
+  @apply border-red-300;
+}
+
+.user-form-error {
+  @apply text-red-500 text-xs;
+}
+
+.user-form-actions {
+  @apply flex items-center justify-end gap-3 pt-6 border-t border-gray-200;
+}
+
+.user-form-button {
+  @apply px-4 py-2 rounded-lg transition-colors;
+}
+
+.user-form-button.primary {
+  @apply bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.user-form-button.secondary {
+  @apply text-gray-700 bg-gray-100 hover:bg-gray-200;
+}
+
+/* Bulk Upload Styles */
+.bulk-upload-overlay {
+  @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4;
+}
+
+.bulk-upload-container {
+  @apply bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto;
+}
+
+.bulk-upload-header {
+  @apply flex items-center justify-between p-6 border-b border-gray-200;
+}
+
+.bulk-upload-content {
+  @apply p-6 space-y-6;
+}
+
+.bulk-upload-dropzone {
+  @apply border-2 border-dashed rounded-lg p-8 text-center transition-colors;
+}
+
+.bulk-upload-dropzone.active {
+  @apply border-purple-500 bg-purple-50;
+}
+
+.bulk-upload-dropzone.inactive {
+  @apply border-gray-300 hover:border-gray-400;
+}
+
+.bulk-upload-preview {
+  @apply bg-white border border-gray-200 rounded-lg overflow-hidden;
+}
+
+.bulk-upload-table {
+  @apply w-full text-sm;
+}
+
+.bulk-upload-table-header {
+  @apply bg-gray-50;
+}
+
+.bulk-upload-table-row {
+  @apply hover:bg-gray-50 transition-colors;
+}
+
+/* Invitation System Styles */
+.invitation-overlay {
+  @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4;
+}
+
+.invitation-container {
+  @apply bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto;
+}
+
+.invitation-header {
+  @apply flex items-center justify-between p-6 border-b border-gray-200;
+}
+
+.invitation-content {
+  @apply p-6 space-y-6;
+}
+
+.invitation-settings {
+  @apply grid grid-cols-1 lg:grid-cols-2 gap-6;
+}
+
+.invitation-preview {
+  @apply bg-white border border-gray-200 rounded-lg p-6;
+}
+
+.invitation-email-preview {
+  @apply bg-gray-50 rounded-lg p-4;
+}
+
+.invitation-list {
+  @apply bg-white border border-gray-200 rounded-lg overflow-hidden;
+}
+
+.invitation-table {
+  @apply w-full text-sm;
+}
+
+.invitation-table-header {
+  @apply bg-gray-50;
+}
+
+.invitation-table-row {
+  @apply hover:bg-gray-50 transition-colors;
+}
+
+/* Role Assignment Styles */
+.role-assignment-container {
+  @apply space-y-6;
+}
+
+.role-assignment-header {
+  @apply flex items-center justify-between;
+}
+
+.role-assignment-grid {
+  @apply grid grid-cols-1 lg:grid-cols-3 gap-6;
+}
+
+.role-assignment-list {
+  @apply lg:col-span-1 space-y-4;
+}
+
+.role-assignment-details {
+  @apply lg:col-span-2;
+}
+
+.role-card {
+  @apply p-4 border rounded-lg cursor-pointer transition-all duration-200 hover:shadow-md;
+}
+
+.role-card.active {
+  @apply border-purple-500 bg-purple-50;
+}
+
+.role-card.inactive {
+  @apply border-gray-200 hover:border-gray-300;
+}
+
+.role-card-header {
+  @apply flex items-center justify-between mb-3;
+}
+
+.role-card-icon {
+  @apply w-10 h-10 rounded-lg flex items-center justify-center;
+}
+
+.role-card-icon.red {
+  @apply bg-red-50 border-red-200 text-red-600;
+}
+
+.role-card-icon.purple {
+  @apply bg-purple-50 border-purple-200 text-purple-600;
+}
+
+.role-card-icon.blue {
+  @apply bg-blue-50 border-blue-200 text-blue-600;
+}
+
+.role-card-icon.green {
+  @apply bg-green-50 border-green-200 text-green-600;
+}
+
+.role-card-title {
+  @apply font-semibold text-gray-900;
+}
+
+.role-card-count {
+  @apply text-sm text-gray-600;
+}
+
+.role-card-description {
+  @apply text-sm text-gray-600 mb-3;
+}
+
+.role-permission-summary {
+  @apply space-y-2;
+}
+
+.role-permission-header {
+  @apply flex items-center justify-between text-xs;
+}
+
+.role-permission-label {
+  @apply text-gray-500;
+}
+
+.role-permission-count {
+  @apply text-gray-700;
+}
+
+.role-permission-bar {
+  @apply w-full bg-gray-200 rounded-full h-1.5;
+}
+
+.role-permission-progress {
+  @apply bg-purple-500 h-1.5 rounded-full transition-all duration-300;
+}
+
+/* User Status Monitor Styles */
+.status-monitor-container {
+  @apply space-y-6;
+}
+
+.status-monitor-header {
+  @apply flex items-center justify-between;
+}
+
+.status-monitor-stats {
+  @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4;
+}
+
+.status-monitor-stat-card {
+  @apply bg-white rounded-xl p-4 border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200;
+}
+
+.status-monitor-stat-icon {
+  @apply w-10 h-10 rounded-lg flex items-center justify-center;
+}
+
+.status-monitor-stat-icon.blue {
+  @apply bg-blue-50 text-blue-600;
+}
+
+.status-monitor-stat-icon.green {
+  @apply bg-green-50 text-green-600;
+}
+
+.status-monitor-stat-icon.purple {
+  @apply bg-purple-50 text-purple-600;
+}
+
+.status-monitor-stat-value {
+  @apply text-2xl font-bold text-gray-900 mb-1;
+}
+
+.status-monitor-stat-title {
+  @apply text-sm font-medium text-gray-600;
+}
+
+.status-monitor-content {
+  @apply grid grid-cols-1 lg:grid-cols-3 gap-6;
+}
+
+.status-monitor-users {
+  @apply lg:col-span-2 space-y-4;
+}
+
+.status-monitor-activity {
+  @apply space-y-4;
+}
+
+.status-monitor-filters {
+  @apply flex items-center gap-2;
+}
+
+.status-monitor-search {
+  @apply relative;
+}
+
+.status-monitor-search-input {
+  @apply pl-10 pr-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent;
+}
+
+.status-monitor-search-icon {
+  @apply absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4;
+}
+
+.status-monitor-table {
+  @apply bg-white border border-gray-200 rounded-lg overflow-hidden;
+}
+
+.status-monitor-table-content {
+  @apply overflow-x-auto;
+}
+
+.status-monitor-table-table {
+  @apply w-full text-sm;
+}
+
+.status-monitor-table-header {
+  @apply bg-gray-50 border-b border-gray-200;
+}
+
+.status-monitor-table-row {
+  @apply hover:bg-gray-50 transition-colors;
+}
+
+.status-monitor-activity-log {
+  @apply bg-white border border-gray-200 rounded-lg p-4;
+}
+
+.status-monitor-activity-item {
+  @apply flex items-start gap-3;
+}
+
+.status-monitor-activity-icon {
+  @apply w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0;
+}
+
+.status-monitor-activity-content {
+  @apply flex-1 min-w-0;
+}
+
+.status-monitor-activity-user {
+  @apply text-sm font-medium text-gray-900;
+}
+
+.status-monitor-activity-action {
+  @apply text-sm text-gray-600;
+}
+
+.status-monitor-activity-details {
+  @apply text-xs text-gray-500;
+}
+
+.status-monitor-activity-time {
+  @apply text-xs text-gray-400 mt-1;
+}
+
+/* Status Icons */
+.status-icon {
+  @apply w-4 h-4;
+}
+
+.status-icon.online {
+  @apply text-green-500;
+}
+
+.status-icon.away {
+  @apply text-yellow-500;
+}
+
+.status-icon.offline {
+  @apply text-gray-400;
+}
+
+.status-icon.active {
+  @apply text-green-500;
+}
+
+.status-icon.idle {
+  @apply text-yellow-500;
+}
+
+.status-icon.pending {
+  @apply text-yellow-500;
+}
+
+.status-icon.inactive {
+  @apply text-red-500;
+}
+
+/* Role Badges */
+.role-badge {
+  @apply inline-flex px-2 py-1 text-xs font-semibold rounded-full;
+}
+
+.role-badge.admin {
+  @apply bg-red-100 text-red-800;
+}
+
+.role-badge.sub_admin {
+  @apply bg-purple-100 text-purple-800;
+}
+
+.role-badge.teacher {
+  @apply bg-blue-100 text-blue-800;
+}
+
+.role-badge.student {
+  @apply bg-green-100 text-green-800;
+}
+
+/* Status Badges */
+.status-badge {
+  @apply px-2 py-1 text-xs font-semibold rounded-full;
+}
+
+.status-badge.active {
+  @apply text-green-600 bg-green-100;
+}
+
+.status-badge.pending {
+  @apply text-yellow-600 bg-yellow-100;
+}
+
+.status-badge.inactive {
+  @apply text-gray-600 bg-gray-100;
+}
+
+/* Permission Modal */
+.permission-modal-overlay {
+  @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4;
+}
+
+.permission-modal-container {
+  @apply bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto;
+}
+
+.permission-modal-header {
+  @apply flex items-center justify-between p-6 border-b border-gray-200;
+}
+
+.permission-modal-content {
+  @apply p-6 space-y-6;
+}
+
+.permission-category {
+  @apply border border-gray-200 rounded-lg p-4;
+}
+
+.permission-category-header {
+  @apply mb-4;
+}
+
+.permission-category-title {
+  @apply font-semibold text-gray-900;
+}
+
+.permission-category-description {
+  @apply text-sm text-gray-600;
+}
+
+.permission-grid {
+  @apply grid grid-cols-3 gap-4;
+}
+
+.permission-checkbox {
+  @apply flex items-center gap-2;
+}
+
+.permission-checkbox-input {
+  @apply w-4 h-4 text-purple-600 focus:ring-purple-500 rounded;
+}
+
+.permission-checkbox-label {
+  @apply text-sm font-medium text-gray-700 capitalize cursor-pointer;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .user-management-tab-list {
+    @apply space-x-4 px-4;
+  }
+  
+  .user-form-grid {
+    @apply grid-cols-1;
+  }
+  
+  .invitation-settings {
+    @apply grid-cols-1;
+  }
+  
+  .role-assignment-grid {
+    @apply grid-cols-1;
+  }
+  
+  .status-monitor-content {
+    @apply grid-cols-1;
+  }
+  
+  .status-monitor-stats {
+    @apply grid-cols-1 gap-3;
+  }
+}
+
+/* Loading States */
+.loading-spinner {
+  @apply w-16 h-16 border-4 border-purple-200 border-t-purple-500 rounded-full animate-spin mx-auto mb-4;
+}
+
+.loading-text {
+  @apply text-lg font-semibold text-gray-900;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(-10px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}

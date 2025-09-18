@@ -70,6 +70,10 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
+  firstLogin: {
+    type: Boolean,
+    default: true
+  },
   
   // Password reset
   resetPasswordToken: String,
@@ -120,7 +124,13 @@ userSchema.pre('save', async function(next) {
     this.userTypeEmail = `${this.email.toLowerCase()}_${this.userType}`;
   }
   
-  if (!this.isModified('password') || (this.authProvider !== 'local' && this.authProvider !== 'temp_password')) {
+  // Skip hashing if password is not modified and user already exists
+  if (!this.isModified('password') && !this.isNew) {
+    return next();
+  }
+  
+  // Skip hashing if auth provider doesn't support password authentication
+  if (this.authProvider !== 'local' && this.authProvider !== 'temp_password') {
     return next();
   }
   
@@ -156,6 +166,7 @@ userSchema.methods.getUserDetails = async function() {
     authProvider: this.authProvider,
     isActive: this.isActive,
     lastLogin: this.lastLogin,
+    firstLogin: this.firstLogin,
     isEmailVerified: this.isEmailVerified,
     profile: this.profile,
     userDetails: this.userId
@@ -187,8 +198,12 @@ userSchema.statics.createFromRegistration = async function(userData) {
     userModel,
     userTypeEmail,
     profile,
+    authProvider: 'local', // Explicitly set auth provider
     isEmailVerified: true // Assuming email is verified during registration
   });
+  
+  // Mark password as modified to ensure it gets hashed
+  user.markModified('password');
   
   return user.save();
 };

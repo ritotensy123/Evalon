@@ -101,16 +101,23 @@ const registerStep2 = async (req, res) => {
       registrationToken
     } = req.body;
 
-    // Validate required fields (only basic fields required for OTP sending)
-    if (!adminName || !adminEmail || !registrationToken) {
+    // Validate required fields (including password for User creation)
+    if (!adminName || !adminEmail || !registrationToken || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields'
+        message: 'Missing required fields: admin name, email, registration token, and password are required'
       });
     }
 
-    // Validate password confirmation only if passwords are provided
-    if (password && confirmPassword && password !== confirmPassword) {
+    // Validate password confirmation
+    if (!confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password confirmation is required'
+      });
+    }
+    
+    if (password !== confirmPassword) {
       return res.status(400).json({
         success: false,
         message: 'Passwords do not match'
@@ -162,10 +169,9 @@ const registerStep2 = async (req, res) => {
       step2Data.countryCode = countryCode;
     }
 
-    // Only add hashedPassword if it was provided
-    if (hashedPassword) {
-      step2Data.hashedPassword = hashedPassword;
-    }
+    // Store both raw and hashed passwords (password is now required)
+    step2Data.rawPassword = password; // Store raw password for User creation
+    step2Data.hashedPassword = hashedPassword; // Store hashed password for Organization
 
     // Update stored data with step 2 information
     const updatedData = {
@@ -592,34 +598,51 @@ const completeRegistration = async (req, res) => {
     await organization.save();
 
     // Create admin user
-    // If no password was provided, generate a temporary one
-    let userPassword = registrationData.hashedPassword;
-    let authProvider = 'local';
-    
-    if (!userPassword) {
-      // Generate a temporary password that the user will need to change on first login
-      const tempPassword = Math.random().toString(36).slice(-8) + 'Temp123!';
-      const saltRounds = 12;
-      userPassword = await bcrypt.hash(tempPassword, saltRounds);
-      authProvider = 'temp_password'; // Custom auth provider for temp passwords
-    }
+    console.log('🔧 Creating organization admin user...', {
+      adminEmail: registrationData.adminEmail,
+      hasRawPassword: !!registrationData.rawPassword,
+      hasHashedPassword: !!registrationData.hashedPassword,
+      adminName: registrationData.adminName
+    });
 
     // Create User record for authentication
     try {
       const { createOrganizationAdminUser } = require('../utils/createUserFromRegistration');
+      
+      // Pass the raw password (not hashed) to the user creation function
+      // The User model will handle the hashing in the pre-save middleware
       const adminUser = await createOrganizationAdminUser(organization._id, {
         emailAddress: registrationData.adminEmail,
-        password: registrationData.hashedPassword || userPassword,
+        password: registrationData.rawPassword, // Use raw password for User creation
         firstName: registrationData.adminName.split(' ')[0] || registrationData.adminName,
         lastName: registrationData.adminName.split(' ').slice(1).join(' ') || '',
         phoneNumber: registrationData.adminPhone,
         countryCode: registrationData.countryCode
       });
       
-      console.log('✅ Organization admin user created:', adminUser._id);
+      console.log('✅ Organization admin user created successfully:', {
+        userId: adminUser._id,
+        email: adminUser.email,
+        authProvider: adminUser.authProvider
+      });
     } catch (userError) {
       console.error('❌ Error creating organization admin user:', userError);
-      // Don't fail the organization creation if user creation fails
+      console.error('❌ User creation error details:', {
+        message: userError.message,
+        stack: userError.stack,
+        registrationData: {
+          adminEmail: registrationData.adminEmail,
+          hasRawPassword: !!registrationData.rawPassword,
+          hasHashedPassword: !!registrationData.hashedPassword
+        }
+      });
+      
+      // Return error response if user creation fails
+      return res.status(500).json({
+        success: false,
+        message: 'Organization created but failed to create admin user. Please contact support.',
+        error: userError.message
+      });
     }
 
     // Generate JWT token
@@ -827,7 +850,18 @@ const upload = multer({
 // Upload logo - now stores in memory temporarily until form submission
 const uploadLogo = async (req, res) => {
   try {
+    console.log('📁 Logo upload request received:', {
+      hasFile: !!req.file,
+      body: req.body,
+      fileInfo: req.file ? {
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      } : null
+    });
+
     if (!req.file) {
+      console.log('❌ No file uploaded');
       return res.status(400).json({
         success: false,
         message: 'No file uploaded'
@@ -877,10 +911,207 @@ const uploadLogo = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Logo upload error:', error);
+    console.error('❌ Logo upload error:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Failed to upload logo',
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+};
+
+// Complete setup wizard
+const completeSetup = async (req, res) => {
+  try {
+    const { organizationId, logo, logoTempKey, organizationDetails, departments, adminPermissions } = req.body;
+
+    if (!organizationId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Organization ID is required'
+      });
+    }
+
+    // Find the organization
+    const organization = await Organization.findById(organizationId);
+    if (!organization) {
+      return res.status(404).json({
+        success: false,
+        message: 'Organization not found'
+      });
+    }
+
+    // Finalize logo upload if temp key is provided
+    let finalLogoPath = organization.logo;
+    if (logoTempKey) {
+      finalLogoPath = await finalizeLogoUpload(logoTempKey, organization.orgCode);
+    } else if (logo && logo !== 'auto-generated') {
+      finalLogoPath = logo;
+    } else if (logo === 'auto-generated') {
+      // Handle auto-generated logo
+      finalLogoPath = `auto-generated-${organization.orgCode}`;
+    }
+
+    // Update organization with setup data
+    const updateData = {
+      logo: finalLogoPath,
+      setupCompleted: true,
+      setupCompletedAt: new Date()
+    };
+
+    // Update organization details if provided
+    if (organizationDetails) {
+      Object.assign(updateData, organizationDetails);
+    }
+
+    // Update departments if provided
+    if (departments && departments.length > 0) {
+      updateData.departments = departments.map(dept => ({
+        name: dept.name,
+        code: dept.code,
+        description: dept.description,
+        type: dept.type,
+        headOfDepartment: dept.headOfDepartment,
+        studentCapacity: dept.studentCapacity,
+        createdAt: new Date()
+      }));
+    }
+
+    // Update admin permissions if provided
+    if (adminPermissions) {
+      updateData.adminPermissions = adminPermissions.permissions || {};
+      updateData.securitySettings = adminPermissions.securitySettings || {};
+      updateData.notificationSettings = adminPermissions.notificationSettings || {};
+      updateData.subAdmins = adminPermissions.subAdmins || [];
+    }
+
+    const updatedOrganization = await Organization.findByIdAndUpdate(
+      organizationId,
+      updateData,
+      { new: true, runValidators: true }
+    );
+
+    // Generate dashboard data
+    const dashboardData = {
+      organization: {
+        id: updatedOrganization._id,
+        name: updatedOrganization.name,
+        orgCode: updatedOrganization.orgCode,
+        logo: updatedOrganization.logo,
+        setupCompleted: updatedOrganization.setupCompleted
+      },
+      stats: {
+        totalDepartments: updatedOrganization.departments?.length || 0,
+        totalStudents: updatedOrganization.stats?.totalStudents || 0,
+        totalTeachers: updatedOrganization.stats?.totalTeachers || 0,
+        totalSubAdmins: updatedOrganization.subAdmins?.length || 0
+      },
+      departments: updatedOrganization.departments || [],
+      permissions: updatedOrganization.adminPermissions || {},
+      securitySettings: updatedOrganization.securitySettings || {},
+      notificationSettings: updatedOrganization.notificationSettings || {}
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Setup completed successfully!',
+      data: {
+        organization: updatedOrganization,
+        setupCompleted: true
+      },
+      dashboardData
+    });
+
+  } catch (error) {
+    console.error('Complete setup error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to complete setup',
+      error: error.message
+    });
+  }
+};
+
+// Get organization setup status
+const getSetupStatus = async (req, res) => {
+  try {
+    const { organizationId } = req.params;
+
+    const organization = await Organization.findById(organizationId);
+    if (!organization) {
+      return res.status(404).json({
+        success: false,
+        message: 'Organization not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        setupCompleted: organization.setupCompleted || false,
+        setupCompletedAt: organization.setupCompletedAt,
+        hasLogo: !!organization.logo,
+        departmentsCount: organization.departments?.length || 0,
+        subAdminsCount: organization.subAdmins?.length || 0,
+        permissionsConfigured: !!organization.adminPermissions
+      }
+    });
+
+  } catch (error) {
+    console.error('Get setup status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get setup status',
+      error: error.message
+    });
+  }
+};
+
+// Skip setup wizard
+const skipSetup = async (req, res) => {
+  try {
+    const { organizationId } = req.body;
+
+    if (!organizationId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Organization ID is required'
+      });
+    }
+
+    const organization = await Organization.findByIdAndUpdate(
+      organizationId,
+      {
+        setupCompleted: true,
+        setupCompletedAt: new Date(),
+        setupSkipped: true
+      },
+      { new: true }
+    );
+
+    if (!organization) {
+      return res.status(404).json({
+        success: false,
+        message: 'Organization not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Setup skipped successfully',
+      data: {
+        organization,
+        setupSkipped: true
+      }
+    });
+
+  } catch (error) {
+    console.error('Skip setup error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to skip setup',
       error: error.message
     });
   }
@@ -899,5 +1130,8 @@ module.exports = {
   updateOrganization,
   deleteOrganization,
   uploadLogo,
-  upload
+  upload,
+  completeSetup,
+  getSetupStatus,
+  skipSetup
 };

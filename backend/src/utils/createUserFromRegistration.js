@@ -11,6 +11,13 @@ const createUserFromRegistration = async (userData) => {
   try {
     const { email, password, userType, userId, userModel, profile } = userData;
     
+    console.log('🔧 Creating user from registration:', {
+      email: email.toLowerCase(),
+      userType,
+      hasPassword: !!password,
+      userId
+    });
+    
     // Check if user already exists for this email and user type
     const userTypeEmail = `${email.toLowerCase()}_${userType}`;
     const existingUser = await User.findOne({ userTypeEmail });
@@ -28,7 +35,11 @@ const createUserFromRegistration = async (userData) => {
       profile
     });
     
-    console.log(`✅ User created successfully: ${user.email} (${user.userType})`);
+    console.log(`✅ User created successfully: ${user.email} (${user.userType})`, {
+      userId: user._id,
+      authProvider: user.authProvider,
+      hasPassword: !!user.password
+    });
     return user;
     
   } catch (error) {
@@ -47,6 +58,13 @@ const createOrganizationAdminUser = async (organizationId, adminData) => {
       throw new Error('Organization not found');
     }
     
+    console.log('🔧 Creating organization admin user:', {
+      organizationId,
+      email: adminData.emailAddress,
+      hasPassword: !!adminData.password,
+      firstName: adminData.firstName
+    });
+    
     const userData = {
       email: adminData.emailAddress,
       password: adminData.password,
@@ -62,7 +80,16 @@ const createOrganizationAdminUser = async (organizationId, adminData) => {
       }
     };
     
-    return await createUserFromRegistration(userData);
+    const user = await createUserFromRegistration(userData);
+    
+    console.log('✅ Organization admin user created successfully:', {
+      userId: user._id,
+      email: user.email,
+      userType: user.userType,
+      authProvider: user.authProvider
+    });
+    
+    return user;
     
   } catch (error) {
     console.error('❌ Error creating organization admin user:', error);

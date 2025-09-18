@@ -1,16 +1,71 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import OrganizationDashboard from './dashboard/OrganizationDashboard';
 import TeacherDashboard from './dashboard/TeacherDashboard';
 import StudentDashboard from './dashboard/StudentDashboard';
 import SubAdminDashboard from './dashboard/SubAdminDashboard';
+import SystemSetupWizard from '../components/setup/SystemSetupWizard';
+import api from '../services/api';
 
 const Dashboard = () => {
-  const { user, isLoading, isAuthenticated } = useAuth();
+  const { user, isLoading, isAuthenticated, organizationData, updateUser, updateDashboardData } = useAuth();
+  const [setupStatus, setSetupStatus] = useState(null);
+  const [checkingSetup, setCheckingSetup] = useState(false);
 
-  // Show loading spinner while checking authentication
-  if (isLoading) {
+  // Debug logging
+  console.log('🏠 Dashboard component rendered');
+  console.log('🏠 User data:', user);
+  console.log('🏠 Is authenticated:', isAuthenticated);
+  console.log('🏠 Is loading:', isLoading);
+  console.log('🏠 Organization data:', organizationData);
+
+  // Check setup status for organization admins
+  useEffect(() => {
+    const checkSetupStatus = async () => {
+      if (user?.userType === 'organization_admin' && user?.organizationId && !setupStatus) {
+        setCheckingSetup(true);
+        try {
+          // Use organization data from context if available, otherwise fetch from API
+          if (organizationData) {
+            setSetupStatus({
+              setupCompleted: organizationData.setupCompleted || false,
+              setupCompletedAt: organizationData.setupCompletedAt,
+              hasLogo: !!organizationData.logo,
+              departmentsCount: organizationData.departments?.length || 0,
+              subAdminsCount: organizationData.subAdmins?.length || 0,
+              permissionsConfigured: !!organizationData.adminPermissions
+            });
+          } else {
+            const response = await api.get(`/organization/${user.organizationId}/setup-status`);
+            if (response.data.success) {
+              setSetupStatus(response.data.data);
+            }
+          }
+        } catch (error) {
+          console.error('Error checking setup status:', error);
+        } finally {
+          setCheckingSetup(false);
+        }
+      }
+    };
+
+    checkSetupStatus();
+  }, [user, setupStatus, organizationData]);
+
+  // Handle setup completion
+  const handleSetupComplete = () => {
+    setSetupStatus(prev => ({ ...prev, setupCompleted: true }));
+    // Update user context
+    updateUser({
+      ...user,
+      setupCompleted: true,
+      firstLogin: false
+    });
+  };
+
+  // Show loading spinner while checking authentication or setup status
+  if (isLoading || checkingSetup) {
     return (
       <Box
         sx={{
@@ -52,6 +107,14 @@ const Dashboard = () => {
         </Typography>
       </Box>
     );
+  }
+
+  // Check if organization admin needs to complete setup (only on first login)
+  if (user?.userType === 'organization_admin' && user?.firstLogin) {
+    // Show setup wizard if setup is not completed or if we don't have setup status yet
+    if (!setupStatus || !setupStatus.setupCompleted) {
+      return <SystemSetupWizard onComplete={handleSetupComplete} onSkip={handleSetupComplete} />;
+    }
   }
 
   // Render appropriate dashboard based on user type

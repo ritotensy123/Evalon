@@ -18,6 +18,9 @@ const organizationRoutes = require('./routes/organizationRoutes');
 const locationRoutes = require('./routes/locationRoutes');
 const teacherRoutes = require('./routes/teacherRoutes');
 const studentRoutes = require('./routes/studentRoutes');
+const userManagementRoutes = require('./routes/userManagementRoutes');
+const userActivityRoutes = require('./routes/userActivityRoutes');
+const userPermissionRoutes = require('./routes/userPermissionRoutes');
 
 const app = express();
 
@@ -109,6 +112,9 @@ app.use('/api/organizations', organizationRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/teachers', teacherRoutes);
 app.use('/api/students', studentRoutes);
+app.use('/api/user-management', userManagementRoutes);
+app.use('/api/user-activity', userActivityRoutes);
+app.use('/api/user-permissions', userPermissionRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -121,6 +127,10 @@ app.get('/', (req, res) => {
       organizations: '/api/organizations',
       locations: '/api/locations',
       teachers: '/api/teachers',
+      students: '/api/students',
+      userManagement: '/api/user-management',
+      userActivity: '/api/user-activity',
+      userPermissions: '/api/user-permissions',
       documentation: '/api-docs'
     }
   });
