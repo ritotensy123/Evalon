@@ -1,0 +1,11 @@
+7fba7fe - ritotensy, 15 hours ago : Google Sign in with Dashboard
+f35928a - ritotensy, 5 days ago : Login Functionality Completed
+5de1de7 - ritotensy, 5 days ago : Registration Backend Completed
+dd2a83f - ritotensy, 9 days ago : Fix OTP functionality and server warnings
+39fcc29 - ritotensy, 9 days ago : Remove unnecessary files and clean up project structure
+6dba6f8 - ritotensy, 9 days ago : Complete project setup and migration
+26f5c73 - ritotensy, 4 weeks ago : Registration [Organisation]
+5ef9a37 - ritotensy, 6 weeks ago : Landing->Login->Onboarding Cards
+cfabb8f - ritotensy, 6 weeks ago : Onboarding Completed
+48a6cc7 - ritotensy, 6 weeks ago : Login & Landing Page
+d45f2b7 - maryloid, 6 weeks ago : Initial commit

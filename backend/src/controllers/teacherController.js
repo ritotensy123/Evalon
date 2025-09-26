@@ -20,8 +20,37 @@ const registerStep1 = async (req, res) => {
       pincode
     } = req.body;
 
-    // Validate required fields
-    if (!fullName || !phoneNumber || !emailAddress || !country || !city || !pincode) {
+    // Debug: Log received data
+    console.log('📝 Teacher Step 1 Registration Data:', {
+      fullName,
+      phoneNumber,
+      countryCode,
+      emailAddress,
+      country,
+      city,
+      pincode
+    });
+
+    // Check if this is an org-created user first
+    const existingUser = await User.findOne({
+      email: emailAddress.toLowerCase(),
+      userType: 'teacher',
+      authProvider: 'pending_registration',
+      isRegistrationComplete: false
+    });
+
+    const isOrgCreatedUser = !!existingUser;
+
+    // Validate required fields only for standalone registrations
+    if (!isOrgCreatedUser && (!fullName || !phoneNumber || !emailAddress || !country || !city || !pincode)) {
+      console.log('❌ Missing required fields for standalone registration:', {
+        fullName: !!fullName,
+        phoneNumber: !!phoneNumber,
+        emailAddress: !!emailAddress,
+        country: !!country,
+        city: !!city,
+        pincode: !!pincode
+      });
       return res.status(400).json({
         success: false,
         message: 'Missing required fields'
@@ -33,12 +62,64 @@ const registerStep1 = async (req, res) => {
       emailAddress: emailAddress.toLowerCase()
     });
 
-    if (existingTeacher) {
+    if (existingTeacher && isOrgCreatedUser) {
+      // This is an admin-created teacher completing their registration
+      console.log('🔄 Admin-created teacher completing registration:', emailAddress);
+      
+      // Update the existing teacher record with new data (only if provided)
+      if (fullName) existingTeacher.fullName = fullName;
+      if (phoneNumber && countryCode) existingTeacher.phoneNumber = `${countryCode}${phoneNumber}`;
+      if (country) existingTeacher.country = country;
+      if (city) existingTeacher.city = city;
+      if (pincode) existingTeacher.pincode = pincode;
+      existingTeacher.status = 'active';
+      
+      await existingTeacher.save();
+      
+      // Generate registration token for the next steps
+      const registrationToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      
+      // Store step 1 data in temporary storage
+      const step1Data = {
+        fullName,
+        phoneNumber,
+        countryCode,
+        emailAddress: emailAddress.toLowerCase(),
+        country,
+        city,
+        pincode,
+        step: 1,
+        timestamp: new Date(),
+        isAdminCreated: true,
+        existingTeacherId: existingTeacher._id,
+        existingUserId: existingUser._id
+      };
+
+      // Store data with registration token as key
+      console.log('🔍 Step 1 - Storing admin-created teacher data with token:', registrationToken);
+      store(registrationToken, step1Data);
+      console.log('🔍 Step 1 - Data stored successfully');
+
+      return res.status(200).json({
+        success: true,
+        message: 'Admin-created teacher basic details updated successfully',
+        data: {
+          step: 1,
+          nextStep: 'professional_details',
+          registrationToken,
+          isAdminCreated: true
+        }
+      });
+    } else if (existingTeacher) {
+      // This is a regular duplicate email
       return res.status(400).json({
         success: false,
         message: 'Teacher with this email already exists'
       });
     }
+
+    // This is a new standalone registration
+    console.log('🆕 New standalone teacher registration:', emailAddress);
 
     // Generate registration token
     const registrationToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -152,12 +233,13 @@ const registerStep2 = async (req, res) => {
 const registerStep3 = async (req, res) => {
   try {
     const {
-      organizationCode,
       registrationToken
     } = req.body;
 
     // Retrieve registration data
+    console.log('🔍 Step 3 - Looking for registration token:', registrationToken);
     const registrationData = retrieve(registrationToken);
+    console.log('🔍 Step 3 - Retrieved data:', registrationData ? 'Found' : 'Not found');
     if (!registrationData) {
       return res.status(400).json({
         success: false,
@@ -165,60 +247,33 @@ const registerStep3 = async (req, res) => {
       });
     }
 
-    let organizationInfo = null;
-    let isOrganizationValid = false;
+    // Set affiliation type to freelance by default
+    registrationData.affiliationType = 'freelance';
+    registrationData.isOrganizationValid = false;
+    registrationData.organizationName = '';
+    registrationData.associationStatus = 'freelance';
 
-    // If organization code is provided, validate it
-    if (organizationCode) {
-      const organization = await Organization.findOne({
-        orgCode: organizationCode.toUpperCase(),
-        status: 'active'
-      });
+    // Update the stored data
+    update(registrationToken, registrationData);
 
-      if (organization) {
-        organizationInfo = {
-          organizationId: organization._id,
-          organizationName: organization.name,
-          organizationCode: organization.orgCode
-        };
-        isOrganizationValid = true;
-      }
-    }
-
-    // Store step 3 data
-    const step3Data = {
-      organizationCode: organizationCode || '',
-      organizationId: organizationInfo?.organizationId || null,
-      organizationName: organizationInfo?.organizationName || '',
-      isOrganizationValid,
-      step: 3,
-      timestamp: new Date()
-    };
-
-    // Update stored data with step 3 information
-    const updatedData = {
-      ...registrationData,
-      ...step3Data
-    };
-    store(registrationToken, updatedData);
+    console.log('✅ Step 3 - Freelance teacher setup completed');
 
     res.status(200).json({
       success: true,
-      message: 'Organization link processed successfully',
+      message: 'Freelance teacher setup completed',
       data: {
-        step: 3,
-        nextStep: 'security_verification',
-        registrationToken,
-        organizationInfo: organizationInfo || null,
-        isOrganizationValid
+        affiliationType: 'freelance',
+        isOrganizationValid: false,
+        organizationName: '',
+        associationStatus: 'freelance'
       }
     });
 
   } catch (error) {
-    console.error('Teacher step 3 registration error:', error);
+    console.error('Teacher registration step 3 error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to process organization link',
+      message: 'Failed to complete freelance teacher setup',
       error: error.message
     });
   }
@@ -251,7 +306,7 @@ const registerStep4 = async (req, res) => {
       });
     }
 
-    // Validate password
+    // Validate password for all freelance registrations
     if (!password || !confirmPassword) {
       return res.status(400).json({
         success: false,
@@ -266,62 +321,84 @@ const registerStep4 = async (req, res) => {
       });
     }
 
-    // Hash password
-    const saltRounds = 12;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    // Keep password plain - let User model handle hashing
 
-    // Check if teacher already exists
-    const existingTeacher = await Teacher.findOne({
-      emailAddress: registrationData.emailAddress
-    });
-
-    if (existingTeacher) {
-      return res.status(400).json({
-        success: false,
-        message: 'Teacher with this email already exists'
-      });
-    }
-
-    // Create teacher
-    const teacher = new Teacher({
+    // Create new teacher record for freelance registration
+    console.log('🔄 Creating freelance teacher record');
+    
+    const teacherData = {
       fullName: registrationData.fullName,
-      phoneNumber: `${registrationData.countryCode}${registrationData.phoneNumber}`,
       emailAddress: registrationData.emailAddress,
+      phoneNumber: registrationData.phoneNumber,
+      countryCode: registrationData.countryCode,
       country: registrationData.country,
       city: registrationData.city,
       pincode: registrationData.pincode,
-      subjects: registrationData.subjects,
-      role: registrationData.role,
-      affiliationType: registrationData.affiliationType,
-      experienceLevel: registrationData.experienceLevel,
-      currentInstitution: registrationData.currentInstitution,
-      yearsOfExperience: registrationData.yearsOfExperience,
-      organizationId: registrationData.organizationId,
-      organizationName: registrationData.organizationName,
-      password: password, // Include password - will be hashed by middleware
+      subjects: registrationData.subjects || [],
+      role: registrationData.role || 'teacher',
+      affiliationType: 'freelance',
+      experienceLevel: registrationData.experienceLevel || 'beginner',
+      currentInstitution: registrationData.currentInstitution || '',
+      yearsOfExperience: registrationData.yearsOfExperience || '',
       status: 'active',
-      emailVerified,
-      phoneVerified
-    });
+      emailVerified: emailVerified,
+      phoneVerified: phoneVerified
+    };
 
+    const teacher = new Teacher(teacherData);
     await teacher.save();
 
-    // Create teacher user
-    const teacherUser = new User({
-      name: registrationData.fullName,
-      email: registrationData.emailAddress,
-      password: hashedPassword,
-      userType: 'teacher',
-      userId: teacher._id,
-      userModel: 'Teacher',
-      userTypeEmail: `teacher_${registrationData.emailAddress}`,
-      authProvider: 'local',
-      emailVerified,
-      phoneVerified,
-      isActive: true
-    });
-
-    await teacherUser.save();
+    // Create or update user record
+    let teacherUser = null;
+    try {
+      const userTypeEmail = `${registrationData.emailAddress.toLowerCase()}_teacher`;
+      
+      // Check if user already exists
+      const existingUser = await User.findOne({ userTypeEmail });
+      
+      if (existingUser) {
+        // Update existing user
+        console.log('🔄 Updating existing teacher user:', existingUser._id);
+        existingUser.userId = teacher._id;
+        existingUser.userModel = 'Teacher';
+        existingUser.isActive = true;
+        existingUser.isRegistrationComplete = true;
+        existingUser.firstLogin = false;
+        existingUser.authProvider = 'local'; // Set auth provider for password login
+        existingUser.isEmailVerified = true; // Ensure email is verified
+        existingUser.profile = {
+          firstName: registrationData.fullName.split(' ')[0] || registrationData.fullName,
+          lastName: registrationData.fullName.split(' ').slice(1).join(' ') || ''
+        };
+        
+        // Set plain password - let User model handle hashing
+        existingUser.password = password;
+        
+        teacherUser = await existingUser.save();
+        console.log('✅ Existing teacher user updated:', teacherUser._id);
+      } else {
+        // Create new user
+        teacherUser = await createUserFromRegistration({
+          email: registrationData.emailAddress.toLowerCase(),
+          password: password,
+          userType: 'teacher',
+          userId: teacher._id,
+          userModel: 'Teacher',
+          profile: {
+            firstName: registrationData.fullName.split(' ')[0] || registrationData.fullName,
+            lastName: registrationData.fullName.split(' ').slice(1).join(' ') || ''
+          }
+        });
+        console.log('✅ New teacher user created:', teacherUser._id);
+      }
+    } catch (userError) {
+      console.error('❌ Error creating/updating teacher user:', userError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create teacher user',
+        error: userError.message
+      });
+    }
 
     // Generate JWT token
     const token = jwt.sign(
@@ -340,7 +417,7 @@ const registerStep4 = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Teacher registered successfully!',
+      message: 'Freelance teacher registration completed successfully!',
       data: {
         teacher: {
           id: teacher._id,
@@ -348,28 +425,28 @@ const registerStep4 = async (req, res) => {
           emailAddress: teacher.emailAddress,
           subjects: teacher.subjects,
           role: teacher.role,
-          organizationName: teacher.organizationName,
+          affiliationType: teacher.affiliationType,
           status: teacher.status
         },
         user: {
           id: teacherUser._id,
-          name: teacherUser.name,
+          name: teacherUser.profile?.firstName + ' ' + teacherUser.profile?.lastName,
           email: teacherUser.email,
           userType: 'teacher',
-          emailVerified: teacherUser.emailVerified,
-          phoneVerified: teacherUser.phoneVerified
-        },
-        token,
-        nextSteps: [
-          'Complete your profile setup',
-          'Connect with your organization',
-          'Start creating assessments'
-        ]
-      }
-    });
+              emailVerified: teacherUser.isEmailVerified,
+              phoneVerified: teacherUser.phoneVerified
+            },
+            token,
+            nextSteps: [
+              'Complete your profile setup',
+              'Start creating assessments',
+              'Connect with students'
+            ]
+          }
+        });
 
   } catch (error) {
-    console.error('Complete teacher registration error:', error);
+    console.error('Teacher registration step 4 error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to complete teacher registration',
@@ -654,16 +731,26 @@ const sendEmailOTPForTeacher = async (req, res) => {
       // Use email from registration data
       const emailToVerify = registrationData.emailAddress || emailAddress;
       
-      // Check if email already exists
-      const existingTeacher = await Teacher.findOne({ 
-        emailAddress: emailToVerify.toLowerCase() 
+      // Check if this is an org-created user
+      const existingUser = await User.findOne({
+        email: emailToVerify.toLowerCase(),
+        userType: 'teacher',
+        authProvider: 'pending_registration',
+        isRegistrationComplete: false
       });
       
-      if (existingTeacher) {
-        return res.status(400).json({
-          success: false,
-          message: 'Email address already registered'
+      // If it's not an org-created user, check if email already exists
+      if (!existingUser) {
+        const existingTeacher = await Teacher.findOne({ 
+          emailAddress: emailToVerify.toLowerCase() 
         });
+        
+        if (existingTeacher) {
+          return res.status(400).json({
+            success: false,
+            message: 'Email address already registered'
+          });
+        }
       }
 
       // Send OTP using centralized controller
@@ -763,16 +850,26 @@ const sendPhoneOTPForTeacher = async (req, res) => {
       // Use phone from registration data if available
       const phoneToVerify = `${registrationData.countryCode || countryCode}${registrationData.phoneNumber || phoneNumber}`;
       
-      // Check if phone already exists
-      const existingTeacher = await Teacher.findOne({ 
-        phoneNumber: phoneToVerify 
+      // Check if this is an org-created user
+      const existingUser = await User.findOne({
+        email: registrationData.emailAddress?.toLowerCase(),
+        userType: 'teacher',
+        authProvider: 'pending_registration',
+        isRegistrationComplete: false
       });
       
-      if (existingTeacher) {
-        return res.status(400).json({
-          success: false,
-          message: 'Phone number already registered'
+      // If it's not an org-created user, check if phone already exists
+      if (!existingUser) {
+        const existingTeacher = await Teacher.findOne({ 
+          phoneNumber: phoneToVerify 
         });
+        
+        if (existingTeacher) {
+          return res.status(400).json({
+            success: false,
+            message: 'Phone number already registered'
+          });
+        }
       }
 
       // Send OTP using centralized controller

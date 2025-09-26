@@ -129,7 +129,8 @@ const requireAdminOrSubAdmin = (req, res, next) => {
 
 // Middleware to check if user can manage other users
 const canManageUsers = (req, res, next) => {
-  if (!['organization_admin', 'sub_admin'].includes(req.user.userType)) {
+  // Allow organization admins, sub-admins, and teachers to manage users
+  if (!['organization_admin', 'sub_admin', 'teacher'].includes(req.user.userType)) {
     return res.status(403).json({
       success: false,
       message: 'Access denied. You do not have permission to manage users.'

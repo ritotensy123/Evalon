@@ -109,11 +109,6 @@ const teacherSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  password: {
-    type: String,
-    required: true,
-    minlength: 8
-  },
   
   // Additional fields for compatibility
   status: {
@@ -142,23 +137,6 @@ teacherSchema.index({ organizationCode: 1 });
 teacherSchema.index({ status: 1 });
 teacherSchema.index({ affiliationType: 1 });
 
-// Password hashing middleware
-teacherSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  
-  try {
-    const salt = await bcrypt.genSalt(12);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Method to compare password
-teacherSchema.methods.comparePassword = async function(candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password);
-};
 
 // Method to generate teacher code
 teacherSchema.methods.generateTeacherCode = function() {
@@ -171,7 +149,6 @@ teacherSchema.methods.generateTeacherCode = function() {
 teacherSchema.set('toJSON', { 
   virtuals: true,
   transform: function(doc, ret) {
-    delete ret.password;
     delete ret.emailOTP;
     delete ret.phoneOTP;
     return ret;
@@ -180,7 +157,6 @@ teacherSchema.set('toJSON', {
 teacherSchema.set('toObject', { 
   virtuals: true,
   transform: function(doc, ret) {
-    delete ret.password;
     delete ret.emailOTP;
     delete ret.phoneOTP;
     return ret;

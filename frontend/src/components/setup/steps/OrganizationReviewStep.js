@@ -9,8 +9,15 @@ import { useAuth } from '../../../contexts/AuthContext';
 
 const OrganizationReviewStep = ({ data, onDataChange, onNext, onPrevious, isFirstStep, isLastStep }) => {
   const { organizationData } = useAuth();
-  const [departments, setDepartments] = useState(data.departments || []);
+  const [departments, setDepartments] = useState(data.departments || organizationData?.departments || []);
   const [newDepartment, setNewDepartment] = useState('');
+
+  useEffect(() => {
+    // Initialize departments from organizationData if not already set
+    if (!data.departments && organizationData?.departments) {
+      setDepartments(organizationData.departments);
+    }
+  }, [organizationData, data.departments]);
 
   useEffect(() => {
     onDataChange({ departments });
@@ -18,13 +25,13 @@ const OrganizationReviewStep = ({ data, onDataChange, onNext, onPrevious, isFirs
 
   const addDepartment = () => {
     if (newDepartment.trim()) {
-      setDepartments([...departments, { name: newDepartment.trim(), id: Date.now() }]);
+      setDepartments([...departments, newDepartment.trim()]);
       setNewDepartment('');
     }
   };
 
-  const removeDepartment = (id) => {
-    setDepartments(departments.filter(dept => dept.id !== id));
+  const removeDepartment = (index) => {
+    setDepartments(departments.filter((_, i) => i !== index));
   };
 
   const handleKeyPress = (e) => {
@@ -95,11 +102,11 @@ const OrganizationReviewStep = ({ data, onDataChange, onNext, onPrevious, isFirs
           {departments.length === 0 ? (
             <p className="text-gray-500 text-center py-4">No departments added yet</p>
           ) : (
-            departments.map((dept) => (
-              <div key={dept.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
-                <span className="font-medium">{dept.name}</span>
+            departments.map((dept, index) => (
+              <div key={index} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
+                <span className="font-medium">{dept}</span>
                 <button
-                  onClick={() => removeDepartment(dept.id)}
+                  onClick={() => removeDepartment(index)}
                   className="text-red-500 hover:text-red-700 transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />

@@ -111,6 +111,31 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('organizationData', JSON.stringify(data));
   };
 
+  const refreshUser = async () => {
+    try {
+      console.log('🔄 Refreshing user data from server...');
+      // Fetch fresh user data from server instead of just checking localStorage
+      const response = await authService.getProfile();
+      if (response.success) {
+        const userData = response.data;
+        console.log('✅ Fresh user data received:', userData);
+        
+        // Update the user state with fresh data
+        setUser(userData);
+        localStorage.setItem('userData', JSON.stringify(userData));
+        
+        console.log('✅ User data updated in state and localStorage');
+      } else {
+        console.log('❌ Failed to refresh user data, falling back to localStorage');
+        await checkAuthStatus();
+      }
+    } catch (error) {
+      console.error('❌ Error refreshing user:', error);
+      // Fallback to localStorage check
+      await checkAuthStatus();
+    }
+  };
+
   const value = {
     user,
     isAuthenticated,
@@ -122,7 +147,8 @@ export const AuthProvider = ({ children }) => {
     updateUser,
     updateDashboardData,
     updateOrganizationData,
-    checkAuthStatus
+    checkAuthStatus,
+    refreshUser
   };
 
   return (

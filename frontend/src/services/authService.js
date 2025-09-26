@@ -232,7 +232,30 @@ export const authService = {
     const dashboardRoute = authService.getDashboardRoute();
     // This will be handled by the App component's state management
     return dashboardRoute;
+  },
+
+  // Send email verification
+  sendEmailVerification: async () => {
+    try {
+      const response = await authAPI.post('/send-verification-email');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Send verification email error:', error);
+      throw error;
+    }
+  },
+
+  // Verify email with OTP
+  verifyEmailWithOTP: async (otp) => {
+    try {
+      const response = await authAPI.post('/verify-email-otp', { otp });
+      return response.data;
+    } catch (error) {
+      console.error('❌ Verify email OTP error:', error);
+      throw error;
+    }
   }
 };
 
+export { authAPI };
 export default authService;

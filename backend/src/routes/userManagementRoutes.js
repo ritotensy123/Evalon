@@ -6,7 +6,10 @@ const {
   createUserManagement,
   updateUserManagement,
   deleteUserManagement,
+  toggleUserStatus,
   bulkCreateUserManagements,
+  bulkDeleteUserManagements,
+  bulkToggleUserManagementStatus,
   sendInvitation,
   getInvitation,
   acceptInvitation,
@@ -20,7 +23,10 @@ const {
   bulkUpdateUserRoles,
   getRoleDistribution,
   getRecentActivity,
-  getUsersByRole
+  getUsersByRole,
+  getRegistrationDetails,
+  completeRegistration,
+  validateOrganizationCode
 } = require('../controllers/userManagementController');
 const {
   authenticateUserManagement,
@@ -36,8 +42,35 @@ const {
 router.get('/invitations/:token', getInvitation);
 router.post('/invitations/:token/accept', acceptInvitation);
 
+// Registration completion routes (no authentication required)
+router.get('/registration/:token', getRegistrationDetails);
+router.post('/registration/:token/complete', completeRegistration);
+router.post('/registration/validate-code', validateOrganizationCode);
+
 // Apply authentication middleware to all other routes
 router.use(authenticateUserManagement);
+
+// Bulk operations
+router.post('/users/bulk', 
+  canManageUsers, 
+  rateLimitUserOperations(15 * 60 * 1000, 5),
+  logUserAction('bulk_create_users'),
+  bulkCreateUserManagements
+);
+
+router.delete('/users/bulk', 
+  canManageUsers, 
+  rateLimitUserOperations(15 * 60 * 1000, 3),
+  logUserAction('bulk_delete_users'),
+  bulkDeleteUserManagements
+);
+
+router.patch('/users/bulk/status', 
+  canManageUsers, 
+  rateLimitUserOperations(15 * 60 * 1000, 5),
+  logUserAction('bulk_toggle_user_status'),
+  bulkToggleUserManagementStatus
+);
 
 // User CRUD operations
 router.get('/organization/:organizationId/users', 
@@ -75,13 +108,13 @@ router.delete('/users/:userId',
   deleteUserManagement
 );
 
-// Bulk operations
-router.post('/users/bulk', 
+router.patch('/users/:userId/status', 
   canManageUsers, 
-  rateLimitUserOperations(15 * 60 * 1000, 5),
-  logUserAction('bulk_create_users'),
-  bulkCreateUserManagements
+  rateLimitUserOperations(15 * 60 * 1000, 20),
+  logUserAction('toggle_user_status'),
+  toggleUserStatus
 );
+
 
 // Invitation system
 router.post('/organization/:organizationId/invitations', 

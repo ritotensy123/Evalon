@@ -55,8 +55,14 @@ const login = async (req, res) => {
       });
     }
     
-    // Check if email is verified
-    if (!user.isEmailVerified) {
+    // Check if email is verified (skip for admin-created users with temporary passwords)
+    if (!user.isEmailVerified && user.authProvider !== 'temp_password' && !user.firstLogin) {
+      console.log('Email verification check:', {
+        isEmailVerified: user.isEmailVerified,
+        authProvider: user.authProvider,
+        firstLogin: user.firstLogin,
+        email: user.email
+      });
       return res.status(401).json({
         success: false,
         message: 'Please verify your email before logging in.'
@@ -463,8 +469,8 @@ const googleSignIn = async (req, res) => {
       });
     }
     
-    // Check if email is verified
-    if (!user.isEmailVerified) {
+    // Check if email is verified (skip for admin-created users with temporary passwords)
+    if (!user.isEmailVerified && user.authProvider !== 'temp_password' && !user.firstLogin) {
       return res.status(401).json({
         success: false,
         message: 'Email not verified. Please verify your email first.'
@@ -625,6 +631,282 @@ const googleSignIn = async (req, res) => {
   }
 };
 
+// Complete first-time login (change password and update profile)
+const completeFirstTimeLogin = async (req, res) => {
+  try {
+    const { newPassword, confirmPassword, profileData } = req.body;
+    const userId = req.user.id;
+
+    console.log('🔍 CompleteFirstTimeLogin - User ID:', userId);
+    console.log('🔍 CompleteFirstTimeLogin - Request user:', req.user);
+
+    // Validate input
+    if (!newPassword || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password and confirmation are required'
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Passwords do not match'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long'
+      });
+    }
+
+    // Find the user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if this is actually a first-time login
+    if (!user.firstLogin) {
+      return res.status(400).json({
+        success: false,
+        message: 'This is not a first-time login'
+      });
+    }
+
+    // Hash the new password
+    const bcrypt = require('bcryptjs');
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    // Update user with new password and mark first login as complete
+    user.password = hashedPassword;
+    user.firstLogin = false;
+    user.authProvider = 'local'; // Change from temp_password to local after first login
+    
+    // Update profile data if provided
+    if (profileData) {
+      if (profileData.firstName) user.profile.firstName = profileData.firstName;
+      if (profileData.lastName) user.profile.lastName = profileData.lastName;
+      if (profileData.phone) user.profile.phone = profileData.phone;
+      if (profileData.department) user.profile.department = profileData.department;
+      if (profileData.address) user.profile.address = profileData.address;
+    }
+
+    await user.save();
+
+    // Update the associated Teacher or Student record if needed
+    if (user.userType === 'teacher' && user.userId) {
+      const teacher = await Teacher.findById(user.userId);
+      if (teacher && profileData) {
+        if (profileData.firstName && profileData.lastName) {
+          teacher.fullName = `${profileData.firstName} ${profileData.lastName}`;
+        }
+        if (profileData.phone) teacher.phoneNumber = profileData.phone;
+        if (profileData.department) teacher.department = profileData.department;
+        if (profileData.subjects) teacher.subjects = profileData.subjects;
+        if (profileData.experienceLevel) teacher.experienceLevel = profileData.experienceLevel;
+        if (profileData.yearsOfExperience) teacher.yearsOfExperience = profileData.yearsOfExperience;
+        await teacher.save();
+      }
+    } else if (user.userType === 'student' && user.userId) {
+      const student = await Student.findById(user.userId);
+      if (student && profileData) {
+        if (profileData.firstName && profileData.lastName) {
+          student.fullName = `${profileData.firstName} ${profileData.lastName}`;
+        }
+        if (profileData.phone) student.phoneNumber = profileData.phone;
+        if (profileData.department) student.department = profileData.department;
+        if (profileData.academicYear) student.academicYear = profileData.academicYear;
+        if (profileData.grade) student.grade = profileData.grade;
+        if (profileData.section) student.section = profileData.section;
+        await student.save();
+      }
+    }
+
+    console.log(`✅ First-time login completed for user: ${user.email}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'First-time login completed successfully',
+      data: {
+        user: {
+          id: user._id,
+          email: user.email,
+          userType: user.userType,
+          firstLogin: user.firstLogin,
+          profile: user.profile
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Complete first-time login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to complete first-time login',
+      error: error.message
+    });
+  }
+};
+
+// Send email verification with OTP
+const sendEmailVerification = async (req, res) => {
+  try {
+    const userId = req.user.id; // Use req.user.id instead of req.user.userId
+    
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if email is already verified
+    // For students in first-time login, always allow email verification
+    if (user.isEmailVerified && !(user.userType === 'student' && user.firstLogin)) {
+      return res.status(200).json({
+        success: true,
+        message: 'Email is already verified',
+        data: {
+          expiresIn: 0 // No expiration since already verified
+        }
+      });
+    }
+
+    // Generate 6-digit OTP
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Update user with OTP
+    user.emailVerificationToken = otpCode;
+    user.emailVerificationExpires = otpExpires;
+    await user.save();
+
+    // Send verification email with OTP
+    const { sendEmailVerification } = require('../services/emailService');
+    
+    // Check if email service is configured
+    const hasEmailConfig = process.env.EMAIL_USER && 
+                          process.env.EMAIL_PASS &&
+                          process.env.EMAIL_USER !== 'your-gmail@gmail.com' &&
+                          process.env.EMAIL_PASS !== 'your-app-password';
+    
+    if (!hasEmailConfig) {
+      console.log('⚠️ Email service not configured, skipping email send');
+      // For development/testing, we'll just log the OTP
+      console.log(`🔐 Email verification OTP for ${user.email}: ${otpCode}`);
+    } else {
+      const emailResult = await sendEmailVerification(
+        user.email,
+        user.profile?.firstName || 'User',
+        otpCode
+      );
+
+      if (!emailResult.success) {
+        throw new Error(emailResult.error || 'Failed to send verification email');
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Verification OTP sent successfully',
+      data: {
+        expiresIn: 10 * 60 * 1000 // 10 minutes in milliseconds
+      }
+    });
+
+  } catch (error) {
+    console.error('Send email verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send verification email',
+      error: error.message
+    });
+  }
+};
+
+// Verify email with OTP
+const verifyEmailWithOTP = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { otp } = req.body;
+    
+    if (!otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP is required'
+      });
+    }
+    
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if email is already verified
+    // For students in first-time login, allow verification even if marked as verified
+    if (user.isEmailVerified && !(user.userType === 'student' && user.firstLogin)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already verified'
+      });
+    }
+
+    // Check if OTP exists and is not expired
+    if (!user.emailVerificationToken || !user.emailVerificationExpires) {
+      return res.status(400).json({
+        success: false,
+        message: 'No verification OTP found. Please request a new one.'
+      });
+    }
+
+    if (new Date() > user.emailVerificationExpires) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP has expired. Please request a new one.'
+      });
+    }
+
+    // Verify OTP
+    if (user.emailVerificationToken !== otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid OTP. Please check and try again.'
+      });
+    }
+
+    // Mark email as verified
+    user.isEmailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpires = undefined;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Email verified successfully'
+    });
+
+  } catch (error) {
+    console.error('Verify email OTP error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify email',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   login,
   getProfile,
@@ -632,5 +914,8 @@ module.exports = {
   changePassword,
   logout,
   verifyToken,
-  googleSignIn
+  googleSignIn,
+  completeFirstTimeLogin,
+  sendEmailVerification,
+  verifyEmailWithOTP
 };

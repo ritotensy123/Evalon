@@ -13,7 +13,7 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: function() {
-      return this.authProvider === 'local' || this.authProvider === 'temp_password';
+      return (this.authProvider === 'local' || this.authProvider === 'temp_password') && this.isRegistrationComplete;
     }
   },
   
@@ -48,7 +48,7 @@ const userSchema = new mongoose.Schema({
   // Authentication provider
   authProvider: {
     type: String,
-    enum: ['local', 'google', 'temp_password'],
+    enum: ['local', 'google', 'temp_password', 'pending_registration'],
     default: 'local'
   },
   
@@ -86,6 +86,15 @@ const userSchema = new mongoose.Schema({
   },
   emailVerificationToken: String,
   emailVerificationExpires: Date,
+  
+  // Registration completion
+  isRegistrationComplete: {
+    type: Boolean,
+    default: true
+  },
+  registrationToken: String,
+  registrationExpires: Date,
+  organizationCode: String,
   
   // Profile information
   profile: {
@@ -131,6 +140,12 @@ userSchema.pre('save', async function(next) {
   
   // Skip hashing if auth provider doesn't support password authentication
   if (this.authProvider !== 'local' && this.authProvider !== 'temp_password') {
+    return next();
+  }
+  
+  // Check if password is already hashed (bcrypt hashes start with $2a$, $2b$, or $2y$)
+  if (this.password && /^\$2[aby]\$\d+\$/.test(this.password)) {
+    console.log('Password is already hashed, skipping hashing');
     return next();
   }
   

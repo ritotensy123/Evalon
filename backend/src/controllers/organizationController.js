@@ -968,15 +968,11 @@ const completeSetup = async (req, res) => {
 
     // Update departments if provided
     if (departments && departments.length > 0) {
-      updateData.departments = departments.map(dept => ({
-        name: dept.name,
-        code: dept.code,
-        description: dept.description,
-        type: dept.type,
-        headOfDepartment: dept.headOfDepartment,
-        studentCapacity: dept.studentCapacity,
-        createdAt: new Date()
-      }));
+      // Map departments to simple string array as expected by the model
+      updateData.departments = departments.map(dept => {
+        // Handle both string and object formats
+        return typeof dept === 'string' ? dept : dept.name || dept;
+      });
     }
 
     // Update admin permissions if provided
@@ -991,6 +987,20 @@ const completeSetup = async (req, res) => {
       organizationId,
       updateData,
       { new: true, runValidators: true }
+    );
+
+    // Update the organization admin user's firstLogin status
+    await User.findOneAndUpdate(
+      { 
+        userType: 'organization_admin',
+        userId: organizationId,
+        userModel: 'Organization'
+      },
+      { 
+        firstLogin: false,
+        setupCompleted: true
+      },
+      { new: true }
     );
 
     // Generate dashboard data
@@ -1019,7 +1029,8 @@ const completeSetup = async (req, res) => {
       message: 'Setup completed successfully!',
       data: {
         organization: updatedOrganization,
-        setupCompleted: true
+        setupCompleted: true,
+        firstLogin: false
       },
       dashboardData
     });

@@ -12,6 +12,9 @@ router.post('/logout', authController.logout);
 router.get('/profile', authenticate, authController.getProfile);
 router.put('/profile', authenticate, authController.updateProfile);
 router.put('/change-password', authenticate, authController.changePassword);
+router.put('/complete-first-login', authenticate, authController.completeFirstTimeLogin);
 router.get('/verify-token', authenticate, authController.verifyToken);
+router.post('/send-verification-email', authenticate, authController.sendEmailVerification);
+router.post('/verify-email-otp', authenticate, authController.verifyEmailWithOTP);
 
 module.exports = router;

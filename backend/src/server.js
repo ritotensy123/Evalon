@@ -21,6 +21,12 @@ const studentRoutes = require('./routes/studentRoutes');
 const userManagementRoutes = require('./routes/userManagementRoutes');
 const userActivityRoutes = require('./routes/userActivityRoutes');
 const userPermissionRoutes = require('./routes/userPermissionRoutes');
+const examRoutes = require('./routes/examRoutes');
+const questionRoutes = require('./routes/questionRoutes');
+const questionBankRoutes = require('./routes/questionBankRoutes');
+const departmentRoutes = require('./routes/departmentRoutes');
+const subjectRoutes = require('./routes/subjectRoutes');
+const bulkUploadRoutes = require('./routes/bulkUploadRoutes');
 
 const app = express();
 
@@ -47,7 +53,7 @@ app.use(cors({
     'http://localhost:3000'
   ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
@@ -115,6 +121,12 @@ app.use('/api/students', studentRoutes);
 app.use('/api/user-management', userManagementRoutes);
 app.use('/api/user-activity', userActivityRoutes);
 app.use('/api/user-permissions', userPermissionRoutes);
+app.use('/api/exams', examRoutes);
+app.use('/api/questions', questionRoutes);
+app.use('/api/question-banks', questionBankRoutes);
+app.use('/api/departments', departmentRoutes);
+app.use('/api/subjects', subjectRoutes);
+app.use('/api/bulk-upload', bulkUploadRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -131,6 +143,8 @@ app.get('/', (req, res) => {
       userManagement: '/api/user-management',
       userActivity: '/api/user-activity',
       userPermissions: '/api/user-permissions',
+      departments: '/api/departments',
+      subjects: '/api/subjects',
       documentation: '/api-docs'
     }
   });

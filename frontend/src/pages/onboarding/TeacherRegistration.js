@@ -166,7 +166,20 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
         }, 100);
       } catch (error) {
         console.error('Error saving step data:', error);
-        showNotification(error.message || 'Failed to save data', 'error');
+        // Extract specific error message from API response
+        const errorMessage = error.message || error.response?.data?.message || 'Failed to save data';
+        
+        // Special handling for duplicate email errors
+        if (errorMessage.includes('already exists') || errorMessage.includes('duplicate')) {
+          // Check if this might be an admin-created teacher
+          if (errorMessage.includes('Teacher with this email already exists')) {
+            showNotification('This email address is already registered. If you were invited by an admin, please contact them for your registration link.', 'error');
+          } else {
+            showNotification('This email address is already registered. Please use a different email or try logging in.', 'error');
+          }
+        } else {
+          showNotification(errorMessage, 'error');
+        }
       } finally {
         setIsSaving(false);
       }
@@ -272,10 +285,16 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
           });
           // Store registration token from Step 1
           if (response.success && response.data.registrationToken) {
+            console.log('🔍 Frontend - Setting registration token:', response.data.registrationToken);
             setRegistrationToken(response.data.registrationToken);
+            // Also store it in a ref for immediate use
+            window.currentRegistrationToken = response.data.registrationToken;
           }
           break;
         case 1: // Professional Details
+          // Use the token from window if state is not updated yet
+          const tokenToUseStep2 = registrationToken || window.currentRegistrationToken;
+          console.log('🔍 Frontend - Step 2 - Using registration token:', tokenToUseStep2);
           response = await teacherAPI.registerStep2({
             subjects: formData.subjects,
             role: formData.role,
@@ -283,13 +302,16 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
             experienceLevel: formData.experienceLevel,
             currentInstitution: formData.currentInstitution,
             yearsOfExperience: formData.yearsOfExperience,
-            registrationToken: registrationToken
+            registrationToken: tokenToUseStep2
           });
           break;
         case 2: // Organization Link
+          // Use the token from window if state is not updated yet
+          const tokenToUse = registrationToken || window.currentRegistrationToken;
+          console.log('🔍 Frontend - Step 3 - Using registration token:', tokenToUse);
           response = await teacherAPI.registerStep3({
             organizationCode: formData.organizationCode,
-            registrationToken: registrationToken
+            registrationToken: tokenToUse
           });
           // Update organization validation status
           if (response.success && response.data.isOrganizationValid !== undefined) {
@@ -311,7 +333,19 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
       return response;
     } catch (error) {
       console.error(`Error saving step ${step + 1}:`, error);
-      throw error;
+      // Extract specific error message from API response
+      const errorMessage = error.message || error.response?.data?.message || `Failed to save step ${step + 1} data`;
+      
+      // Special handling for duplicate email errors
+      if (errorMessage.includes('already exists') || errorMessage.includes('duplicate')) {
+        if (errorMessage.includes('Teacher with this email already exists')) {
+          throw new Error('This email address is already registered. If you were invited by an admin, please contact them for your registration link.');
+        } else {
+          throw new Error('This email address is already registered. Please use a different email or try logging in.');
+        }
+      } else {
+        throw new Error(errorMessage);
+      }
     }
   };
 
@@ -324,12 +358,15 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
     setIsSubmitting(true);
     
     try {
+      // Use the token from window if state is not updated yet
+      const tokenToUseStep4 = registrationToken || window.currentRegistrationToken;
+      console.log('🔍 Frontend - Step 4 - Using registration token:', tokenToUseStep4);
       const result = await teacherAPI.registerStep4({
         password: formData.password,
         confirmPassword: formData.confirmPassword,
         emailVerified: formData.emailVerified || false,
         phoneVerified: formData.phoneVerified || false,
-        registrationToken: registrationToken
+        registrationToken: tokenToUseStep4
       });
       
       if (result.success) {
@@ -350,7 +387,19 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
     } catch (error) {
       console.error('Teacher registration failed:', error);
       setIsSubmitting(false);
-      showNotification(error.message || 'Registration failed. Please try again.', 'error');
+      // Extract specific error message from API response
+      const errorMessage = error.message || error.response?.data?.message || 'Registration failed. Please try again.';
+      
+      // Special handling for duplicate email errors
+      if (errorMessage.includes('already exists') || errorMessage.includes('duplicate')) {
+        if (errorMessage.includes('Teacher with this email already exists')) {
+          showNotification('This email address is already registered. If you were invited by an admin, please contact them for your registration link.', 'error');
+        } else {
+          showNotification('This email address is already registered. Please use a different email or try logging in.', 'error');
+        }
+      } else {
+        showNotification(errorMessage, 'error');
+      }
     }
   };
 
@@ -378,6 +427,7 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
             formData={formData}
             formErrors={formErrors}
             onFormChange={handleFormChange}
+            registrationToken={registrationToken}
           />
         );
       case 3:

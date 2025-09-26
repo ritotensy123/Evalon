@@ -136,12 +136,7 @@ const studentSchema = new mongoose.Schema({
     }
   }],
   
-  // Account Security
-  password: {
-    type: String,
-    required: true,
-    minlength: 8
-  },
+  // Account Security - handled in User model
   status: {
     type: String,
     enum: ['active', 'inactive', 'suspended'],
@@ -168,29 +163,11 @@ studentSchema.index({ studentCode: 1 });
 studentSchema.index({ organizationId: 1 });
 studentSchema.index({ rollNumber: 1, organizationId: 1 }, { unique: true });
 
-// Pre-save middleware to hash password
-studentSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  
-  try {
-    const salt = await bcrypt.genSalt(12);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
-
 // Pre-save middleware to update updatedAt
 studentSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
 });
-
-// Instance method to compare password
-studentSchema.methods.comparePassword = async function(candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password);
-};
 
 // Method to generate student code
 studentSchema.methods.generateStudentCode = function() {
@@ -230,7 +207,6 @@ studentSchema.virtual('fullPhoneNumber').get(function() {
 studentSchema.set('toJSON', { 
   virtuals: true,
   transform: function(doc, ret) {
-    delete ret.password;
     delete ret.__v;
     return ret;
   }

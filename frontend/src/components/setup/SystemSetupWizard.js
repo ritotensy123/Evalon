@@ -77,9 +77,13 @@ const SystemSetupWizard = ({ onComplete, onSkip }) => {
     setIsLoading(true);
     try {
       // Submit setup data to backend
-      const response = await api.post('/organization/complete-setup', {
-        ...setupData,
-        organizationId: user.organizationId
+      const response = await api.post('/complete-setup', {
+        organizationId: user.organizationId,
+        logo: setupData.logo,
+        logoTempKey: setupData.logoTempKey,
+        organizationDetails: setupData.organizationDetails,
+        departments: setupData.departments,
+        adminPermissions: setupData.adminPermissions
       });
 
       if (response.data.success) {
@@ -87,8 +91,7 @@ const SystemSetupWizard = ({ onComplete, onSkip }) => {
         updateUser({
           ...user,
           setupCompleted: true,
-          firstLogin: false,
-          ...response.data.data
+          firstLogin: false
         });
 
         // Update dashboard data

@@ -1,0 +1,11 @@
+7fba7fe Google Sign in with Dashboard
+f35928a Login Functionality Completed
+5de1de7 Registration Backend Completed
+dd2a83f Fix OTP functionality and server warnings
+39fcc29 Remove unnecessary files and clean up project structure
+6dba6f8 Complete project setup and migration
+26f5c73 Registration [Organisation]
+5ef9a37 Landing->Login->Onboarding Cards
+cfabb8f Onboarding Completed
+48a6cc7 Login & Landing Page
+d45f2b7 Initial commit

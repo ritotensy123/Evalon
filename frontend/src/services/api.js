@@ -9,6 +9,88 @@ const api = axios.create({
   withCredentials: true, // For session handling
 });
 
+// Create separate instances for different API endpoints
+const examApiInstance = axios.create({
+  baseURL: 'http://localhost:5001/api/exams',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,
+});
+
+// Add authentication interceptor for exam API
+examApiInstance.interceptors.request.use(
+  (config) => {
+    console.log(`📝 Exam API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    
+    // Add token to requests if available
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    
+    return config;
+  },
+  (error) => {
+    console.error('❌ Exam API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+const questionApiInstance = axios.create({
+  baseURL: 'http://localhost:5001/api/questions',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,
+});
+
+// Add authentication interceptor for question API
+questionApiInstance.interceptors.request.use(
+  (config) => {
+    console.log(`❓ Question API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    
+    // Add token to requests if available
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    
+    return config;
+  },
+  (error) => {
+    console.error('❌ Question API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+const questionBankApiInstance = axios.create({
+  baseURL: 'http://localhost:5001/api/question-banks',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,
+});
+
+// Add authentication interceptor for question bank API
+questionBankApiInstance.interceptors.request.use(
+  (config) => {
+    console.log(`📚 Question Bank API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    
+    // Add token to requests if available
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    
+    return config;
+  },
+  (error) => {
+    console.error('❌ Question Bank API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
 // Request interceptor for logging
 api.interceptors.request.use(
   (config) => {
@@ -445,7 +527,12 @@ export const teacherAPI = {
       const response = await teacherAxios.post('/register/step1', data);
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to register teacher basic details' };
+      // Preserve the original error structure for better error handling
+      const errorData = error.response?.data || { message: 'Failed to register teacher basic details' };
+      const apiError = new Error(errorData.message || 'Failed to register teacher basic details');
+      apiError.response = error.response;
+      apiError.data = errorData;
+      throw apiError;
     }
   },
 
@@ -455,7 +542,11 @@ export const teacherAPI = {
       const response = await teacherAxios.post('/register/step2', data);
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to register teacher professional details' };
+      const errorData = error.response?.data || { message: 'Failed to register teacher professional details' };
+      const apiError = new Error(errorData.message || 'Failed to register teacher professional details');
+      apiError.response = error.response;
+      apiError.data = errorData;
+      throw apiError;
     }
   },
 
@@ -465,7 +556,11 @@ export const teacherAPI = {
       const response = await teacherAxios.post('/register/step3', data);
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to link teacher to organization' };
+      const errorData = error.response?.data || { message: 'Failed to link teacher to organization' };
+      const apiError = new Error(errorData.message || 'Failed to link teacher to organization');
+      apiError.response = error.response;
+      apiError.data = errorData;
+      throw apiError;
     }
   },
 
@@ -475,7 +570,11 @@ export const teacherAPI = {
       const response = await teacherAxios.post('/register/step4', data);
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to complete teacher registration' };
+      const errorData = error.response?.data || { message: 'Failed to complete teacher registration' };
+      const apiError = new Error(errorData.message || 'Failed to complete teacher registration');
+      apiError.response = error.response;
+      apiError.data = errorData;
+      throw apiError;
     }
   },
 
@@ -528,6 +627,16 @@ export const teacherAPI = {
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to get registration status' };
+    }
+  },
+
+  // Get all teachers
+  getAll: async (params = {}) => {
+    try {
+      const response = await teacherAxios.get('/', { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to get teachers' };
     }
   },
 };
@@ -714,13 +823,21 @@ export const userManagementAPI = {
     }
   },
 
-  // Delete user (deactivate)
   deleteUser: async (userId) => {
     try {
       const response = await userManagementApi.delete(`/users/${userId}`);
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to delete user' };
+    }
+  },
+
+  toggleUserStatus: async (userId, action) => {
+    try {
+      const response = await userManagementApi.patch(`/users/${userId}/status`, { action });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update user status' };
     }
   },
 
@@ -734,13 +851,45 @@ export const userManagementAPI = {
     }
   },
 
-  // Send invitation
-  sendInvitation: async (invitationData) => {
+  // Bulk delete users
+  bulkDeleteUsers: async (userIds) => {
     try {
-      const response = await userManagementApi.post('/invitations', invitationData);
+      const response = await userManagementApi.delete('/users/bulk', { data: { userIds } });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to bulk delete users' };
+    }
+  },
+
+  // Bulk toggle user status
+  bulkToggleUserStatus: async (userIds, action) => {
+    try {
+      const response = await userManagementApi.patch('/users/bulk/status', { userIds, action });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to bulk update user status' };
+    }
+  },
+
+  // Send invitation
+  sendInvitation: async (organizationId, invitationData) => {
+    try {
+      const response = await userManagementApi.post(`/organization/${organizationId}/invitations`, invitationData);
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to send invitation' };
+    }
+  },
+
+  // Get invitations for organization
+  getInvitations: async (organizationId, status = 'all') => {
+    try {
+      const response = await userManagementApi.get(`/organization/${organizationId}/invitations`, {
+        params: { status }
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to get invitations' };
     }
   },
 
@@ -771,6 +920,37 @@ export const userManagementAPI = {
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to fetch user statistics' };
+    }
+  },
+
+  // Registration completion methods
+  getRegistrationDetails: async (token) => {
+    try {
+      const response = await userManagementApi.get(`/registration/${token}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to get registration details' };
+    }
+  },
+
+  completeRegistration: async (token, data) => {
+    try {
+      const response = await userManagementApi.post(`/registration/${token}/complete`, data);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to complete registration' };
+    }
+  },
+
+  validateOrganizationCode: async (token, organizationCode) => {
+    try {
+      const response = await userManagementApi.post('/registration/validate-code', {
+        token,
+        organizationCode
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to validate organization code' };
     }
   },
 
@@ -815,6 +995,583 @@ export const userManagementAPI = {
       throw error.response?.data || { message: 'Failed to update user role' };
     }
   },
+
+  // Cancel invitation
+  cancelInvitation: async (invitationId) => {
+    try {
+      const response = await userManagementApi.put(`/invitations/${invitationId}/cancel`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to cancel invitation' };
+    }
+  },
+
+  // Resend invitation
+  resendInvitation: async (invitationId) => {
+    try {
+      const response = await userManagementApi.post(`/invitations/${invitationId}/resend`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to resend invitation' };
+    }
+  },
+
+  // Bulk send invitations
+  bulkSendInvitations: async (organizationId, invitations) => {
+    try {
+      const response = await userManagementApi.post(`/organization/${organizationId}/invitations/bulk`, { invitations });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to send bulk invitations' };
+    }
+  },
+};
+
+// Question Bank API
+export const questionAPI = {
+  createQuestion: async (questionData) => {
+    try {
+      const response = await questionApiInstance.post('/', questionData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to create question' };
+    }
+  },
+
+  getQuestions: async (params = {}) => {
+    try {
+      const response = await questionApiInstance.get('/', { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch questions' };
+    }
+  },
+
+  getQuestionById: async (questionId) => {
+    try {
+      const response = await questionApiInstance.get(`/${questionId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch question' };
+    }
+  },
+
+  updateQuestion: async (questionId, questionData) => {
+    try {
+      const response = await questionApiInstance.put(`/${questionId}`, questionData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update question' };
+    }
+  },
+
+  deleteQuestion: async (questionId) => {
+    try {
+      const response = await questionApiInstance.delete(`/${questionId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to delete question' };
+    }
+  },
+
+  duplicateQuestion: async (questionId) => {
+    try {
+      const response = await questionApiInstance.post(`/${questionId}/duplicate`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to duplicate question' };
+    }
+  },
+
+  validateQuestion: async (questionId) => {
+    try {
+      const response = await questionApiInstance.post(`/${questionId}/validate`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to validate question' };
+    }
+  },
+
+  bulkImportQuestions: async (questions) => {
+    try {
+      const response = await questionApiInstance.post('/bulk-import', { questions });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to bulk import questions' };
+    }
+  },
+
+  exportQuestions: async (format = 'json', filters = {}) => {
+    try {
+      const response = await questionApiInstance.get('/export', { 
+        params: { format, ...filters } 
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to export questions' };
+    }
+  },
+
+  getQuestionStatistics: async () => {
+    try {
+      const response = await questionApiInstance.get('/statistics');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch question statistics' };
+    }
+  },
+  getAvailableQuestionsForExam: async (params = {}) => {
+    try {
+      const response = await questionApiInstance.get('/available-for-exam', { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch available questions' };
+    }
+  }
+};
+
+// Question Bank Management API
+export const questionBankAPI = {
+  createQuestionBank: async (questionBankData) => {
+    try {
+      const response = await questionBankApiInstance.post('/', questionBankData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to create question bank' };
+    }
+  },
+  getQuestionBanks: async (params = {}) => {
+    try {
+      const response = await questionBankApiInstance.get('/', { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch question banks' };
+    }
+  },
+  getQuestionBankById: async (questionBankId) => {
+    try {
+      const response = await questionBankApiInstance.get(`/${questionBankId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch question bank' };
+    }
+  },
+  updateQuestionBank: async (questionBankId, questionBankData) => {
+    try {
+      const response = await questionBankApiInstance.put(`/${questionBankId}`, questionBankData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update question bank' };
+    }
+  },
+  deleteQuestionBank: async (questionBankId) => {
+    try {
+      const response = await questionBankApiInstance.delete(`/${questionBankId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to delete question bank' };
+    }
+  },
+  addQuestionsToBank: async (questionBankId, questions) => {
+    try {
+      const response = await questionBankApiInstance.post(`/${questionBankId}/questions`, { questions });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to add questions to bank' };
+    }
+  },
+  getQuestionsInBank: async (questionBankId) => {
+    try {
+      const response = await questionBankApiInstance.get(`/${questionBankId}/questions`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch questions in bank' };
+    }
+  },
+  removeQuestionFromBank: async (questionBankId, questionId) => {
+    try {
+      const response = await questionBankApiInstance.delete(`/${questionBankId}/questions/${questionId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to remove question from bank' };
+    }
+  },
+  getQuestionBankStatistics: async (questionBankId) => {
+    try {
+      const response = await questionBankApiInstance.get(`/${questionBankId}/statistics`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch question bank statistics' };
+    }
+  },
+  duplicateQuestionBank: async (questionBankId) => {
+    try {
+      const response = await questionBankApiInstance.post(`/${questionBankId}/duplicate`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to duplicate question bank' };
+    }
+  }
+};
+
+// Exam Management API
+export const examAPI = {
+  createExam: async (examData) => {
+    try {
+      const response = await examApiInstance.post('/', examData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to create exam' };
+    }
+  },
+  getExams: async (params = {}) => {
+    try {
+      const response = await examApiInstance.get('/', { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch exams' };
+    }
+  },
+  getExamById: async (examId) => {
+    try {
+      const response = await examApiInstance.get(`/${examId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch exam' };
+    }
+  },
+  updateExam: async (examId, examData) => {
+    try {
+      const response = await examApiInstance.put(`/${examId}`, examData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update exam' };
+    }
+  },
+  deleteExam: async (examId) => {
+    try {
+      const response = await examApiInstance.delete(`/${examId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to delete exam' };
+    }
+  },
+  updateExamStatus: async (examId, status) => {
+    try {
+      const response = await examApiInstance.patch(`/${examId}/status`, { status });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update exam status' };
+    }
+  },
+  assignQuestionBankToExam: async (examId, questionBankId) => {
+    try {
+      const response = await examApiInstance.post(`/${examId}/assign-question-bank`, { questionBankId });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to assign question bank to exam' };
+    }
+  },
+  getExamQuestions: async (examId) => {
+    try {
+      const response = await examApiInstance.get(`/${examId}/questions`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch exam questions' };
+    }
+  },
+  removeQuestionBankFromExam: async (examId) => {
+    try {
+      const response = await examApiInstance.delete(`/${examId}/question-bank`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to remove question bank from exam' };
+    }
+  },
+  getExamStatistics: async (examId) => {
+    try {
+      const response = await examApiInstance.get(`/${examId}/statistics`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch exam statistics' };
+    }
+  },
+  duplicateExam: async (examId) => {
+    try {
+      const response = await examApiInstance.post(`/${examId}/duplicate`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to duplicate exam' };
+    }
+  },
+  scheduleExam: async (examId, scheduleData) => {
+    try {
+      const response = await examApiInstance.post(`/${examId}/schedule`, scheduleData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to schedule exam' };
+    }
+  },
+  getExamResults: async (examId) => {
+    try {
+      const response = await examApiInstance.get(`/${examId}/results`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch exam results' };
+    }
+  }
+};
+
+// Department Management API
+const departmentApi = axios.create({
+  baseURL: 'http://localhost:5001/api/departments',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,
+});
+
+// Add interceptors for department API
+departmentApi.interceptors.request.use(
+  (config) => {
+    console.log(`🏢 Department API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    
+    // Add token to requests if available
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    
+    return config;
+  },
+  (error) => {
+    console.error('❌ Department API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+departmentApi.interceptors.response.use(
+  (response) => {
+    console.log(`✅ Department API Response: ${response.status} ${response.config.url}`);
+    return response;
+  },
+  (error) => {
+    console.error('❌ Department API Response Error:', error.response?.data || error.message);
+    return Promise.reject(error);
+  }
+);
+
+export const departmentAPI = {
+  // Create department
+  create: async (departmentData) => {
+    try {
+      const response = await departmentApi.post('/', departmentData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to create department' };
+    }
+  },
+
+  // Get all departments
+  getAll: async (params = {}) => {
+    try {
+      const response = await departmentApi.get('/', { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch departments' };
+    }
+  },
+
+  // Get department tree
+  getTree: async (params = {}) => {
+    try {
+      const response = await departmentApi.get('/tree', { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch department tree' };
+    }
+  },
+
+  // Get department by ID
+  getById: async (departmentId) => {
+    try {
+      const response = await departmentApi.get(`/${departmentId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch department' };
+    }
+  },
+
+  // Update department
+  update: async (departmentId, departmentData) => {
+    try {
+      const response = await departmentApi.put(`/${departmentId}`, departmentData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update department' };
+    }
+  },
+
+  // Delete department
+  delete: async (departmentId) => {
+    try {
+      const response = await departmentApi.delete(`/${departmentId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to delete department' };
+    }
+  },
+
+  // Assign teacher to department
+  assignTeacher: async (departmentId, teacherData) => {
+    try {
+      const response = await departmentApi.post(`/${departmentId}/assign-teacher`, teacherData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to assign teacher to department' };
+    }
+  },
+
+  // Get department statistics
+  getStats: async () => {
+    try {
+      const response = await departmentApi.get('/stats');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch department statistics' };
+    }
+  }
+};
+
+// Subject Management API
+const subjectApi = axios.create({
+  baseURL: 'http://localhost:5001/api/subjects',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,
+});
+
+// Add interceptors for subject API
+subjectApi.interceptors.request.use(
+  (config) => {
+    console.log(`📚 Subject API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    
+    // Add token to requests if available
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    
+    return config;
+  },
+  (error) => {
+    console.error('❌ Subject API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+subjectApi.interceptors.response.use(
+  (response) => {
+    console.log(`✅ Subject API Response: ${response.status} ${response.config.url}`);
+    return response;
+  },
+  (error) => {
+    console.error('❌ Subject API Response Error:', error.response?.data || error.message);
+    return Promise.reject(error);
+  }
+);
+
+export const subjectAPI = {
+  // Create subject
+  create: async (subjectData) => {
+    try {
+      const response = await subjectApi.post('/', subjectData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to create subject' };
+    }
+  },
+
+  // Get all subjects
+  getAll: async (params = {}) => {
+    try {
+      const response = await subjectApi.get('/', { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch subjects' };
+    }
+  },
+
+  // Get subjects by department
+  getByDepartment: async (departmentId, params = {}) => {
+    try {
+      const response = await subjectApi.get(`/department/${departmentId}`, { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch subjects by department' };
+    }
+  },
+
+  // Get subjects by category
+  getByCategory: async (category, params = {}) => {
+    try {
+      const response = await subjectApi.get(`/category/${category}`, { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch subjects by category' };
+    }
+  },
+
+  // Get subject by ID
+  getById: async (subjectId) => {
+    try {
+      const response = await subjectApi.get(`/${subjectId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch subject' };
+    }
+  },
+
+  // Update subject
+  update: async (subjectId, subjectData) => {
+    try {
+      const response = await subjectApi.put(`/${subjectId}`, subjectData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update subject' };
+    }
+  },
+
+  // Delete subject
+  delete: async (subjectId) => {
+    try {
+      const response = await subjectApi.delete(`/${subjectId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to delete subject' };
+    }
+  },
+
+  // Assign coordinator to subject
+  assignCoordinator: async (subjectId, teacherData) => {
+    try {
+      const response = await subjectApi.post(`/${subjectId}/assign-coordinator`, teacherData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to assign coordinator to subject' };
+    }
+  },
+
+  // Get subject statistics
+  getStats: async () => {
+    try {
+      const response = await subjectApi.get('/stats');
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch subject statistics' };
+    }
+  }
 };
 
 export default api;

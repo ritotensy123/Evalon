@@ -76,7 +76,9 @@ const authenticate = async (req, res, next) => {
       userModel: user.userModel,
       userId: user.userId,
       userDetails: user.userId,
-      authProvider: user.authProvider
+      authProvider: user.authProvider,
+      // For organization admins, userId is the organizationId
+      organizationId: user.userType === 'organization_admin' ? user.userId : null
     };
     
     next();

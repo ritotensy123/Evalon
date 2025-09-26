@@ -1,6 +1,7 @@
 const Student = require('../models/Student');
 const Organization = require('../models/Organization');
 const Teacher = require('../models/Teacher');
+const User = require('../models/User');
 const { generateToken, store, retrieve, update, remove } = require('../utils/tempStorage');
 const { sendEmailOTP, sendPhoneOTP, verifyEmailOTP, verifyPhoneOTP } = require('./otpController');
 
@@ -103,11 +104,9 @@ const registerStep1 = async (req, res) => {
 // Step 2: Organization Verification
 const registerStep2 = async (req, res) => {
   try {
-    const { organizationCode, registrationToken, registrationType, academicLevel } = req.body;
+    const { registrationToken, academicLevel } = req.body;
     
     // Debug logging
-    console.log('Step 2 - Registration Type:', registrationType);
-    console.log('Step 2 - Organization Code:', organizationCode);
     console.log('Step 2 - Academic Level:', academicLevel);
 
     // Check if registration token is provided
@@ -127,69 +126,25 @@ const registerStep2 = async (req, res) => {
       });
     }
 
-    // Handle standalone registration
-    if (registrationType === 'standalone') {
-      const step2Data = {
-        registrationType: 'standalone',
-        isStandalone: true,
-        academicLevel: academicLevel || null,
-        organizationCode: null,
-        organizationName: null,
-        isOrganizationValid: false,
-        associationStatus: 'standalone'
-      };
-
-      // Store step 2 data
-      update(registrationToken, { step2Data });
-
-      return res.status(200).json({
-        success: true,
-        message: 'Standalone registration setup completed',
-        data: step2Data
-      });
-    }
-
-    // Handle organization registration
-    if (registrationType === 'organization' && !organizationCode) {
-      return res.status(400).json({
-        success: false,
-        message: 'Organization code is required for organization registration'
-      });
-    }
-
-    // Find organization by code
-    const organization = await Organization.findOne({ 
-      orgCode: organizationCode.toUpperCase() 
-    });
-
-    if (!organization) {
-      return res.status(400).json({
-        success: false,
-        message: 'Organization not found',
-        data: {
-          organizationCode: organizationCode.toUpperCase(),
-          organizationName: '',
-          organizationId: null,
-          isOrganizationValid: false,
-          associationStatus: 'not_found'
-        }
-      });
-    }
-
+    // Set up freelance student registration
     const step2Data = {
-      organizationCode: organizationCode.toUpperCase(),
-      organizationName: organization.name,
-      organizationId: organization._id,
-      isOrganizationValid: true,
-      associationStatus: 'verified'
+      registrationType: 'freelance',
+      isStandalone: true,
+      academicLevel: academicLevel || null,
+      organizationCode: null,
+      organizationName: null,
+      isOrganizationValid: false,
+      associationStatus: 'freelance'
     };
 
-    // Update registration data in temporary storage
+    // Store step 2 data
     update(registrationToken, { step2Data });
 
-    res.json({
+    console.log('✅ Step 2 - Freelance student setup completed');
+
+    return res.status(200).json({
       success: true,
-      message: 'Organization verified successfully',
+      message: 'Freelance student registration setup completed',
       data: step2Data
     });
 
@@ -201,6 +156,7 @@ const registerStep2 = async (req, res) => {
     });
   }
 };
+
 
 // Step 3: Security Verification (Email & Phone OTP)
 const sendEmailOTPForStudent = async (req, res) => {

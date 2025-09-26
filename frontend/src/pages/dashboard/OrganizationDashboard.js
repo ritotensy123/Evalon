@@ -43,6 +43,11 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { clearAuthData } from '../../utils/clearAuth';
 import UserManagement from './UserManagement';
+import ExamManagement from './ExamManagement';
+import QuestionBankManagement from './QuestionBankManagement';
+import QuestionBank from './QuestionBank';
+import DepartmentManagement from './DepartmentManagement';
+import SubjectManagement from './SubjectManagement';
 import '../../styles/dashboard/organization.css';
 
 const OrganizationDashboard = () => {
@@ -118,7 +123,8 @@ const OrganizationDashboard = () => {
     { id: 'user-management', label: 'User Management', icon: <Users className="w-5 h-5" />, count: '1,295' },
     { id: 'students', label: 'Students', icon: <Users className="w-5 h-5" />, count: '1,250' },
     { id: 'teachers', label: 'Teachers', icon: <User className="w-5 h-5" />, count: '45' },
-    { id: 'classes', label: 'Classes', icon: <GraduationCap className="w-5 h-5" />, count: '12' },
+    { id: 'departments', label: 'Departments', icon: <GraduationCap className="w-5 h-5" />, count: '8' },
+    { id: 'subjects', label: 'Subjects', icon: <BookOpen className="w-5 h-5" />, count: '24' },
   ];
 
   const academicModules = [
@@ -312,6 +318,14 @@ const OrganizationDashboard = () => {
         <main className="flex-1 p-4 bg-gray-50">
           {activeModule === 'user-management' ? (
             <UserManagement />
+          ) : activeModule === 'departments' ? (
+            <DepartmentManagement />
+          ) : activeModule === 'subjects' ? (
+            <SubjectManagement />
+          ) : activeModule === 'exams' ? (
+            <ExamManagement />
+          ) : activeModule === 'questionbank' ? (
+            <QuestionBankManagement />
           ) : (
             <>
               {/* Welcome Section */}

@@ -15,8 +15,9 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
+import { userManagementAPI } from '../../services/api';
 
-const InvitationSystem = ({ onClose, onSend }) => {
+const InvitationSystem = ({ onClose, onSend, organizationId }) => {
   const [invitations, setInvitations] = useState([]);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('student');
@@ -74,13 +75,16 @@ const InvitationSystem = ({ onClose, onSend }) => {
     setIsLoading(true);
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Send invitations via API
+      const response = await userManagementAPI.bulkSendInvitations(organizationId, invitations);
+      
+      console.log('Invitations sent successfully:', response);
       
       onSend(invitations);
       onClose(); // Close the modal after successful send
     } catch (error) {
       console.error('Error sending invitations:', error);
+      alert(`Failed to send invitations: ${error.message || 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }

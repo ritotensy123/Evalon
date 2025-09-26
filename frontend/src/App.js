@@ -9,6 +9,8 @@ import TeacherRegistration from './pages/onboarding/TeacherRegistration';
 import StudentRegistration from './pages/onboarding/StudentRegistration';
 import Dashboard from './pages/Dashboard';
 import SystemSetupWizard from './components/setup/SystemSetupWizard';
+import CompleteRegistration from './pages/CompleteRegistration';
+import FirstTimeLoginWizard from './components/FirstTimeLoginWizard';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -16,23 +18,64 @@ import ProtectedRoute from './components/ProtectedRoute';
 const AppContent = () => {
   const [currentPage, setCurrentPage] = useState('landing');
   const [manualNavigation, setManualNavigation] = useState(false);
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
+
+  // Initialize app state on load
+  useEffect(() => {
+    console.log('🚀 App initializing...');
+    setCurrentPage('landing');
+    setManualNavigation(false);
+  }, []);
 
   // Check authentication status on app load
   useEffect(() => {
-    console.log('Auth state changed:', { isAuthenticated, isLoading, currentPage, manualNavigation });
+    console.log('🔍 Auth state changed:', { 
+      isAuthenticated, 
+      isLoading, 
+      currentPage, 
+      manualNavigation, 
+      hasUser: !!user,
+      userFirstLogin: user?.firstLogin,
+      userType: user?.userType
+    });
     
     // Only auto-redirect if not manually navigating
     if (!manualNavigation) {
-      if (isAuthenticated && (currentPage === 'landing' || currentPage === 'login')) {
-        console.log('User is authenticated, setting page to dashboard');
-        setCurrentPage('dashboard');
-      } else if (!isAuthenticated && !isLoading && currentPage === 'dashboard') {
-        console.log('User is not authenticated, setting page to landing');
+      // If not authenticated and loading is complete, go to landing
+      if (!isAuthenticated && !isLoading) {
+        console.log('❌ User is not authenticated, setting page to landing');
         setCurrentPage('landing');
+        return;
       }
+      
+      // If authenticated, check where to go
+      if (isAuthenticated && user && (currentPage === 'landing' || currentPage === 'login')) {
+        console.log('🔍 User is authenticated, checking first-time login conditions...');
+        console.log('🔍 User data:', {
+          id: user.id,
+          email: user.email,
+          userType: user.userType,
+          firstLogin: user.firstLogin,
+          isEmailVerified: user.isEmailVerified,
+          authProvider: user.authProvider
+        });
+        
+        // Check if this is a first-time login - only if user is actually authenticated AND has firstLogin true
+        console.log('🔍 Checking firstLogin status:', user.firstLogin, typeof user.firstLogin);
+        if (user.firstLogin === true) {
+          console.log('✅ FIRST LOGIN DETECTED! User needs first-time setup, showing wizard');
+          console.log('✅ Setting currentPage to first-time-login');
+          setCurrentPage('first-time-login');
+        } else {
+          console.log('✅ User is authenticated but NOT first login, going to dashboard');
+          console.log('✅ Setting currentPage to dashboard');
+          setCurrentPage('dashboard');
+        }
+      }
+    } else {
+      console.log('🔍 Manual navigation is true, skipping auto-redirect');
     }
-  }, [isAuthenticated, isLoading, manualNavigation, currentPage]);
+  }, [isAuthenticated, isLoading, manualNavigation, currentPage, user]);
 
   // Debug authentication state changes
   useEffect(() => {
@@ -81,18 +124,28 @@ const AppContent = () => {
     setCurrentPage('setup-wizard');
   }, []);
 
+  const handleNavigateToCompleteRegistration = React.useCallback((token) => {
+    setManualNavigation(true);
+    setCurrentPage(`complete-registration/${token}`);
+  }, []);
+
   // Handle successful login
   const handleLoginSuccess = React.useCallback(() => {
-    console.log('Login successful, redirecting to dashboard...');
-    console.log('Current page before redirect:', currentPage);
+    console.log('🎯 Login successful, checking user state...');
+    console.log('🎯 Current page before redirect:', currentPage);
+    console.log('🎯 User data after login:', user);
+    
     // Clear manual navigation flag to allow auto-redirect
     setManualNavigation(false);
-    // Force navigation to dashboard
-    setCurrentPage('dashboard');
-    console.log('Current page after redirect should be: dashboard');
-  }, [currentPage]);
+    
+    // Add a small delay to ensure user data is properly set
+    setTimeout(() => {
+      console.log('🎯 Manual navigation cleared, letting useEffect handle routing');
+    }, 100);
+  }, [currentPage, user]);
 
   const renderPage = () => {
+    console.log('🎯 renderPage called with currentPage:', currentPage);
     switch (currentPage) {
       case 'landing':
         return (
@@ -149,6 +202,37 @@ const AppContent = () => {
             />
           </ProtectedRoute>
         );
+      case 'first-time-login':
+        console.log('🎯 Rendering first-time-login case with:', { 
+          isAuthenticated, 
+          hasUser: !!user, 
+          firstLogin: user?.firstLogin,
+          currentPage 
+        });
+        
+        // Only show wizard if user is authenticated AND has firstLogin true
+        if (!isAuthenticated || !user || user.firstLogin !== true) {
+          console.log('🚫 Wizard conditions not met:', { 
+            isAuthenticated, 
+            hasUser: !!user, 
+            firstLogin: user?.firstLogin 
+          });
+          // Redirect to landing if not authenticated, or dashboard if authenticated but not first login
+          if (!isAuthenticated) {
+            setCurrentPage('landing');
+            return null;
+          } else {
+            setCurrentPage('dashboard');
+            return null;
+          }
+        }
+        
+        console.log('✅ Wizard conditions met, rendering FirstTimeLoginWizard');
+        return (
+          <ProtectedRoute>
+            <FirstTimeLoginWizard />
+          </ProtectedRoute>
+        );
       case 'dashboard':
         return (
           <ProtectedRoute>
@@ -156,6 +240,11 @@ const AppContent = () => {
           </ProtectedRoute>
         );
       default:
+        // Check if it's a complete-registration route
+        if (currentPage.startsWith('complete-registration/')) {
+          const token = currentPage.split('/')[1];
+          return <CompleteRegistration token={token} />;
+        }
         return (
           <LandingPage
             onNavigateToOnboarding={handleNavigateToOnboarding}

@@ -1,0 +1,11 @@
+7fba7fe - ritotensy, 2025-09-18 08:59:31 : Google Sign in with Dashboard
+f35928a - ritotensy, 2025-09-14 11:45:39 : Login Functionality Completed
+5de1de7 - ritotensy, 2025-09-14 00:07:44 : Registration Backend Completed
+dd2a83f - ritotensy, 2025-09-09 20:29:59 : Fix OTP functionality and server warnings
+39fcc29 - ritotensy, 2025-09-09 20:20:33 : Remove unnecessary files and clean up project structure
+6dba6f8 - ritotensy, 2025-09-09 20:20:26 : Complete project setup and migration
+26f5c73 - ritotensy, 2025-08-21 08:09:57 : Registration [Organisation]
+5ef9a37 - ritotensy, 2025-08-07 22:46:51 : Landing->Login->Onboarding Cards
+cfabb8f - ritotensy, 2025-08-07 17:26:39 : Onboarding Completed
+48a6cc7 - ritotensy, 2025-08-07 14:25:30 : Login & Landing Page
+d45f2b7 - maryloid, 2025-08-05 11:38:04 : Initial commit

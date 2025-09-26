@@ -23,23 +23,31 @@ const UserForm = ({ user, onClose, onSave }) => {
     role: 'student',
     department: '',
     status: 'active',
-    password: '',
-    confirmPassword: '',
     dateOfBirth: '',
     address: '',
     emergencyContact: '',
     emergencyPhone: '',
     notes: '',
+    // Teacher specific fields
+    subjects: [],
+    teacherRole: 'teacher',
+    affiliationType: 'organization',
+    experienceLevel: '',
+    currentInstitution: '',
+    yearsOfExperience: '',
+    // Student specific fields
+    gender: '',
+    academicYear: '',
+    grade: '',
+    section: '',
+    rollNumber: '',
+    studentSubjects: []
   });
 
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
 
   const roles = [
-    { value: 'admin', label: 'Administrator', description: 'Full system access' },
-    { value: 'sub_admin', label: 'Sub Administrator', description: 'Limited admin access' },
     { value: 'teacher', label: 'Teacher', description: 'Teaching and student management' },
     { value: 'student', label: 'Student', description: 'Student access only' },
   ];
@@ -57,6 +65,64 @@ const UserForm = ({ user, onClose, onSave }) => {
     'Support',
   ];
 
+  const subjects = [
+    'Mathematics',
+    'Physics',
+    'Chemistry',
+    'Biology',
+    'English',
+    'History',
+    'Geography',
+    'Computer Science',
+    'Physical Education',
+    'Art',
+    'Music',
+    'Economics',
+    'Business Studies',
+    'Psychology',
+    'Sociology'
+  ];
+
+  const teacherRoles = [
+    { value: 'teacher', label: 'Teacher' },
+    { value: 'hod', label: 'Head of Department' },
+    { value: 'coordinator', label: 'Coordinator' }
+  ];
+
+  const affiliationTypes = [
+    { value: 'organization', label: 'Organization' },
+    { value: 'freelance', label: 'Freelance' }
+  ];
+
+  const experienceLevels = [
+    { value: 'beginner', label: 'Beginner (0-2 years)' },
+    { value: 'intermediate', label: 'Intermediate (3-5 years)' },
+    { value: 'experienced', label: 'Experienced (6-10 years)' },
+    { value: 'expert', label: 'Expert (10+ years)' }
+  ];
+
+  const genders = [
+    { value: 'male', label: 'Male' },
+    { value: 'female', label: 'Female' },
+    { value: 'other', label: 'Other' }
+  ];
+
+  const academicYears = [
+    '2024-25',
+    '2025-26',
+    '2026-27',
+    '2027-28',
+    '2028-29'
+  ];
+
+  const grades = [
+    '1st Grade', '2nd Grade', '3rd Grade', '4th Grade', '5th Grade',
+    '6th Grade', '7th Grade', '8th Grade', '9th Grade', '10th Grade',
+    '11th Grade', '12th Grade'
+  ];
+
+  const sections = ['A', 'B', 'C', 'D', 'E', 'F'];
+
   const statuses = [
     { value: 'active', label: 'Active', color: 'text-green-600' },
     { value: 'pending', label: 'Pending', color: 'text-yellow-600' },
@@ -66,21 +132,33 @@ const UserForm = ({ user, onClose, onSave }) => {
   useEffect(() => {
     if (user) {
       setFormData({
-        firstName: user.firstName || '',
-        lastName: user.lastName || '',
+        firstName: user.profile?.firstName || user.firstName || '',
+        lastName: user.profile?.lastName || user.lastName || '',
         email: user.email || '',
-        phone: user.phone || '',
-        countryCode: user.countryCode || '+1',
-        role: user.role || 'student',
-        department: user.department || '',
-        status: user.status || 'active',
-        password: '',
-        confirmPassword: '',
+        phone: user.profile?.phone || user.phone || '',
+        countryCode: user.profile?.countryCode || user.countryCode || '+1',
+        role: user.userType || user.role || 'student',
+        department: user.profile?.department || user.department || '',
+        status: user.isActive ? 'active' : 'inactive',
         dateOfBirth: user.dateOfBirth || '',
         address: user.address || '',
         emergencyContact: user.emergencyContact || '',
         emergencyPhone: user.emergencyPhone || '',
         notes: user.notes || '',
+        // Teacher specific fields
+        subjects: user.subjects || [],
+        teacherRole: user.teacherRole || 'teacher',
+        affiliationType: user.affiliationType || 'organization',
+        experienceLevel: user.experienceLevel || '',
+        currentInstitution: user.currentInstitution || '',
+        yearsOfExperience: user.yearsOfExperience || '',
+        // Student specific fields
+        gender: user.gender || '',
+        academicYear: user.academicYear || '',
+        grade: user.grade || '',
+        section: user.section || '',
+        rollNumber: user.rollNumber || '',
+        studentSubjects: user.studentSubjects || []
       });
     }
   }, [user]);
@@ -110,17 +188,43 @@ const UserForm = ({ user, onClose, onSave }) => {
       newErrors.department = 'Department is required';
     }
 
-    if (!user && !formData.password) {
-      newErrors.password = 'Password is required for new users';
+    // Teacher specific validations
+    if (formData.role === 'teacher') {
+      if (!formData.teacherRole) {
+        newErrors.teacherRole = 'Teacher role is required';
+      }
+      if (!formData.affiliationType) {
+        newErrors.affiliationType = 'Affiliation type is required';
+      }
+      if (formData.affiliationType === 'freelance' && !formData.experienceLevel) {
+        newErrors.experienceLevel = 'Experience level is required for freelance teachers';
+      }
     }
 
-    if (formData.password && formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+    // Student specific validations - these fields are optional when creating via user management
+    // as they will be filled during the first-time login wizard
+    if (formData.role === 'student') {
+      // Only validate if fields are provided (not required for user management creation)
+      if (formData.dateOfBirth && !formData.dateOfBirth.trim()) {
+        newErrors.dateOfBirth = 'Date of birth is required if provided';
+      }
+      if (formData.gender && !formData.gender.trim()) {
+        newErrors.gender = 'Gender is required if provided';
+      }
+      if (formData.academicYear && !formData.academicYear.trim()) {
+        newErrors.academicYear = 'Academic year is required if provided';
+      }
+      if (formData.grade && !formData.grade.trim()) {
+        newErrors.grade = 'Grade is required if provided';
+      }
+      if (formData.section && !formData.section.trim()) {
+        newErrors.section = 'Section is required if provided';
+      }
+      if (formData.rollNumber && !formData.rollNumber.trim()) {
+        newErrors.rollNumber = 'Roll number is required if provided';
+      }
     }
 
-    if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
-    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -140,10 +244,12 @@ const UserForm = ({ user, onClose, onSave }) => {
         ...formData,
         name: `${formData.firstName} ${formData.lastName}`,
         fullPhone: `${formData.countryCode}${formData.phone}`,
+        // Convert status back to isActive for backend
+        isActive: formData.status === 'active',
       };
 
       await onSave(userData);
-      onClose(); // Close the modal after successful save
+      // Don't close modal here - let the parent handle it after successful save
     } catch (error) {
       console.error('Error saving user:', error);
     } finally {
@@ -249,14 +355,20 @@ const UserForm = ({ user, onClose, onSave }) => {
                   type="email"
                   value={formData.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
+                  disabled={!!user} // Disable email editing for existing users
                   className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
                     errors.email ? 'border-red-300' : 'border-gray-300'
-                  }`}
+                  } ${user ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                   placeholder="Enter email address"
                 />
               </div>
               {errors.email && (
                 <p className="text-red-500 text-xs mt-1">{errors.email}</p>
+              )}
+              {user && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Email cannot be changed for existing users
+                </p>
               )}
             </div>
 
@@ -310,9 +422,10 @@ const UserForm = ({ user, onClose, onSave }) => {
                 <select
                   value={formData.role}
                   onChange={(e) => handleInputChange('role', e.target.value)}
+                  disabled={!!user} // Disable role editing for existing users
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
                     errors.role ? 'border-red-300' : 'border-gray-300'
-                  }`}
+                  } ${user ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                 >
                   {roles.map((role) => (
                     <option key={role.value} value={role.value}>
@@ -325,6 +438,7 @@ const UserForm = ({ user, onClose, onSave }) => {
                 )}
                 <p className="text-xs text-gray-500 mt-1">
                   {roles.find(r => r.value === formData.role)?.description}
+                  {user && ' (Role cannot be changed for existing users)'}
                 </p>
               </div>
 
@@ -376,6 +490,328 @@ const UserForm = ({ user, onClose, onSave }) => {
             </div>
           </div>
 
+          {/* Teacher Specific Fields */}
+          {formData.role === 'teacher' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <User className="w-5 h-5" />
+                Teacher Information
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Teacher Role *
+                  </label>
+                  <select
+                    value={formData.teacherRole}
+                    onChange={(e) => handleInputChange('teacherRole', e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      errors.teacherRole ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                  >
+                    {teacherRoles.map((role) => (
+                      <option key={role.value} value={role.value}>
+                        {role.label}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.teacherRole && (
+                    <p className="text-red-500 text-xs mt-1">{errors.teacherRole}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Affiliation Type *
+                  </label>
+                  <select
+                    value={formData.affiliationType}
+                    onChange={(e) => handleInputChange('affiliationType', e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      errors.affiliationType ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                  >
+                    {affiliationTypes.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.affiliationType && (
+                    <p className="text-red-500 text-xs mt-1">{errors.affiliationType}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Current Institution
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.currentInstitution}
+                    onChange={(e) => handleInputChange('currentInstitution', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="Enter current institution"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Years of Experience
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.yearsOfExperience}
+                    onChange={(e) => handleInputChange('yearsOfExperience', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="e.g., 5 years"
+                  />
+                </div>
+              </div>
+
+              {formData.affiliationType === 'freelance' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Experience Level *
+                  </label>
+                  <select
+                    value={formData.experienceLevel}
+                    onChange={(e) => handleInputChange('experienceLevel', e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      errors.experienceLevel ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">Select experience level</option>
+                    {experienceLevels.map((level) => (
+                      <option key={level.value} value={level.value}>
+                        {level.label}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.experienceLevel && (
+                    <p className="text-red-500 text-xs mt-1">{errors.experienceLevel}</p>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subjects
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {subjects.map((subject) => (
+                    <label key={subject} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.subjects.includes(subject)}
+                        onChange={(e) => {
+                          const newSubjects = e.target.checked
+                            ? [...formData.subjects, subject]
+                            : formData.subjects.filter(s => s !== subject);
+                          handleInputChange('subjects', newSubjects);
+                        }}
+                        className="w-4 h-4 text-purple-600 focus:ring-purple-500"
+                      />
+                      <span className="text-sm text-gray-700">{subject}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Student Specific Fields */}
+          {formData.role === 'student' && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <User className="w-5 h-5" />
+                Student Information
+              </h3>
+              
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <User className="w-5 h-5 text-blue-500" />
+                  </div>
+                  <div className="ml-3">
+                    <h4 className="text-sm font-medium text-blue-800">Student Setup Process</h4>
+                    <p className="text-sm text-blue-700 mt-1">
+                      When creating a student user, they will be required to complete their profile information 
+                      (date of birth, gender, academic details, etc.) during their first login. You can optionally 
+                      fill these fields now, or leave them empty for the student to complete.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date of Birth
+                    <span className="text-xs text-gray-500 ml-1">(Optional - will be collected during first login)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.dateOfBirth}
+                    onChange={(e) => handleInputChange('dateOfBirth', e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      errors.dateOfBirth ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                  />
+                  {errors.dateOfBirth && (
+                    <p className="text-red-500 text-xs mt-1">{errors.dateOfBirth}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Gender
+                    <span className="text-xs text-gray-500 ml-1">(Optional - will be collected during first login)</span>
+                  </label>
+                  <select
+                    value={formData.gender}
+                    onChange={(e) => handleInputChange('gender', e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      errors.gender ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">Select gender</option>
+                    {genders.map((gender) => (
+                      <option key={gender.value} value={gender.value}>
+                        {gender.label}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.gender && (
+                    <p className="text-red-500 text-xs mt-1">{errors.gender}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Academic Year
+                    <span className="text-xs text-gray-500 ml-1">(Optional - will be collected during first login)</span>
+                  </label>
+                  <select
+                    value={formData.academicYear}
+                    onChange={(e) => handleInputChange('academicYear', e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      errors.academicYear ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">Select academic year</option>
+                    {academicYears.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.academicYear && (
+                    <p className="text-red-500 text-xs mt-1">{errors.academicYear}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Grade
+                    <span className="text-xs text-gray-500 ml-1">(Optional - will be collected during first login)</span>
+                  </label>
+                  <select
+                    value={formData.grade}
+                    onChange={(e) => handleInputChange('grade', e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      errors.grade ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">Select grade</option>
+                    {grades.map((grade) => (
+                      <option key={grade} value={grade}>
+                        {grade}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.grade && (
+                    <p className="text-red-500 text-xs mt-1">{errors.grade}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Section
+                    <span className="text-xs text-gray-500 ml-1">(Optional - will be collected during first login)</span>
+                  </label>
+                  <select
+                    value={formData.section}
+                    onChange={(e) => handleInputChange('section', e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      errors.section ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">Select section</option>
+                    {sections.map((section) => (
+                      <option key={section} value={section}>
+                        {section}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.section && (
+                    <p className="text-red-500 text-xs mt-1">{errors.section}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Roll Number
+                    <span className="text-xs text-gray-500 ml-1">(Optional - will be collected during first login)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.rollNumber}
+                    onChange={(e) => handleInputChange('rollNumber', e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                      errors.rollNumber ? 'border-red-300' : 'border-gray-300'
+                    }`}
+                    placeholder="Enter roll number"
+                  />
+                  {errors.rollNumber && (
+                    <p className="text-red-500 text-xs mt-1">{errors.rollNumber}</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subjects
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {subjects.map((subject) => (
+                    <label key={subject} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.studentSubjects.includes(subject)}
+                        onChange={(e) => {
+                          const newSubjects = e.target.checked
+                            ? [...formData.studentSubjects, subject]
+                            : formData.studentSubjects.filter(s => s !== subject);
+                          handleInputChange('studentSubjects', newSubjects);
+                        }}
+                        className="w-4 h-4 text-purple-600 focus:ring-purple-500"
+                      />
+                      <span className="text-sm text-gray-700">{subject}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Security */}
           {!user && (
             <div className="space-y-4">
@@ -384,59 +820,20 @@ const UserForm = ({ user, onClose, onSave }) => {
                 Security
               </h3>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Password *
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={formData.password}
-                      onChange={(e) => handleInputChange('password', e.target.value)}
-                      className={`w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
-                        errors.password ? 'border-red-300' : 'border-gray-300'
-                      }`}
-                      placeholder="Enter password"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+              <div className="grid grid-cols-1 gap-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <Shield className="w-5 h-5 text-blue-500" />
+                    </div>
+                    <div className="ml-3">
+                      <h4 className="text-sm font-medium text-blue-800">Registration Process</h4>
+                      <p className="text-sm text-blue-700 mt-1">
+                        When you create a user, they will receive an email with a registration link. 
+                        They must complete their registration by setting a password and entering the organization code.
+                      </p>
+                    </div>
                   </div>
-                  {errors.password && (
-                    <p className="text-red-500 text-xs mt-1">{errors.password}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Confirm Password *
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showConfirmPassword ? 'text' : 'password'}
-                      value={formData.confirmPassword}
-                      onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
-                      className={`w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
-                        errors.confirmPassword ? 'border-red-300' : 'border-gray-300'
-                      }`}
-                      placeholder="Confirm password"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  {errors.confirmPassword && (
-                    <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>
-                  )}
                 </div>
               </div>
             </div>

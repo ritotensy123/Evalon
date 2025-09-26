@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { store, retrieve, remove } = require('../utils/tempStorage');
+const { sendRegistrationEmail, sendTemporaryCredentialsEmail } = require('../services/emailService');
 
 // Get all users for an organization
 const getAllUserManagements = async (req, res) => {
@@ -15,15 +16,38 @@ const getAllUserManagements = async (req, res) => {
     const { page = 1, limit = 10, role, status, search } = req.query;
 
     // Get all users for this organization
+    const teachersInOrg = await Teacher.find({ organizationId }).select('_id');
+    const studentsInOrg = await Student.find({ organizationId }).select('_id');
+    
+    console.log('🔍 User Management - Organization users query:', {
+      organizationId,
+      teachersCount: teachersInOrg.length,
+      studentsCount: studentsInOrg.length,
+      teacherIds: teachersInOrg.map(t => t._id),
+      studentIds: studentsInOrg.map(s => s._id)
+    });
+
     let organizationUsers = await User.find({
       $or: [
         { userType: 'organization_admin', userId: organizationId },
-        { userType: 'teacher', userId: { $in: await Teacher.find({ organizationId }).select('_id') } },
-        { userType: 'student', userId: { $in: await Student.find({ organizationId }).select('_id') } }
+        { userType: 'teacher', userId: { $in: teachersInOrg } },
+        { userType: 'student', userId: { $in: studentsInOrg } }
       ]
     })
       .select('-password')
       .sort({ createdAt: -1 });
+
+    console.log('🔍 User Management - Found users:', {
+      totalUsers: organizationUsers.length,
+      users: organizationUsers.map(u => ({
+        id: u._id,
+        email: u.email,
+        userType: u.userType,
+        userId: u.userId,
+        isActive: u.isActive,
+        organizationId: u.organizationId
+      }))
+    });
 
     // Apply filters
     if (role && role !== 'all') {
@@ -51,17 +75,104 @@ const getAllUserManagements = async (req, res) => {
     const skip = (page - 1) * limit;
     const paginatedUsers = organizationUsers.slice(skip, skip + parseInt(limit));
 
-    // Format users for response
-    const formattedUsers = paginatedUsers.map(user => ({
-      _id: user._id,
-      firstName: user.profile?.firstName || '',
-      lastName: user.profile?.lastName || '',
-      email: user.email,
-      userType: user.userType,
-      status: user.isActive ? 'active' : 'inactive',
-      lastLogin: user.lastLogin,
-      createdAt: user.createdAt,
-      department: user.profile?.department || null
+    // Fetch complete user data including Teacher/Student details
+    const formattedUsers = await Promise.all(paginatedUsers.map(async (user) => {
+      let additionalData = {};
+      
+      // Fetch Teacher or Student data based on user type
+      if (user.userType === 'teacher' && user.userId) {
+        try {
+          const teacher = await Teacher.findById(user.userId);
+          if (teacher) {
+            additionalData = {
+              firstName: teacher.fullName?.split(' ')[0] || '',
+              lastName: teacher.fullName?.split(' ').slice(1).join(' ') || '',
+              phone: teacher.phoneNumber || '',
+              department: teacher.department || '',
+              subjects: teacher.subjects || [],
+              experienceLevel: teacher.experienceLevel || '',
+              yearsOfExperience: teacher.yearsOfExperience || '',
+              qualification: teacher.qualification || '',
+              specialization: teacher.specialization || '',
+              address: teacher.address || '',
+              dateOfBirth: teacher.dateOfBirth || '',
+              emergencyContact: teacher.emergencyContact || '',
+              notes: teacher.notes || ''
+            };
+          }
+        } catch (error) {
+          console.error('Error fetching teacher data:', error);
+        }
+      } else if (user.userType === 'student' && user.userId) {
+        try {
+          const student = await Student.findById(user.userId);
+          if (student) {
+            additionalData = {
+              firstName: student.fullName?.split(' ')[0] || '',
+              lastName: student.fullName?.split(' ').slice(1).join(' ') || '',
+              phone: student.phoneNumber || '',
+              department: student.department || '',
+              academicYear: student.academicYear || '',
+              grade: student.grade || '',
+              section: student.section || '',
+              rollNumber: student.rollNumber || '',
+              studentCode: student.studentCode || '',
+              address: student.address || '',
+              dateOfBirth: student.dateOfBirth || '',
+              emergencyContact: student.emergencyContact || '',
+              parentName: student.parentName || '',
+              parentPhone: student.parentPhone || '',
+              notes: student.notes || ''
+            };
+          }
+        } catch (error) {
+          console.error('Error fetching student data:', error);
+        }
+      } else if (user.userType === 'organization_admin') {
+        // For organization admin, use profile data if available
+        additionalData = {
+          firstName: user.profile?.firstName || '',
+          lastName: user.profile?.lastName || '',
+          phone: user.profile?.phone || '',
+          department: 'Administration',
+          address: user.profile?.address || '',
+          notes: user.profile?.notes || ''
+        };
+      }
+
+      return {
+        _id: user._id,
+        firstName: additionalData.firstName || user.profile?.firstName || '',
+        lastName: additionalData.lastName || user.profile?.lastName || '',
+        email: user.email,
+        phone: additionalData.phone || '',
+        userType: user.userType,
+        status: user.isActive ? 'active' : 'inactive',
+        lastLogin: user.lastLogin,
+        createdAt: user.createdAt,
+        department: additionalData.department || user.profile?.department || '',
+        isEmailVerified: user.isEmailVerified || false,
+        phoneVerified: user.phoneVerified || false,
+        // Teacher specific fields
+        subjects: additionalData.subjects || [],
+        experienceLevel: additionalData.experienceLevel || '',
+        yearsOfExperience: additionalData.yearsOfExperience || '',
+        qualification: additionalData.qualification || '',
+        specialization: additionalData.specialization || '',
+        // Student specific fields
+        academicYear: additionalData.academicYear || '',
+        grade: additionalData.grade || '',
+        section: additionalData.section || '',
+        rollNumber: additionalData.rollNumber || '',
+        studentCode: additionalData.studentCode || '',
+        parentName: additionalData.parentName || '',
+        parentPhone: additionalData.parentPhone || '',
+        // Common fields
+        address: additionalData.address || '',
+        dateOfBirth: additionalData.dateOfBirth || '',
+        emergencyContact: additionalData.emergencyContact || '',
+        notes: additionalData.notes || ''
+      };
     }));
 
     res.status(200).json({
@@ -116,7 +227,7 @@ const getUserManagementById = async (req, res) => {
   }
 };
 
-// Create new user
+// Create new user (Teacher or Student) - Admin creates without password
 const createUserManagement = async (req, res) => {
   try {
     const {
@@ -124,24 +235,37 @@ const createUserManagement = async (req, res) => {
       lastName,
       email,
       phone,
-      countryCode,
+      countryCode = '+1',
       role,
       department,
       status = 'active',
-      password,
       dateOfBirth,
       address,
       emergencyContact,
       emergencyPhone,
       notes,
-      organizationId
+      organizationId,
+      // Teacher specific fields
+      subjects = [],
+      teacherRole = 'teacher',
+      affiliationType = 'organization',
+      experienceLevel,
+      currentInstitution,
+      yearsOfExperience,
+      // Student specific fields
+      gender,
+      academicYear,
+      grade,
+      section,
+      rollNumber,
+      studentSubjects = []
     } = req.body;
 
     // Validate required fields
     if (!firstName || !lastName || !email || !role || !organizationId) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields'
+        message: 'Missing required fields: firstName, lastName, email, role, organizationId'
       });
     }
 
@@ -151,24 +275,267 @@ const createUserManagement = async (req, res) => {
     });
 
     if (existingUser) {
+      // If user exists and is pending registration, update their details
+      if (existingUser.authProvider === 'pending_registration' && !existingUser.isRegistrationComplete) {
+        console.log(`🔄 Updating existing pending user: ${email}`);
+        
+        // Generate temporary credentials
+        const tempPassword = crypto.randomBytes(8).toString('hex');
+        const hashedTempPassword = await bcrypt.hash(tempPassword, 12);
+        const organization = await Organization.findById(organizationId);
+        const orgCode = organization?.orgCode || 'ORG001';
+
+        // Update the existing user with temporary credentials
+        existingUser.password = hashedTempPassword;
+        existingUser.isActive = true; // Active with temporary credentials
+        existingUser.authProvider = 'temp_password'; // Mark as temporary password
+        existingUser.isRegistrationComplete = true; // Mark as complete since they have credentials
+        existingUser.isEmailVerified = true; // Email is verified for admin-created users
+        existingUser.firstLogin = true; // Flag for first login flow
+        existingUser.profile = {
+          firstName,
+          lastName,
+          email: email.toLowerCase(),
+          phone: phone ? `${countryCode}${phone}` : null,
+          role: role,
+          department
+        };
+
+        // Update the associated Teacher or Student record
+        if (role === 'teacher') {
+          const teacherRecord = await Teacher.findById(existingUser.userId);
+          if (teacherRecord) {
+            teacherRecord.firstName = firstName;
+            teacherRecord.lastName = lastName;
+            teacherRecord.phoneNumber = phone || '0000000000';
+            teacherRecord.countryCode = countryCode;
+            teacherRecord.department = department;
+            teacherRecord.subjects = subjects || [];
+            teacherRecord.experienceLevel = experienceLevel || 'beginner';
+            teacherRecord.currentInstitution = currentInstitution || 'Unknown';
+            teacherRecord.yearsOfExperience = yearsOfExperience || 0;
+            teacherRecord.organizationCode = orgCode;
+            await teacherRecord.save();
+          }
+        } else if (role === 'student') {
+          const studentRecord = await Student.findById(existingUser.userId);
+          if (studentRecord) {
+            studentRecord.fullName = `${firstName} ${lastName}`;
+            studentRecord.phoneNumber = phone || '0000000000';
+            studentRecord.countryCode = countryCode;
+            studentRecord.department = department;
+            studentRecord.academicYear = academicYear || '2024-25';
+            studentRecord.grade = grade || '10';
+            studentRecord.section = section || 'A';
+            studentRecord.organizationCode = orgCode;
+            await studentRecord.save();
+          }
+        }
+
+        await existingUser.save();
+
+        // Send temporary credentials email
+        const emailResult = await sendTemporaryCredentialsEmail(
+          email, 
+          `${firstName} ${lastName}`, 
+          tempPassword, 
+          role
+        );
+        
+        if (emailResult.success) {
+          console.log(`📧 Temporary credentials email sent successfully to ${email}`);
+        } else {
+          console.error(`❌ Failed to send temporary credentials email to ${email}:`, emailResult.error);
+        }
+
+        return res.status(200).json({
+          success: true,
+          message: `${role.charAt(0).toUpperCase() + role.slice(1)} account created successfully. Temporary credentials sent via email.`,
+          data: {
+            user: {
+              id: existingUser._id,
+              email: existingUser.email,
+              userType: existingUser.userType,
+              isActive: existingUser.isActive,
+              isRegistrationComplete: existingUser.isRegistrationComplete,
+              firstLogin: existingUser.firstLogin
+            }
+          }
+        });
+      } else {
+        // User exists and is not pending registration
+        return res.status(400).json({
+          success: false,
+          message: 'User with this email already exists and has completed registration'
+        });
+      }
+    }
+
+    // Generate temporary credentials
+    const tempPassword = crypto.randomBytes(8).toString('hex');
+    const hashedTempPassword = await bcrypt.hash(tempPassword, 12);
+    
+    // Get organization details
+    const organization = await Organization.findById(organizationId);
+    const orgCode = organization?.orgCode || 'ORG001';
+
+    let createdUser = null;
+    let userRecord = null;
+
+    if (role === 'teacher') {
+      // Create Teacher record
+      const teacherData = {
+        fullName: `${firstName} ${lastName}`,
+        phoneNumber: phone || '0000000000',
+        countryCode,
+        emailAddress: email.toLowerCase(),
+        country: 'India', // Default, can be made configurable
+        city: 'Unknown', // Default, can be made configurable
+        pincode: '000000', // Default, can be made configurable
+        subjects: subjects || [],
+        role: teacherRole,
+        affiliationType,
+        experienceLevel: experienceLevel || 'beginner',
+        currentInstitution: currentInstitution || 'Unknown',
+        yearsOfExperience: yearsOfExperience || 0,
+        organizationId,
+        organizationCode: orgCode,
+        status: status === 'active' ? 'active' : 'inactive'
+      };
+
+      // Set organization validation
+      if (affiliationType === 'organization') {
+        teacherData.isOrganizationValid = true;
+        teacherData.associationStatus = 'verified';
+      } else {
+        teacherData.associationStatus = 'freelance';
+      }
+
+      userRecord = new Teacher(teacherData);
+      await userRecord.save();
+
+      // Create User record for teacher with temporary credentials
+      createdUser = new User({
+        email: email.toLowerCase(),
+        password: hashedTempPassword,
+        userType: 'teacher',
+        userId: userRecord._id,
+        userModel: 'Teacher',
+        userTypeEmail: `${email.toLowerCase()}_teacher`, // Explicitly set userTypeEmail
+        isActive: true, // Active with temporary credentials
+        authProvider: 'temp_password', // Mark as temporary password
+        isRegistrationComplete: true, // Complete since they have credentials
+        isEmailVerified: true, // Email is verified for admin-created teachers
+        firstLogin: true, // Flag for first login flow
+        organizationId: organizationId,
+        profile: {
+          firstName,
+          lastName,
+          email: email.toLowerCase(),
+          phone: phone ? `${countryCode}${phone}` : null,
+          role: 'teacher',
+          department
+        }
+      });
+
+    } else if (role === 'student') {
+      // Student fields will use defaults if not provided
+
+      // Create Student record
+      const studentData = {
+        fullName: `${firstName} ${lastName}`,
+        phoneNumber: phone || '0000000000',
+        countryCode,
+        emailAddress: email.toLowerCase(),
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : new Date('1990-01-01'),
+        gender: gender || 'other',
+        country: 'India', // Default, can be made configurable
+        city: 'Unknown', // Default, can be made configurable
+        pincode: '000000', // Default, can be made configurable
+        organizationId,
+        organizationCode: orgCode,
+        academicYear: academicYear || '2024-25',
+        grade: grade || '1',
+        section: section || 'A',
+        rollNumber: rollNumber || '001',
+        subjects: studentSubjects || [],
+        status: status === 'active' ? 'active' : 'inactive'
+      };
+
+      // Set organization validation
+      studentData.isOrganizationValid = true;
+      studentData.associationStatus = 'verified';
+
+      userRecord = new Student(studentData);
+      await userRecord.save();
+
+      // Create User record for student with temporary credentials
+      createdUser = new User({
+        email: email.toLowerCase(),
+        password: hashedTempPassword,
+        userType: 'student',
+        userId: userRecord._id,
+        userModel: 'Student',
+        userTypeEmail: `${email.toLowerCase()}_student`, // Explicitly set userTypeEmail
+        isActive: true, // Active with temporary credentials
+        authProvider: 'temp_password', // Mark as temporary password
+        isRegistrationComplete: true, // Complete since they have credentials
+        isEmailVerified: false, // Students need email verification
+        firstLogin: true, // Flag for first login flow
+        organizationId: organizationId,
+        profile: {
+          firstName,
+          lastName,
+          email: email.toLowerCase(),
+          phone: phone ? `${countryCode}${phone}` : null,
+          role: 'student',
+          department
+        }
+      });
+    } else {
       return res.status(400).json({
         success: false,
-        message: 'User with this email already exists'
+        message: 'Invalid role. Only "teacher" and "student" are supported'
       });
     }
 
-    // Hash password if provided
-    let hashedPassword = null;
-    if (password) {
-      const saltRounds = 12;
-      hashedPassword = await bcrypt.hash(password, saltRounds);
+    await createdUser.save();
+
+    // Send temporary credentials email
+    const emailResult = await sendTemporaryCredentialsEmail(
+      email, 
+      `${firstName} ${lastName}`, 
+      tempPassword, 
+      role
+    );
+    
+    if (emailResult.success) {
+      console.log(`📧 Temporary credentials email sent successfully to ${email}`);
+    } else {
+      console.error(`❌ Failed to send temporary credentials email to ${email}:`, emailResult.error);
     }
 
-    // Create user - this function needs to be redesigned for the User model
-    // For now, return an error as this requires creating Teacher/Student records first
-    return res.status(400).json({
-      success: false,
-      message: 'User creation through this endpoint is not supported. Please use the appropriate registration endpoints.'
+    // Return success response
+    res.status(201).json({
+      success: true,
+      message: `${role.charAt(0).toUpperCase() + role.slice(1)} created successfully. Temporary credentials sent via email.`,
+      data: {
+        user: {
+          id: createdUser._id,
+          email: createdUser.email,
+          userType: createdUser.userType,
+          isActive: createdUser.isActive,
+          isRegistrationComplete: createdUser.isRegistrationComplete,
+          firstLogin: createdUser.firstLogin,
+          profile: createdUser.profile
+        },
+        userRecord: {
+          id: userRecord._id,
+          fullName: userRecord.fullName,
+          email: userRecord.emailAddress,
+          status: userRecord.status
+        }
+      }
     });
 
   } catch (error) {
@@ -239,11 +606,62 @@ const deleteUserManagement = async (req, res) => {
   try {
     const { userId } = req.params;
 
+    // Find the user first to get their related data
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Delete related Teacher/Student record if exists
+    if (user.userType === 'teacher' && user.userId) {
+      await Teacher.findByIdAndDelete(user.userId);
+      console.log('✅ Deleted related teacher record:', user.userId);
+    } else if (user.userType === 'student' && user.userId) {
+      await Student.findByIdAndDelete(user.userId);
+      console.log('✅ Deleted related student record:', user.userId);
+    }
+
+    // Delete the user record
+    await User.findByIdAndDelete(userId);
+    console.log('✅ Permanently deleted user:', userId);
+
+    res.status(200).json({
+      success: true,
+      message: 'User permanently deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete user',
+      error: error.message
+    });
+  }
+};
+
+// Suspend/Activate user (toggle isActive status)
+const toggleUserStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { action } = req.body; // 'suspend' or 'activate'
+
+    if (!action || !['suspend', 'activate'].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid action. Must be "suspend" or "activate"'
+      });
+    }
+
+    const isActive = action === 'activate';
     const user = await User.findByIdAndUpdate(
       userId,
-      { isActive: false },
+      { isActive },
       { new: true }
-    ).select('-password').populate('userId');
+    ).select('-password');
 
     if (!user) {
       return res.status(404).json({
@@ -252,17 +670,25 @@ const deleteUserManagement = async (req, res) => {
       });
     }
 
+    const statusText = isActive ? 'activated' : 'suspended';
+    console.log(`✅ User ${statusText}:`, userId);
+
     res.status(200).json({
       success: true,
-      message: 'User deactivated successfully',
-      data: user
+      message: `User ${statusText} successfully`,
+      data: {
+        _id: user._id,
+        email: user.email,
+        isActive: user.isActive,
+        status: user.isActive ? 'active' : 'inactive'
+      }
     });
 
   } catch (error) {
-    console.error('Delete user error:', error);
+    console.error('Toggle user status error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to delete user',
+      message: 'Failed to update user status',
       error: error.message
     });
   }
@@ -296,7 +722,7 @@ const bulkCreateUserManagements = async (req, res) => {
     for (const userData of users) {
       try {
         // Validate required fields
-        if (!userData.firstName || !userData.lastName || !userData.email || !userData.role) {
+        if (!userData.firstName || !userData.lastName || !userData.email || !userData.userType) {
           results.failed.push({
             email: userData.email,
             error: 'Missing required fields'
@@ -321,13 +747,150 @@ const bulkCreateUserManagements = async (req, res) => {
         const tempPassword = Math.random().toString(36).substring(2, 15);
         const hashedPassword = await bcrypt.hash(tempPassword, 12);
 
-        // Bulk user creation is not supported with the current User model structure
-        // Users must be created through the proper registration flow
-        results.failed.push({
+        // Create user based on userType
+        let createdUser;
+        let createdProfile;
+        
+        if (userData.userType === 'teacher') {
+          // Create Teacher profile
+          createdProfile = new Teacher({
+            fullName: `${userData.firstName} ${userData.lastName}`,
+            emailAddress: userData.email.toLowerCase(),
+            phoneNumber: userData.phone || '',
+            countryCode: '+91',
+            country: 'India',
+            city: 'Mumbai',
+            pincode: '400001',
+            department: userData.department || '',
+            organizationId: organizationId,
+            organizationCode: 'ORG001', // Add required organizationCode
+            isActive: true,
+            subjects: [],
+            role: 'teacher',
+            affiliationType: 'organization',
+            experienceLevel: 'beginner',
+            yearsOfExperience: 0,
+            qualification: '',
+            specialization: '',
+            address: '',
+            dateOfBirth: new Date('1990-01-01'),
+            emergencyContact: '',
+            notes: ''
+          });
+          
+          await createdProfile.save();
+          
+          // Create User account
+          createdUser = new User({
+            email: userData.email.toLowerCase(),
+            password: hashedPassword,
+            userType: 'teacher',
+            userId: createdProfile._id,
+            organizationId: organizationId,
+            userTypeEmail: `${userData.email.toLowerCase()}_${userData.userType}`,
+            userModel: 'Teacher',
+            authProvider: 'temp_password',
+            isRegistrationComplete: true,
+            isActive: true,
+            profile: {
+              firstName: userData.firstName,
+              lastName: userData.lastName,
+              phone: userData.phone || '',
+              department: userData.department || ''
+            },
+            emailVerified: false,
+            phoneVerified: false,
+            firstLogin: true
+          });
+          
+        } else if (userData.userType === 'student') {
+          // Create Student profile
+          createdProfile = new Student({
+            fullName: `${userData.firstName} ${userData.lastName}`,
+            emailAddress: userData.email.toLowerCase(),
+            phoneNumber: userData.phone || '',
+            countryCode: '+91',
+            dateOfBirth: new Date('2000-01-01'),
+            gender: 'other',
+            country: 'India',
+            city: 'Mumbai',
+            pincode: '400001',
+            organizationId: organizationId,
+            isActive: true,
+            studentId: '',
+            address: '',
+            emergencyContact: '',
+            parentGuardianName: '',
+            parentGuardianPhone: '',
+            parentGuardianEmail: '',
+            notes: '',
+            // Academic fields
+            grade: 'Grade 10',
+            section: 'A',
+            rollNumber: `STU${Date.now()}`,
+            academicYear: '2024-2025',
+            subjects: []
+          });
+          
+          await createdProfile.save();
+          
+          // Create User account
+          createdUser = new User({
+            email: userData.email.toLowerCase(),
+            password: hashedPassword,
+            userType: 'student',
+            userId: createdProfile._id,
+            organizationId: organizationId,
+            userTypeEmail: `${userData.email.toLowerCase()}_${userData.userType}`,
+            userModel: 'Student',
+            authProvider: 'temp_password',
+            isRegistrationComplete: true,
+            isActive: true,
+            profile: {
+              firstName: userData.firstName,
+              lastName: userData.lastName,
+              phone: userData.phone || '',
+              department: userData.department || ''
+            },
+            emailVerified: false,
+            phoneVerified: false,
+            firstLogin: true
+          });
+        } else {
+          results.failed.push({
+            email: userData.email,
+            error: 'Invalid user type. Must be teacher or student.'
+          });
+          continue;
+        }
+        
+        await createdUser.save();
+        
+        // Send email notification if requested
+        if (userData.sendEmailNotification) {
+          try {
+            await sendTemporaryCredentialsEmail(
+              userData.email,
+              userData.firstName,
+              tempPassword,
+              userData.userType,
+              organizationId
+            );
+          } catch (emailError) {
+            console.error('Email sending failed:', emailError);
+            // Don't fail the user creation if email fails
+          }
+        }
+        
+        results.successful.push({
           email: userData.email,
-          error: 'Bulk user creation not supported. Use registration endpoints.'
+          firstName: userData.firstName,
+          lastName: userData.lastName,
+          userType: userData.userType,
+          tempPassword: tempPassword,
+          userId: createdUser._id,
+          profileId: createdProfile._id
         });
-        continue;
 
       } catch (error) {
         results.failed.push({
@@ -340,7 +903,12 @@ const bulkCreateUserManagements = async (req, res) => {
     res.status(200).json({
       success: true,
       message: `Bulk user creation completed. ${results.successful.length} successful, ${results.failed.length} failed.`,
-      data: results
+      data: {
+        results: [...results.successful, ...results.failed],
+        successCount: results.successful.length,
+        failureCount: results.failed.length,
+        total: results.total
+      }
     });
 
   } catch (error) {
@@ -1145,12 +1713,318 @@ const bulkUpdateUserRoles = async (req, res) => {
   }
 };
 
+// Get registration details by token
+const getRegistrationDetails = async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const user = await User.findOne({
+      registrationToken: token,
+      isRegistrationComplete: false,
+      registrationExpires: { $gt: new Date() }
+    }).populate('userId');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Registration token not found or expired'
+      });
+    }
+
+    // Get organization details
+    const organization = await Organization.findById(user.userId.organizationId);
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        id: user._id,
+        email: user.email,
+        userType: user.userType,
+        organizationId: user.userId.organizationId,
+        organizationName: organization?.name || 'Unknown Organization',
+        organizationCode: user.organizationCode,
+        profile: user.profile,
+        expiresAt: user.registrationExpires,
+        createdAt: user.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Get registration details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get registration details',
+      error: error.message
+    });
+  }
+};
+
+// Complete user registration
+const completeRegistration = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password, organizationCode } = req.body;
+
+    if (!password || !organizationCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password and organization code are required'
+      });
+    }
+
+    // Find user by token
+    const user = await User.findOne({
+      registrationToken: token,
+      isRegistrationComplete: false,
+      registrationExpires: { $gt: new Date() }
+    }).populate('userId');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Registration token not found or expired'
+      });
+    }
+
+    // Validate organization code
+    if (user.organizationCode !== organizationCode.toUpperCase()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid organization code'
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Update user with password and complete registration
+    user.password = hashedPassword;
+    user.authProvider = 'local';
+    user.isRegistrationComplete = true;
+    user.isActive = true;
+    user.isEmailVerified = true;
+    user.registrationToken = undefined;
+    user.registrationExpires = undefined;
+    user.organizationCode = undefined;
+
+    await user.save();
+
+    // Generate JWT token
+    const jwtToken = jwt.sign(
+      { 
+        userId: user._id, 
+        userType: user.userType,
+        iat: Math.floor(Date.now() / 1000)
+      },
+      process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production',
+      { expiresIn: '7d' }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Registration completed successfully. User can now login.',
+      data: {
+        user: {
+          id: user._id,
+          email: user.email,
+          userType: user.userType,
+          isActive: user.isActive,
+          isRegistrationComplete: user.isRegistrationComplete,
+          profile: user.profile
+        },
+        token: jwtToken
+      }
+    });
+
+  } catch (error) {
+    console.error('Complete registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to complete registration',
+      error: error.message
+    });
+  }
+};
+
+// Validate organization code
+const validateOrganizationCode = async (req, res) => {
+  try {
+    const { token, organizationCode } = req.body;
+
+    if (!token || !organizationCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token and organization code are required'
+      });
+    }
+
+    const user = await User.findOne({
+      registrationToken: token,
+      isRegistrationComplete: false,
+      registrationExpires: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Registration token not found or expired'
+      });
+    }
+
+    const isValid = user.organizationCode === organizationCode.toUpperCase();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        isValid,
+        message: isValid ? 'Organization code is valid' : 'Invalid organization code'
+      }
+    });
+
+  } catch (error) {
+    console.error('Validate organization code error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to validate organization code',
+      error: error.message
+    });
+  }
+};
+
+// Bulk delete users
+const bulkDeleteUserManagements = async (req, res) => {
+  try {
+    const { userIds } = req.body;
+    
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'User IDs are required'
+      });
+    }
+
+    console.log('🗑️ Bulk Delete Users:', { userIds });
+
+    let deletedCount = 0;
+    let failedDeletions = [];
+
+    for (const userId of userIds) {
+      try {
+        // Find the user
+        const user = await User.findById(userId);
+        if (!user) {
+          failedDeletions.push({ userId, error: 'User not found' });
+          continue;
+        }
+
+        // Delete associated profile
+        if (user.userType === 'teacher') {
+          await Teacher.findByIdAndDelete(user.userId);
+        } else if (user.userType === 'student') {
+          await Student.findByIdAndDelete(user.userId);
+        }
+
+        // Delete the user account
+        await User.findByIdAndDelete(userId);
+        deletedCount++;
+
+        console.log(`✅ Deleted user: ${user.email}`);
+      } catch (error) {
+        console.error(`❌ Failed to delete user ${userId}:`, error);
+        failedDeletions.push({ userId, error: error.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully deleted ${deletedCount} users`,
+      data: {
+        deletedCount,
+        failedDeletions,
+        totalRequested: userIds.length
+      }
+    });
+  } catch (error) {
+    console.error('❌ Bulk delete users error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to bulk delete users',
+      error: error.message
+    });
+  }
+};
+
+// Bulk toggle user status
+const bulkToggleUserManagementStatus = async (req, res) => {
+  try {
+    const { userIds, action } = req.body;
+    
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'User IDs are required'
+      });
+    }
+
+    if (!action || !['suspend', 'activate'].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid action (suspend/activate) is required'
+      });
+    }
+
+    console.log('🔄 Bulk Toggle User Status:', { userIds, action });
+
+    let updatedCount = 0;
+    let failedUpdates = [];
+
+    for (const userId of userIds) {
+      try {
+        const user = await User.findById(userId);
+        if (!user) {
+          failedUpdates.push({ userId, error: 'User not found' });
+          continue;
+        }
+
+        // Update user status
+        user.isActive = action === 'activate';
+        await user.save();
+
+        updatedCount++;
+        console.log(`✅ ${action}d user: ${user.email}`);
+      } catch (error) {
+        console.error(`❌ Failed to ${action} user ${userId}:`, error);
+        failedUpdates.push({ userId, error: error.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully ${action}ed ${updatedCount} users`,
+      data: {
+        updatedCount,
+        failedUpdates,
+        totalRequested: userIds.length,
+        action
+      }
+    });
+  } catch (error) {
+    console.error('❌ Bulk toggle user status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to bulk toggle user status',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllUserManagements,
   getUserManagementById,
   createUserManagement,
   updateUserManagement,
   deleteUserManagement,
+  toggleUserStatus,
   bulkCreateUserManagements,
   sendInvitation,
   getInvitation,
@@ -1165,5 +2039,10 @@ module.exports = {
   bulkUpdateUserRoles,
   getRoleDistribution,
   getRecentActivity,
-  getUsersByRole
+  getUsersByRole,
+  getRegistrationDetails,
+  completeRegistration,
+  validateOrganizationCode,
+  bulkDeleteUserManagements,
+  bulkToggleUserManagementStatus
 };

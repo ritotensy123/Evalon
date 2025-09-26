@@ -1,433 +1,576 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box,
-  Container,
-  Typography,
-  Card,
-  CardContent,
-  Grid,
-  Button,
-  AppBar,
-  Toolbar,
-  IconButton,
-  Menu,
-  MenuItem,
-  Avatar,
-  Chip,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
-  useTheme,
-  useMediaQuery,
-} from '@mui/material';
-import {
-  School,
-  People,
-  Book,
-  Assessment,
+  Search,
+  Bell,
   Settings,
-  Logout,
-  Menu as MenuIcon,
-  Dashboard as DashboardIcon,
+  LogOut,
+  Menu,
+  LayoutDashboard,
   TrendingUp,
-  Notifications,
-  Class,
-  Assignment,
-  Schedule,
-} from '@mui/icons-material';
-import { COLORS, BORDER_RADIUS, SHADOWS } from '../../theme/constants';
-import { authService } from '../../services/authService';
+  TrendingDown,
+  MoreVertical,
+  FileText,
+  ChevronDown,
+  Users,
+  ClipboardList,
+  GraduationCap,
+  HelpCircle,
+  BarChart3,
+  BookOpen,
+  User,
+  MessageSquare,
+  FileBarChart,
+  Plus,
+  Calendar,
+  Star,
+  RefreshCw,
+  Filter,
+  Download,
+  Eye,
+  Calendar as CalendarIcon,
+  Book,
+  FileText as Assignment,
+  Users as Class,
+  Calendar as Schedule,
+  Star as Grade,
+  HelpCircle as Quiz,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+} from 'lucide-react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Area,
+  AreaChart,
+} from 'recharts';
+import { useAuth } from '../../contexts/AuthContext';
+import { clearAuthData } from '../../utils/clearAuth';
+import '../../styles/dashboard/organization.css';
 
 const TeacherDashboard = () => {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const [userData, setUserData] = useState(null);
-  const [dashboardData, setDashboardData] = useState(null);
-  const [anchorEl, setAnchorEl] = useState(null);
+  const { user, dashboardData, logout } = useAuth();
   const [isLoaded, setIsLoaded] = useState(false);
+  const [activeModule, setActiveModule] = useState('dashboard');
+  const [selectedPeriod, setSelectedPeriod] = useState('12 Months');
 
   useEffect(() => {
-    // Get user data from localStorage
-    const storedUserData = authService.getStoredUserData();
-    const storedDashboardData = authService.getStoredDashboardData();
-    
-    setUserData(storedUserData);
-    setDashboardData(storedDashboardData);
-    
-    // Loading animation
     setTimeout(() => setIsLoaded(true), 500);
   }, []);
 
-  const handleMenuOpen = (event) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleMenuClose = () => {
-    setAnchorEl(null);
-  };
-
   const handleLogout = async () => {
     try {
-      await authService.logout();
-      // The AuthContext will handle the navigation automatically
+      await logout();
     } catch (error) {
       console.error('Logout error:', error);
-      // Force logout even if API call fails
       localStorage.clear();
-      // The AuthContext will handle the navigation automatically
     }
   };
 
-  const statsCards = [
-    {
-      title: 'My Students',
-      value: '85',
-      icon: <People sx={{ fontSize: 40, color: COLORS.PRIMARY }} />,
-      color: '#e3f2fd',
-      trend: '+3'
-    },
-    {
-      title: 'Active Classes',
-      value: '6',
-      icon: <Class sx={{ fontSize: 40, color: COLORS.SUCCESS }} />,
-      color: '#e8f5e8',
-      trend: '2 new'
-    },
-    {
-      title: 'Assignments',
-      value: '12',
-      icon: <Assignment sx={{ fontSize: 40, color: COLORS.WARNING }} />,
-      color: '#fff3e0',
-      trend: '3 pending'
-    },
-    {
-      title: 'Assessments',
-      value: '8',
-      icon: <Assessment sx={{ fontSize: 40, color: COLORS.ERROR }} />,
-      color: '#ffebee',
-      trend: '1 upcoming'
-    }
+  const handleClearAuth = () => {
+    clearAuthData();
+    window.location.reload();
+  };
+
+  // Sample data
+  const studentPerformanceData = [
+    { month: 'Feb', value: 78 },
+    { month: 'Mar', value: 82 },
+    { month: 'Apr', value: 85 },
+    { month: 'May', value: 88 },
+    { month: 'Jun', value: 91 },
+    { month: 'Jul', value: 89 },
+    { month: 'Aug', value: 92 },
+    { month: 'Sep', value: 94 },
+    { month: 'Oct', value: 96 },
+    { month: 'Nov', value: 93 },
+    { month: 'Dec', value: 95 },
+    { month: 'Jan', value: 97 },
   ];
 
-  const recentActivities = [
-    { id: 1, title: 'Math Assignment #5 graded', time: '2 hours ago', type: 'assignment' },
-    { id: 2, title: 'New student John Doe enrolled', time: '4 hours ago', type: 'student' },
-    { id: 3, title: 'Science quiz scheduled for tomorrow', time: '6 hours ago', type: 'assessment' },
-    { id: 4, title: 'Parent meeting completed', time: '1 day ago', type: 'meeting' },
+  const subjectPerformanceData = [
+    { name: 'Mathematics', value: 92, color: '#8b5cf6' },
+    { name: 'Physics', value: 87, color: '#06b6d4' },
+    { name: 'Chemistry', value: 78, color: '#10b981' },
+    { name: 'Biology', value: 65, color: '#f59e0b' },
+  ];
+
+  const recentAssignments = [
+    { id: 1, type: 'Math Quiz', score: '92/100', date: 'Jan 17', subject: 'Grade 10A', status: 'graded', students: 28 },
+    { id: 2, type: 'Physics Test', score: '87/100', date: 'Jan 16', subject: 'Grade 11B', status: 'pending', students: 32 },
+    { id: 3, type: 'Chemistry Lab', score: '89/100', date: 'Jan 15', subject: 'Grade 9C', status: 'completed', students: 25 },
+    { id: 4, type: 'Biology Exam', score: '78/100', date: 'Jan 14', subject: 'Grade 12A', status: 'graded', students: 30 },
+  ];
+
+  const topStudents = [
+    { name: 'Alex Johnson', class: 'Grade 10A', grade: 'A+', performance: 95, avatar: 'AJ' },
+    { name: 'Emma Davis', class: 'Grade 9B', grade: 'A', performance: 88, avatar: 'ED' },
+    { name: 'Michael Chen', class: 'Grade 11C', grade: 'B+', performance: 82, avatar: 'MC' },
+    { name: 'Sarah Wilson', class: 'Grade 12A', grade: 'A-', performance: 90, avatar: 'SW' },
   ];
 
   const upcomingClasses = [
-    { id: 1, subject: 'Mathematics', class: 'Grade 10A', time: '09:00 AM', room: 'Room 201' },
-    { id: 2, subject: 'Physics', class: 'Grade 11B', time: '11:00 AM', room: 'Lab 3' },
-    { id: 3, subject: 'Mathematics', class: 'Grade 9C', time: '02:00 PM', room: 'Room 105' },
+    { id: 1, title: 'Mathematics Class', date: 'Jan 20', time: '9:00 AM', type: 'class' },
+    { id: 2, title: 'Physics Lab', date: 'Jan 25', time: '11:00 AM', type: 'lab' },
+    { id: 3, title: 'Chemistry Test', date: 'Jan 30', time: '2:00 PM', type: 'exam' },
   ];
+
+  // Navigation modules for teachers
+  const coreModules = [
+    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" />, active: true },
+    { id: 'classes', label: 'My Classes', icon: <Class className="w-5 h-5" />, count: '6' },
+    { id: 'students', label: 'Students', icon: <Users className="w-5 h-5" />, count: '85' },
+    { id: 'assignments', label: 'Assignments', icon: <Assignment className="w-5 h-5" />, count: '12' },
+    { id: 'schedule', label: 'Schedule', icon: <Schedule className="w-5 h-5" />, count: '24' },
+  ];
+
+  const academicModules = [
+    { id: 'exams', label: 'Exams', icon: <ClipboardList className="w-5 h-5" />, count: '8' },
+    { id: 'grades', label: 'Grades', icon: <Grade className="w-5 h-5" />, count: '45' },
+    { id: 'quizzes', label: 'Quizzes', icon: <Quiz className="w-5 h-5" />, count: '15' },
+    { id: 'reports', label: 'Reports', icon: <FileBarChart className="w-5 h-5" />, count: '3' },
+  ];
+
+  const analyticsModules = [
+    { id: 'performance', label: 'Performance', icon: <BarChart3 className="w-5 h-5" /> },
+    { id: 'attendance', label: 'Attendance', icon: <Users className="w-5 h-5" /> },
+    { id: 'progress', label: 'Progress', icon: <TrendingUp className="w-5 h-5" /> },
+  ];
+
+  const StatusDot = ({ status }) => {
+    const statusClasses = {
+      completed: 'w-2 h-2 rounded-full bg-green-500',
+      pending: 'w-2 h-2 rounded-full bg-yellow-500',
+      graded: 'w-2 h-2 rounded-full bg-blue-500',
+      canceled: 'w-2 h-2 rounded-full bg-red-500',
+    };
+    return <div className={statusClasses[status] || statusClasses.completed} />;
+  };
 
   if (!isLoaded) {
     return (
-      <Box sx={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-      }}>
-        <Typography variant="h4" sx={{ color: 'white' }}>
-          Loading Dashboard...
-        </Typography>
-      </Box>
+      <div className="flex justify-center items-center min-h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-purple-200 border-t-purple-500 rounded-full animate-spin mx-auto mb-4"></div>
+          <h2 className="text-lg font-semibold text-gray-900">Loading Dashboard...</h2>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      {/* App Bar */}
-      <AppBar 
-        position="sticky" 
-        sx={{ 
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          boxShadow: SHADOWS.LG
-        }}
-      >
-        <Toolbar>
-          <School sx={{ mr: 2 }} />
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Teacher Dashboard
-          </Typography>
-          
-          <IconButton color="inherit" sx={{ mr: 1 }}>
-            <Notifications />
-          </IconButton>
-          
-          <IconButton
-            color="inherit"
-            onClick={handleMenuOpen}
-            sx={{ ml: 1 }}
-          >
-            <Avatar sx={{ width: 32, height: 32, bgcolor: 'rgba(255,255,255,0.2)' }}>
-              {userData?.profile?.firstName?.charAt(0) || 'T'}
-            </Avatar>
-          </IconButton>
-          
-          <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={handleMenuClose}
-            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-          >
-            <MenuItem onClick={handleMenuClose}>
-              <Settings sx={{ mr: 1 }} />
-              Settings
-            </MenuItem>
-            <MenuItem onClick={handleLogout}>
-              <Logout sx={{ mr: 1 }} />
-              Logout
-            </MenuItem>
-          </Menu>
-        </Toolbar>
-      </AppBar>
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Sidebar */}
+      <div className="hidden md:block w-64 bg-white border-r border-gray-200 shadow-sm">
+        {/* Logo */}
+        <div className="p-4 border-b border-gray-100 bg-gradient-to-br from-purple-50 to-white">
+          <div className="flex items-center">
+            <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold text-sm">E</div>
+            <div className="ml-3">
+              <h1 className="text-lg font-bold text-gray-900">Evalon</h1>
+              <p className="text-xs text-gray-500">Teacher Portal</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Action */}
+        <div className="p-4 pb-3">
+          <button className="w-full flex items-center justify-center gap-2 px-3 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors">
+            <Plus className="w-4 h-4" />
+            Create Assignment
+          </button>
+        </div>
+
+        {/* Navigation */}
+        <div className="flex-1 px-2 overflow-y-auto max-h-[calc(100vh-200px)]">
+          {/* Core Management */}
+          <div className="mb-4">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-3">Teaching</h3>
+            {coreModules.map((item) => (
+              <div
+                key={item.id}
+                onClick={() => setActiveModule(item.id)}
+                className={`flex items-center justify-between py-2.5 px-3 mx-2 rounded-lg cursor-pointer transition-all duration-200 mb-1 ${
+                  item.active ? 'bg-gradient-to-r from-purple-50 to-purple-100 border border-purple-200 text-purple-600' : 'hover:bg-gray-50 hover:translate-x-1'
+                }`}
+              >
+                <div className="flex items-center">
+                  <div className={`mr-3 ${item.active ? 'text-purple-600' : 'text-gray-500'}`}>
+                    {item.icon}
+                  </div>
+                  <span className="text-sm font-medium">{item.label}</span>
+                </div>
+                {item.count && (
+                  <div className={`rounded-lg px-2 py-1 text-xs font-semibold min-w-6 text-center ${
+                    item.active ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {item.count}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Academic */}
+          <div className="mb-4">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-3">Academic</h3>
+            {academicModules.map((item) => (
+              <div
+                key={item.id}
+                onClick={() => setActiveModule(item.id)}
+                className="flex items-center justify-between py-2.5 px-3 mx-2 rounded-lg cursor-pointer transition-all duration-200 mb-1 hover:bg-gray-50 hover:translate-x-1"
+              >
+                <div className="flex items-center">
+                  <div className="mr-3 text-gray-500">{item.icon}</div>
+                  <span className="text-sm font-medium">{item.label}</span>
+                </div>
+                {item.count && (
+                  <div className="rounded-lg px-2 py-1 text-xs font-semibold min-w-6 text-center bg-gray-100 text-gray-600">
+                    {item.count}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Analytics */}
+          <div className="mb-4">
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-3">Analytics</h3>
+            {analyticsModules.map((item) => (
+              <div
+                key={item.id}
+                onClick={() => setActiveModule(item.id)}
+                className="flex items-center py-2.5 px-3 mx-2 rounded-lg cursor-pointer transition-all duration-200 mb-1 hover:bg-gray-50 hover:translate-x-1"
+              >
+                <div className="mr-3 text-gray-500">{item.icon}</div>
+                <span className="text-sm font-medium">{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Bottom Actions */}
+        <div className="p-2 border-t border-gray-100">
+          <div className="space-y-1">
+            <div className="flex items-center py-2.5 px-3 mx-2 rounded-lg cursor-pointer transition-all duration-200 hover:bg-gray-50">
+              <Settings className="w-5 h-5 text-gray-500 mr-3" />
+              <span className="text-sm font-medium">Settings</span>
+            </div>
+            <div onClick={handleLogout} className="flex items-center py-2.5 px-3 mx-2 rounded-lg cursor-pointer transition-all duration-200 hover:bg-gray-50">
+              <LogOut className="w-5 h-5 text-red-500 mr-3" />
+              <span className="text-sm font-medium text-red-500">Logout</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Main Content */}
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-        {/* Welcome Section */}
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
-            Welcome back, {userData?.profile?.firstName || 'Teacher'}!
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Ready to inspire and educate your students today.
-          </Typography>
-        </Box>
+      <div className="flex-1 flex flex-col">
+        {/* Header */}
+        <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm sticky top-0 z-50">
+          <div className="flex items-center gap-4">
+            <button className="hidden lg:block text-gray-500 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-100 transition-colors">
+              <Menu className="w-5 h-5" />
+            </button>
+            
+            <button className="md:hidden text-gray-500 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-100 transition-colors">
+              <Menu className="w-5 h-5" />
+            </button>
+            
+            <div className="hidden sm:flex items-center bg-gray-50 rounded-lg px-3 py-2 min-w-72 border border-gray-200 transition-all duration-200 focus-within:border-purple-500 focus-within:bg-white focus-within:shadow-sm">
+              <Search className="w-4 h-4 text-gray-400 mr-2" />
+              <span className="text-sm text-gray-500">Search students, assignments, classes...</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <div className="hidden lg:flex items-center gap-1">
+              <button className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              <button className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <Filter className="w-4 h-4" />
+              </button>
+            </div>
 
-        {/* Stats Cards */}
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          {statsCards.map((card, index) => (
-            <Grid item xs={12} sm={6} md={3} key={index}>
-              <Card 
-                sx={{ 
-                  borderRadius: BORDER_RADIUS.LG,
-                  boxShadow: SHADOWS.MD,
-                  transition: 'all 0.3s ease',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: SHADOWS.XL,
-                  }
-                }}
-              >
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                    <Box 
-                      sx={{ 
-                        p: 1.5, 
-                        borderRadius: BORDER_RADIUS.MD, 
-                        backgroundColor: card.color,
-                        mr: 2
-                      }}
-                    >
-                      {card.icon}
-                    </Box>
-                    <Box sx={{ flexGrow: 1 }}>
-                      <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
-                        {card.value}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {card.title}
-                      </Typography>
-                    </Box>
-                  </Box>
-                  <Chip 
-                    label={card.trend} 
-                    size="small" 
-                    color="success" 
-                    variant="outlined"
-                    sx={{ fontSize: '0.75rem' }}
-                  />
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+            <div className="relative w-10 h-10 rounded-lg bg-gray-50 border border-gray-200 cursor-pointer transition-all duration-200 hover:bg-gray-100 hover:border-gray-300 hover:-translate-y-0.5 flex items-center justify-center">
+              <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">2</div>
+              <Bell className="w-4 h-4 text-gray-500" />
+            </div>
+            
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 cursor-pointer transition-all duration-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 flex items-center justify-center">
+              <span className="text-white font-bold text-sm">
+                {user?.profile?.firstName?.charAt(0) || 'T'}
+              </span>
+            </div>
+          </div>
+        </header>
 
-        {/* Main Content Grid */}
-        <Grid container spacing={3}>
-          {/* Quick Actions */}
-          <Grid item xs={12} md={6}>
-            <Card sx={{ borderRadius: BORDER_RADIUS.LG, boxShadow: SHADOWS.MD, mb: 3 }}>
-              <CardContent>
-                <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-                  Quick Actions
-                </Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6}>
-                    <Button
-                      fullWidth
-                      variant="outlined"
-                      startIcon={<Assignment />}
-                      sx={{ 
-                        py: 2, 
-                        borderRadius: BORDER_RADIUS.MD,
-                        borderColor: COLORS.PRIMARY,
-                        color: COLORS.PRIMARY,
-                        '&:hover': {
-                          backgroundColor: COLORS.PRIMARY,
-                          color: 'white'
-                        }
-                      }}
-                    >
-                      Create Assignment
-                    </Button>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Button
-                      fullWidth
-                      variant="outlined"
-                      startIcon={<Assessment />}
-                      sx={{ 
-                        py: 2, 
-                        borderRadius: BORDER_RADIUS.MD,
-                        borderColor: COLORS.SUCCESS,
-                        color: COLORS.SUCCESS,
-                        '&:hover': {
-                          backgroundColor: COLORS.SUCCESS,
-                          color: 'white'
-                        }
-                      }}
-                    >
-                      Schedule Quiz
-                    </Button>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Button
-                      fullWidth
-                      variant="outlined"
-                      startIcon={<People />}
-                      sx={{ 
-                        py: 2, 
-                        borderRadius: BORDER_RADIUS.MD,
-                        borderColor: COLORS.WARNING,
-                        color: COLORS.WARNING,
-                        '&:hover': {
-                          backgroundColor: COLORS.WARNING,
-                          color: 'white'
-                        }
-                      }}
-                    >
-                      View Students
-                    </Button>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Button
-                      fullWidth
-                      variant="outlined"
-                      startIcon={<Schedule />}
-                      sx={{ 
-                        py: 2, 
-                        borderRadius: BORDER_RADIUS.MD,
-                        borderColor: COLORS.ERROR,
-                        color: COLORS.ERROR,
-                        '&:hover': {
-                          backgroundColor: COLORS.ERROR,
-                          color: 'white'
-                        }
-                      }}
-                    >
-                      View Schedule
-                    </Button>
-                  </Grid>
-                </Grid>
-              </CardContent>
-            </Card>
-          </Grid>
+        {/* Main Content */}
+        <main className="flex-1 p-4 bg-gray-50">
+          {activeModule === 'dashboard' ? (
+            <>
+              {/* Welcome Section */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h1 className="text-2xl font-bold text-gray-900 mb-1">
+                      Welcome back, {user?.profile?.firstName || 'Teacher'}!
+                    </h1>
+                    <p className="text-gray-600">Ready to inspire and educate your students today</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={handleClearAuth} className="flex items-center gap-2 px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
+                      <LogOut className="w-4 h-4" />
+                      Clear Auth (Dev)
+                    </button>
+                    <button className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                      <Download className="w-4 h-4" />
+                      Export Data
+                    </button>
+                    <button className="flex items-center gap-2 px-3 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors">
+                      <Plus className="w-4 h-4" />
+                      Quick Add
+                    </button>
+                  </div>
+                </div>
+              </div>
 
-          {/* Upcoming Classes */}
-          <Grid item xs={12} md={6}>
-            <Card sx={{ borderRadius: BORDER_RADIUS.LG, boxShadow: SHADOWS.MD, mb: 3 }}>
-              <CardContent>
-                <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-                  Today's Classes
-                </Typography>
-                <List>
-                  {upcomingClasses.map((classItem) => (
-                    <ListItem key={classItem.id} sx={{ px: 0 }}>
-                      <ListItemIcon>
-                        <Class sx={{ color: COLORS.PRIMARY }} />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={classItem.subject}
-                        secondary={`${classItem.class} • ${classItem.time} • ${classItem.room}`}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              </CardContent>
-            </Card>
-          </Grid>
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                {[
+                  { title: "Today's Classes", value: '6', change: '+2', trend: 'up', icon: <Class className="w-5 h-5" />, color: 'purple' },
+                  { title: 'My Students', value: '85', change: '+3', trend: 'up', icon: <Users className="w-5 h-5" />, color: 'green' },
+                  { title: 'Assignments', value: '12', change: '+5', trend: 'up', icon: <Assignment className="w-5 h-5" />, color: 'yellow' },
+                  { title: 'Avg. Grade', value: '87%', change: '+2%', trend: 'up', icon: <Grade className="w-5 h-5" />, color: 'blue' },
+                ].map((card, index) => (
+                  <div key={index} className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 hover:-translate-y-0.5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center border ${
+                        card.color === 'purple' ? 'bg-purple-50 border-purple-200 text-purple-600' :
+                        card.color === 'green' ? 'bg-green-50 border-green-200 text-green-600' :
+                        card.color === 'yellow' ? 'bg-yellow-50 border-yellow-200 text-yellow-600' :
+                        'bg-blue-50 border-blue-200 text-blue-600'
+                      }`}>
+                        {card.icon}
+                      </div>
+                      <div className={`flex items-center ${card.trend === 'up' ? 'text-green-600' : 'text-red-600'}`}>
+                        {card.trend === 'up' ? (
+                          <TrendingUp className="w-4 h-4 mr-1" />
+                        ) : (
+                          <TrendingDown className="w-4 h-4 mr-1" />
+                        )}
+                        <span className="text-xs font-semibold">{card.change}</span>
+                      </div>
+                    </div>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-1">{card.value}</h3>
+                    <p className="text-sm font-medium text-gray-600">{card.title}</p>
+                  </div>
+                ))}
+              </div>
 
-          {/* Recent Activities */}
-          <Grid item xs={12} md={6}>
-            <Card sx={{ borderRadius: BORDER_RADIUS.LG, boxShadow: SHADOWS.MD }}>
-              <CardContent>
-                <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-                  Recent Activities
-                </Typography>
-                <List>
-                  {recentActivities.map((activity) => (
-                    <ListItem key={activity.id} sx={{ px: 0 }}>
-                      <ListItemIcon>
-                        {activity.type === 'assignment' && <Assignment sx={{ color: COLORS.WARNING }} />}
-                        {activity.type === 'student' && <People sx={{ color: COLORS.PRIMARY }} />}
-                        {activity.type === 'assessment' && <Assessment sx={{ color: COLORS.ERROR }} />}
-                        {activity.type === 'meeting' && <Schedule sx={{ color: COLORS.SUCCESS }} />}
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={activity.title}
-                        secondary={activity.time}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              </CardContent>
-            </Card>
-          </Grid>
+              {/* Charts Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                {/* Student Performance Chart */}
+                <div className="lg:col-span-2 bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-bold text-gray-900">Student Performance Trend</h2>
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-1">
+                        {['6 Months', '30 Days', '7 Days', '12 Months'].map((period) => (
+                          <button
+                            key={period}
+                            onClick={() => setSelectedPeriod(period)}
+                            className={`px-2 py-1 text-xs font-medium rounded-md transition-all duration-200 ${
+                              selectedPeriod === period
+                                ? 'bg-purple-500 text-white shadow-sm'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                          >
+                            {period}
+                          </button>
+                        ))}
+                      </div>
+                      <button className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:border-gray-300 hover:bg-gray-50 transition-all duration-200">
+                        <FileText className="w-3 h-3" />
+                        Export
+                      </button>
+                    </div>
+                  </div>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={studentPerformanceData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="month" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}%`} domain={[0, 100]} />
+                        <Tooltip 
+                          contentStyle={{
+                            backgroundColor: '#ffffff',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                          }}
+                          formatter={(value) => [`${value}%`, 'Average Score']}
+                          labelFormatter={(label) => `${label} 2024`}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="value" 
+                          stroke="#8b5cf6" 
+                          fill="url(#colorGradient)"
+                          strokeWidth={2}
+                        />
+                        <defs>
+                          <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.1}/>
+                          </linearGradient>
+                        </defs>
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
 
-          {/* Teacher Info */}
-          <Grid item xs={12} md={6}>
-            <Card sx={{ borderRadius: BORDER_RADIUS.LG, boxShadow: SHADOWS.MD }}>
-              <CardContent>
-                <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-                  Teacher Information
-                </Typography>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Organization
-                  </Typography>
-                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                    {dashboardData?.organizationName || 'N/A'}
-                  </Typography>
-                </Box>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Subjects
-                  </Typography>
-                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                    {dashboardData?.subjects?.join(', ') || 'Mathematics, Physics'}
-                  </Typography>
-                </Box>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Email
-                  </Typography>
-                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                    {userData?.email || 'N/A'}
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      </Container>
-    </Box>
+                {/* Subject Performance */}
+                <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-bold text-gray-900">Subject Performance</h2>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-gray-600">This Semester</span>
+                      <ChevronDown className="w-3 h-3 text-gray-400" />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {subjectPerformanceData.map((item, index) => (
+                      <div key={index}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-medium text-gray-900">{item.name}</span>
+                          <span className="text-sm font-semibold text-gray-900">{item.value}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-1.5">
+                          <div 
+                            className="h-1.5 rounded-full transition-all duration-500"
+                            style={{ 
+                              width: `${item.value}%`,
+                              backgroundColor: item.color
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Recent Assignments */}
+                <div className="lg:col-span-2 bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-lg font-bold text-gray-900">Recent Assignments</h2>
+                    <span className="text-sm text-purple-600 font-medium cursor-pointer hover:underline">See All Assignments →</span>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-4">Latest assignment submissions and grading status.</p>
+                  <div className="space-y-3">
+                    {recentAssignments.map((assignment) => (
+                      <div key={assignment.id} className="flex items-center py-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 rounded-lg px-2 transition-colors">
+                        <StatusDot status={assignment.status} />
+                        <div className="flex-1 ml-3">
+                          <h3 className="text-sm font-semibold text-gray-900 mb-1">{assignment.type}</h3>
+                          <p className="text-xs text-gray-600">{assignment.subject} • {assignment.students} students</p>
+                        </div>
+                        <div className="text-right mr-3">
+                          <p className="text-sm font-semibold text-gray-900 mb-1">{assignment.score}</p>
+                          <p className="text-xs text-gray-600">{assignment.date}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button className="p-1 rounded-md hover:bg-gray-100 transition-colors">
+                            <Eye className="w-4 h-4 text-gray-400" />
+                          </button>
+                          <button className="p-1 rounded-md hover:bg-gray-100 transition-colors">
+                            <MoreVertical className="w-4 h-4 text-gray-400" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Right Column */}
+                <div className="space-y-4">
+                  {/* Top Students */}
+                  <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-bold text-gray-900">Top Students</h2>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-4">Highest performing students this month.</p>
+                    <div className="space-y-3">
+                      {topStudents.map((student, index) => (
+                        <div key={index} className="flex items-center py-2 border-b border-gray-100 last:border-b-0">
+                          <div className="w-7 h-7 rounded-md bg-purple-500 text-white text-xs font-bold flex items-center justify-center mr-3">{student.avatar}</div>
+                          <div className="flex-1">
+                            <h3 className="text-sm font-semibold text-gray-900 mb-1">{student.name}</h3>
+                            <p className="text-xs text-gray-600">{student.class}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-semibold text-gray-900 mb-1">{student.grade}</p>
+                            <div className="flex items-center">
+                              <Star className="w-3 h-3 text-yellow-500 mr-1" />
+                              <span className="text-xs text-gray-600">{student.performance}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <span className="text-sm text-gray-900 font-medium cursor-pointer hover:underline mt-4 block">SEE ALL STUDENTS →</span>
+                  </div>
+
+                  {/* Upcoming Classes */}
+                  <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-bold text-gray-900">Upcoming Classes</h2>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-4">Your scheduled classes and events.</p>
+                    <div className="space-y-3">
+                      {upcomingClasses.map((classItem) => (
+                        <div key={classItem.id} className="flex items-center py-2 border-b border-gray-100 last:border-b-0">
+                          <div className={`w-7 h-7 rounded-md flex items-center justify-center mr-3 ${
+                            classItem.type === 'exam' ? 'bg-red-100 text-red-600' :
+                            classItem.type === 'lab' ? 'bg-blue-100 text-blue-600' :
+                            'bg-green-100 text-green-600'
+                          }`}>
+                            {classItem.type === 'exam' ? <ClipboardList className="w-4 h-4" /> :
+                             classItem.type === 'lab' ? <Book className="w-4 h-4" /> :
+                             <Class className="w-4 h-4" />}
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="text-sm font-semibold text-gray-900 mb-1">{classItem.title}</h3>
+                            <p className="text-xs text-gray-600">{classItem.date} at {classItem.time}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <span className="text-sm text-gray-900 font-medium cursor-pointer hover:underline mt-4 block">VIEW SCHEDULE →</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">{activeModule.charAt(0).toUpperCase() + activeModule.slice(1)} Module</h2>
+                <p className="text-gray-600">This module is coming soon!</p>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
   );
 };
 

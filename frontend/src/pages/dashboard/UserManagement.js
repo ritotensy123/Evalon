@@ -18,18 +18,24 @@ import {
   FileText,
   Shield,
   Clock,
+  AlertCircle,
   CheckCircle,
   XCircle,
-  AlertCircle,
   Loader2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { userManagementAPI } from '../../services/api';
 import UserForm from '../../components/userManagement/UserForm';
 import BulkUpload from '../../components/userManagement/BulkUpload';
+import BulkTeacherUpload from '../../components/userManagement/BulkTeacherUpload';
+import BulkStudentUpload from '../../components/userManagement/BulkStudentUpload';
+import BulkUploadSelection from '../../components/userManagement/BulkUploadSelection';
 import InvitationSystem from '../../components/userManagement/InvitationSystem';
+import InvitationsList from '../../components/userManagement/InvitationsList';
 import UserStatusMonitor from '../../components/userManagement/UserStatusMonitor';
 import RoleAssignment from '../../components/userManagement/RoleAssignment';
+import UserDetailsModal from '../../components/userManagement/UserDetailsModal';
+import DeleteConfirmationModal from '../../components/userManagement/DeleteConfirmationModal';
 import '../../styles/userManagement.css';
 
 const UserManagement = () => {
@@ -37,11 +43,23 @@ const UserManagement = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('active');
   const [showUserForm, setShowUserForm] = useState(false);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [showBulkTeacherUpload, setShowBulkTeacherUpload] = useState(false);
+  const [showBulkStudentUpload, setShowBulkStudentUpload] = useState(false);
+  const [showBulkUploadSelection, setShowBulkUploadSelection] = useState(false);
   const [showInvitations, setShowInvitations] = useState(false);
+  const [showUserDetails, setShowUserDetails] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [userToDelete, setUserToDelete] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
+  
+  // Bulk selection states
+  const [selectedUsers, setSelectedUsers] = useState([]);
+  const [showBulkActions, setShowBulkActions] = useState(false);
+  const [bulkAction, setBulkAction] = useState('');
+  const [showBulkConfirmation, setShowBulkConfirmation] = useState(false);
   
   // Data states
   const [users, setUsers] = useState([]);
@@ -219,8 +237,8 @@ const UserManagement = () => {
       .join(' ');
   };
 
-  const handleUserAction = (action, userId) => {
-    const user = users.find(u => u.id === userId);
+  const handleUserAction = async (action, userId) => {
+    const user = users.find(u => u._id === userId);
     setSelectedUser(user);
     
     switch (action) {
@@ -228,13 +246,179 @@ const UserManagement = () => {
         setShowUserForm(true);
         break;
       case 'view':
-        // Handle view user details
+        setShowUserDetails(true);
         break;
       case 'delete':
-        // Handle delete user
+        await handleDeleteUser(userId, user);
         break;
       default:
         break;
+    }
+  };
+
+  const handleDeleteUser = (userId, user) => {
+    setUserToDelete({ userId, user });
+    setShowDeleteConfirmation(true);
+  };
+
+  const confirmDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    const { userId, user } = userToDelete;
+    const userName = user.firstName && user.lastName 
+      ? `${user.firstName} ${user.lastName}` 
+      : user.email;
+
+    try {
+      const response = await userManagementAPI.deleteUser(userId);
+      
+      if (response.success) {
+        // Refresh the users list with current filters
+        await fetchUsers(pagination.current, pagination.limit);
+        // Refresh stats
+        await fetchUserStats();
+        
+        // Close modal and reset state
+        setShowDeleteConfirmation(false);
+        setUserToDelete(null);
+      } else {
+        alert(`Failed to delete user: ${response.message}`);
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert(`Failed to delete user: ${error.message || 'Unknown error'}`);
+    }
+  };
+
+  const cancelDeleteUser = () => {
+    setShowDeleteConfirmation(false);
+    setUserToDelete(null);
+  };
+
+  // Bulk selection functions
+  const handleSelectUser = (userId) => {
+    setSelectedUsers(prev => {
+      if (prev.includes(userId)) {
+        return prev.filter(id => id !== userId);
+      } else {
+        return [...prev, userId];
+      }
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedUsers.length === users.length) {
+      setSelectedUsers([]);
+    } else {
+      setSelectedUsers(users.map(user => user._id));
+    }
+  };
+
+  const handleBulkAction = (action) => {
+    if (selectedUsers.length === 0) return;
+    setBulkAction(action);
+    setShowBulkConfirmation(true);
+  };
+
+  const confirmBulkAction = async () => {
+    if (selectedUsers.length === 0) return;
+
+    try {
+      let response;
+      const userIds = selectedUsers;
+      
+      if (bulkAction === 'delete') {
+        response = await userManagementAPI.bulkDeleteUsers(userIds);
+      } else if (bulkAction === 'suspend') {
+        response = await userManagementAPI.bulkToggleUserStatus(userIds, 'suspend');
+      } else if (bulkAction === 'activate') {
+        response = await userManagementAPI.bulkToggleUserStatus(userIds, 'activate');
+      }
+
+      if (response && response.success) {
+        // Clear selection
+        setSelectedUsers([]);
+        setShowBulkActions(false);
+        
+        // Refresh data
+        await fetchUsers(pagination.current, pagination.limit);
+        await fetchUserStats();
+      } else {
+        alert(`Failed to ${bulkAction} users: ${response?.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error(`Error performing bulk ${bulkAction}:`, error);
+      alert(`Failed to ${bulkAction} users: ${error.message || 'Unknown error'}`);
+    } finally {
+      setShowBulkConfirmation(false);
+      setBulkAction('');
+    }
+  };
+
+  const cancelBulkAction = () => {
+    setShowBulkConfirmation(false);
+    setBulkAction('');
+  };
+
+  const handleBulkUploadTypeSelection = (userType) => {
+    if (userType === 'student') {
+      setShowBulkStudentUpload(true);
+    } else if (userType === 'teacher') {
+      setShowBulkTeacherUpload(true);
+    }
+  };
+
+  const handleToggleUserStatus = async (userId, action) => {
+    const user = users.find(u => u._id === userId);
+    if (!user) return;
+
+    const userName = user.firstName && user.lastName 
+      ? `${user.firstName} ${user.lastName}` 
+      : user.email;
+    
+    const actionText = action === 'suspend' ? 'suspend' : 'activate';
+    const confirmMessage = `Are you sure you want to ${actionText} ${userName}?`;
+    
+    if (window.confirm(confirmMessage)) {
+      try {
+        const response = await userManagementAPI.toggleUserStatus(userId, action);
+        
+        if (response.success) {
+          // Refresh the users list with current filters
+          await fetchUsers(pagination.current, pagination.limit);
+          // Refresh stats
+          await fetchUserStats();
+          
+          alert(`User ${userName} has been ${actionText}ed successfully.`);
+        } else {
+          alert(`Failed to ${actionText} user: ${response.message}`);
+        }
+      } catch (error) {
+        console.error(`Error ${actionText}ing user:`, error);
+        alert(`Failed to ${actionText} user: ${error.message || 'Unknown error'}`);
+      }
+    }
+  };
+
+  const handleUpdateUser = async (userData) => {
+    if (!selectedUser) return;
+    
+    try {
+      const response = await userManagementAPI.updateUser(selectedUser._id, userData);
+      
+      if (response.success) {
+        // Refresh the users list
+        await fetchUsers(pagination.current, pagination.limit);
+        
+        alert('User updated successfully!');
+        setShowUserForm(false);
+        setSelectedUser(null);
+      } else {
+        alert(`Failed to update user: ${response.message}`);
+      }
+    } catch (error) {
+      console.error('Error updating user:', error);
+      alert(`Failed to update user: ${error.message || 'Unknown error'}`);
     }
   };
 
@@ -364,7 +548,7 @@ const UserManagement = () => {
       {/* Quick Actions */}
       <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
         <h3 className="text-lg font-bold text-gray-900 mb-4">Quick Actions</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <button 
             onClick={() => setShowUserForm(true)}
             className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
@@ -379,7 +563,7 @@ const UserManagement = () => {
           </button>
           
           <button 
-            onClick={() => setShowBulkUpload(true)}
+            onClick={() => setShowBulkUploadSelection(true)}
             className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
@@ -390,6 +574,7 @@ const UserManagement = () => {
               <p className="text-sm text-gray-600">Import users via CSV</p>
             </div>
           </button>
+          
           
           <button 
             onClick={() => setShowInvitations(true)}
@@ -459,13 +644,64 @@ const UserManagement = () => {
                 <option value="inactive">Inactive</option>
                 <option value="suspended">Suspended</option>
               </select>
-              <button className="flex items-center gap-2 px-3 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors">
-                <Download className="w-4 h-4" />
-                Export
-              </button>
+            </div>
+            <div className="text-xs text-gray-500 mt-2">
+              {filterStatus !== 'all' && (
+                <span>
+                  Showing only {filterStatus} users. 
+                  <button 
+                    onClick={() => setFilterStatus('all')}
+                    className="ml-1 text-purple-600 hover:text-purple-700 underline"
+                  >
+                    Show all users
+                  </button>
+                </span>
+              )}
+              {filterStatus === 'all' && (
+                <span>Showing all users (active, pending, and inactive)</span>
+              )}
             </div>
           </div>
         </div>
+
+        {/* Bulk Actions Bar */}
+        {selectedUsers.length > 0 && (
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-purple-700">
+                  {selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''} selected
+                </span>
+                <button
+                  onClick={() => setSelectedUsers([])}
+                  className="text-sm text-purple-600 hover:text-purple-700 underline"
+                >
+                  Clear selection
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleBulkAction('activate')}
+                  className="px-3 py-1.5 bg-green-100 text-green-700 text-sm font-medium rounded-md hover:bg-green-200 transition-colors border border-green-200"
+                >
+                  Activate
+                </button>
+                <button
+                  onClick={() => handleBulkAction('suspend')}
+                  className="px-3 py-1.5 bg-orange-100 text-orange-700 text-sm font-medium rounded-md hover:bg-orange-200 transition-colors border border-orange-200"
+                >
+                  Suspend
+                </button>
+                <button
+                  onClick={() => handleBulkAction('delete')}
+                  className="px-3 py-1.5 bg-red-100 text-red-700 text-sm font-medium rounded-md hover:bg-red-200 transition-colors border border-red-200"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Users Table */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -473,9 +709,18 @@ const UserManagement = () => {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      checked={selectedUsers.length === users.length && users.length > 0}
+                      onChange={handleSelectAll}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -485,6 +730,14 @@ const UserManagement = () => {
                 {users.length > 0 ? (
                   users.map((user) => (
                     <tr key={user._id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedUsers.includes(user._id)}
+                          onChange={() => handleSelectUser(user._id)}
+                          className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                        />
+                      </td>
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-lg bg-purple-500 text-white text-xs font-bold flex items-center justify-center">
@@ -505,6 +758,9 @@ const UserManagement = () => {
                       </td>
                       <td className="px-4 py-4">
                         <span className="text-sm text-gray-900">{user.department || 'N/A'}</span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="text-sm text-gray-900">{user.phone || 'N/A'}</span>
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-2">
@@ -533,13 +789,36 @@ const UserManagement = () => {
                           >
                             <Edit className="w-4 h-4 text-gray-400" />
                           </button>
-                          <button
-                            onClick={() => handleUserAction('delete', user._id)}
-                            className="p-1 rounded-md hover:bg-gray-100 transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4 text-gray-400" />
-                          </button>
+                          {/* Only show suspend/activate for non-admin users */}
+                          {user.userType !== 'organization_admin' && (
+                            <>
+                              {user.status === 'active' ? (
+                                <button
+                                  onClick={() => handleToggleUserStatus(user._id, 'suspend')}
+                                  className="p-1 rounded-md hover:bg-yellow-100 transition-colors"
+                                  title="Suspend User"
+                                >
+                                  <AlertCircle className="w-4 h-4 text-yellow-500" />
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleToggleUserStatus(user._id, 'activate')}
+                                  className="p-1 rounded-md hover:bg-green-100 transition-colors"
+                                  title="Activate User"
+                                >
+                                  <CheckCircle className="w-4 h-4 text-green-500" />
+                                </button>
+                              )}
+                              <div className="w-px h-4 bg-gray-300 mx-1"></div>
+                              <button
+                                onClick={() => handleUserAction('delete', user._id)}
+                                className="p-1 rounded-md hover:bg-red-100 transition-colors"
+                                title="Delete User Permanently"
+                              >
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -547,7 +826,15 @@ const UserManagement = () => {
                 ) : (
                   <tr>
                     <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
-                      No users found
+                      <div className="flex flex-col items-center gap-2">
+                        <Users className="w-8 h-8 text-gray-400" />
+                        <p className="text-sm">No users found</p>
+                        {filterStatus !== 'all' && (
+                          <p className="text-xs text-gray-400">
+                            Try changing the status filter to see more users
+                          </p>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -609,14 +896,7 @@ const UserManagement = () => {
               </button>
             </div>
             
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Invitations</h3>
-              <div className="text-center py-8 text-gray-500">
-                <Mail className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                <p>No invitations sent yet</p>
-                <p className="text-sm">Click "Send Invitations" to invite users to your organization</p>
-              </div>
-            </div>
+            <InvitationsList organizationId={organizationId} />
           </div>
         );
       case 'monitoring':
@@ -685,11 +965,45 @@ const UserManagement = () => {
             setShowUserForm(false);
             setSelectedUser(null);
           }}
-          onSave={(userData) => {
-            // Handle save user
-            setShowUserForm(false);
-            setSelectedUser(null);
+          onSave={async (userData) => {
+            try {
+              if (selectedUser) {
+                // Update existing user
+                await handleUpdateUser(userData);
+              } else {
+                // Create new user
+                console.log('Creating user with data:', userData);
+                
+                // Add organizationId to the user data
+                const userDataWithOrg = {
+                  ...userData,
+                  organizationId: organizationId
+                };
+                
+                const response = await userManagementAPI.createUser(userDataWithOrg);
+                console.log('User created successfully:', response);
+                
+                // Refresh the users list
+                await fetchUsers(pagination.current, pagination.limit);
+                
+                // Show success message
+                alert(`User created successfully! ${response.data?.generatedPassword ? `Generated password: ${response.data.generatedPassword}` : ''}`);
+                
+                setShowUserForm(false);
+                setSelectedUser(null);
+              }
+            } catch (error) {
+              console.error('Error saving user:', error);
+              alert(`Failed to save user: ${error.message || 'Unknown error'}`);
+            }
           }}
+        />
+      )}
+
+      {showBulkUploadSelection && (
+        <BulkUploadSelection
+          onClose={() => setShowBulkUploadSelection(false)}
+          onSelectType={handleBulkUploadTypeSelection}
         />
       )}
 
@@ -703,14 +1017,123 @@ const UserManagement = () => {
         />
       )}
 
+      {showBulkTeacherUpload && (
+        <BulkTeacherUpload
+          onClose={() => setShowBulkTeacherUpload(false)}
+        />
+      )}
+
+      {showBulkStudentUpload && (
+        <BulkStudentUpload
+          onClose={() => setShowBulkStudentUpload(false)}
+        />
+      )}
+
       {showInvitations && (
         <InvitationSystem
+          organizationId={organizationId}
           onClose={() => setShowInvitations(false)}
           onSend={(invitations) => {
             // Handle send invitations
             setShowInvitations(false);
+            // Refresh data after sending invitations
+            refreshData();
           }}
         />
+      )}
+
+      {showUserDetails && (
+        <UserDetailsModal
+          user={selectedUser}
+          onClose={() => {
+            setShowUserDetails(false);
+            setSelectedUser(null);
+          }}
+          onEdit={(userId) => {
+            setShowUserDetails(false);
+            setShowUserForm(true);
+          }}
+          onDelete={async (userId) => {
+            const user = users.find(u => u._id === userId);
+            handleDeleteUser(userId, user);
+            setShowUserDetails(false);
+            setSelectedUser(null);
+          }}
+          onToggleStatus={async (userId, action) => {
+            await handleToggleUserStatus(userId, action);
+            setShowUserDetails(false);
+            setSelectedUser(null);
+          }}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirmation && userToDelete && (
+        <DeleteConfirmationModal
+          isOpen={showDeleteConfirmation}
+          onClose={cancelDeleteUser}
+          onConfirm={confirmDeleteUser}
+          userName={userToDelete.user.firstName && userToDelete.user.lastName 
+            ? `${userToDelete.user.firstName} ${userToDelete.user.lastName}` 
+            : userToDelete.user.email}
+          userEmail={userToDelete.user.email}
+        />
+      )}
+
+      {/* Bulk Action Confirmation Modal */}
+      {showBulkConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Confirm Bulk {bulkAction === 'delete' ? 'Delete' : bulkAction === 'suspend' ? 'Suspend' : 'Activate'}
+                </h3>
+                <p className="text-sm text-gray-600">
+                  This action will affect {selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+            
+            <div className="mb-6">
+              <p className="text-sm text-gray-700">
+                {bulkAction === 'delete' && (
+                  <>Are you sure you want to permanently delete {selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''}? This action cannot be undone.</>
+                )}
+                {bulkAction === 'suspend' && (
+                  <>Are you sure you want to suspend {selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''}? They will not be able to access the system.</>
+                )}
+                {bulkAction === 'activate' && (
+                  <>Are you sure you want to activate {selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''}? They will regain access to the system.</>
+                )}
+              </p>
+            </div>
+            
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={cancelBulkAction}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+                <button
+                  onClick={confirmBulkAction}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors border ${
+                    bulkAction === 'delete' 
+                      ? 'bg-red-100 text-red-700 hover:bg-red-200 border-red-200' 
+                      : bulkAction === 'suspend'
+                      ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 border-orange-200'
+                      : 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200'
+                  }`}
+                >
+                  {bulkAction === 'delete' ? 'Delete' : bulkAction === 'suspend' ? 'Suspend' : 'Activate'} {selectedUsers.length} User{selectedUsers.length > 1 ? 's' : ''}
+                </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

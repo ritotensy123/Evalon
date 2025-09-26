@@ -1,233 +1,21 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Box,
   Typography,
-  TextField,
-  Alert,
   Chip,
-  CircularProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  Divider,
 } from '@mui/material';
 import {
   CheckCircle,
-  Warning,
-  Info,
-  VerifiedUser,
-  Pending,
-  Error,
+  School,
+  Person,
+  Assessment,
 } from '@mui/icons-material';
-import { COLORS, BORDER_RADIUS } from '../../../theme/constants';
-import { teacherAPI } from '../../../services/api';
 
-const Step3OrganizationLink = ({ formData, formErrors, onFormChange }) => {
-  const [isValidating, setIsValidating] = useState(false);
-  const [showInvalidDialog, setShowInvalidDialog] = useState(false);
-
-  // Enhanced field styling - matching organization registration
-  const universalFieldStyle = {
-    '& .MuiOutlinedInput-root': {
-      borderRadius: BORDER_RADIUS.MD,
-      transition: 'all 0.2s ease',
-      '&:hover': {
-        transform: 'translateY(-1px)',
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
-      },
-      '&:hover .MuiOutlinedInput-notchedOutline': {
-        borderColor: COLORS.PRIMARY,
-        borderWidth: '2px',
-      },
-      '&.Mui-focused': {
-        transform: 'translateY(-1px)',
-        boxShadow: '0 2px 8px rgba(102, 126, 234, 0.15)',
-      },
-      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-        borderColor: COLORS.PRIMARY,
-        borderWidth: '2px',
-      },
-    },
-    '& .MuiInputLabel-root': {
-      '&.Mui-focused': {
-        color: COLORS.PRIMARY,
-      },
-    },
-  };
-
-  const handleOrganizationCodeChange = async (value) => {
-    onFormChange('organizationCode', value);
-    
-    // Validate organization code when entered
-    if (value.length >= 3) {
-      setIsValidating(true);
-      try {
-        // Call backend to validate organization code
-        const response = await teacherAPI.registerStep3({ organizationCode: value });
-        if (response.success && response.data) {
-          onFormChange('organizationName', response.data.organizationName || '');
-          onFormChange('associationStatus', response.data.associationStatus || 'verified');
-          onFormChange('isOrganizationValid', true);
-        } else {
-          onFormChange('organizationName', '');
-          onFormChange('associationStatus', 'not_found');
-          onFormChange('isOrganizationValid', false);
-        }
-      } catch (error) {
-        console.error('Organization validation error:', error);
-        onFormChange('organizationName', '');
-        onFormChange('associationStatus', 'not_found');
-        onFormChange('isOrganizationValid', false);
-      } finally {
-        setIsValidating(false);
-      }
-    } else {
-      onFormChange('isOrganizationValid', false);
-      onFormChange('organizationName', '');
-      onFormChange('associationStatus', '');
-    }
-  };
-
-  const handleContinueAsIndependent = () => {
+const Step3OrganizationLink = ({ formData, formErrors, onFormChange, registrationToken }) => {
+  // Set affiliation type to freelance by default
+  React.useEffect(() => {
     onFormChange('affiliationType', 'freelance');
-    onFormChange('organizationCode', '');
-    onFormChange('isOrganizationValid', false);
-    onFormChange('organizationName', '');
-    onFormChange('associationStatus', '');
-    setShowInvalidDialog(false);
-  };
-
-  const handleTryAgain = () => {
-    setShowInvalidDialog(false);
-  };
-
-  // Custom verification badge component
-  const VerificationBadge = ({ status, organizationName, orgCode }) => {
-    const getBadgeConfig = (status) => {
-      switch (status) {
-        case 'verified':
-          return {
-            icon: <VerifiedUser sx={{ fontSize: 16 }} />,
-            color: '#10b981',
-            bgColor: '#ecfdf5',
-            borderColor: '#a7f3d0',
-            text: 'Verified',
-            description: 'Organization verified successfully'
-          };
-        case 'pending':
-          return {
-            icon: <Pending sx={{ fontSize: 16 }} />,
-            color: '#f59e0b',
-            bgColor: '#fffbeb',
-            borderColor: '#fcd34d',
-            text: 'Pending',
-            description: 'Awaiting verification'
-          };
-        case 'not_found':
-          return {
-            icon: <Error sx={{ fontSize: 16 }} />,
-            color: '#ef4444',
-            bgColor: '#fef2f2',
-            borderColor: '#fca5a5',
-            text: 'Not Found',
-            description: 'Organization not found'
-          };
-        default:
-          return null;
-      }
-    };
-
-    const config = getBadgeConfig(status);
-    if (!config) return null;
-
-    return (
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 2,
-          p: 2,
-          backgroundColor: config.bgColor,
-          border: `1px solid ${config.borderColor}`,
-          borderRadius: 2,
-          mb: 2,
-        }}
-      >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 32,
-            height: 32,
-            borderRadius: '50%',
-            backgroundColor: config.color,
-            color: 'white',
-            flexShrink: 0,
-          }}
-        >
-          {config.icon}
-        </Box>
-        <Box sx={{ flex: 1 }}>
-          <Typography variant="body1" sx={{ fontWeight: 600, color: '#1f2937', mb: 0.5 }}>
-            {organizationName}
-          </Typography>
-          <Typography variant="body2" sx={{ color: '#6b7280', mb: 0.5 }}>
-            Code: {orgCode}
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="caption" sx={{ color: config.color, fontWeight: 600 }}>
-              {config.text}
-            </Typography>
-            <Typography variant="caption" sx={{ color: '#6b7280' }}>
-              • {config.description}
-            </Typography>
-          </Box>
-        </Box>
-      </Box>
-    );
-  };
-
-  // Don't show organization verification if user is freelance
-  if (formData.affiliationType === 'freelance') {
-    return (
-      <Box sx={{ width: '100%' }}>
-        <Box sx={{ textAlign: 'center', py: 4 }}>
-          <Typography
-            variant="h6"
-            sx={{
-              color: '#1a1a1a',
-              mb: 2,
-              fontWeight: 600,
-            }}
-          >
-            Independent Teacher Setup
-          </Typography>
-          <Typography
-            variant="body2"
-            sx={{
-              color: '#666666',
-              mb: 3,
-            }}
-          >
-            You will get access to public tools and can create your own assessments.
-          </Typography>
-          <Chip
-            label="Independent Teacher"
-            icon={<CheckCircle />}
-            sx={{
-              backgroundColor: 'rgba(34, 197, 94, 0.1)',
-              color: '#16a34a',
-              border: '1px solid rgba(34, 197, 94, 0.2)',
-              fontWeight: 500,
-            }}
-          />
-        </Box>
-      </Box>
-    );
-  }
+  }, []); // Empty dependency array to run only once
 
   return (
     <Box sx={{ width: '100%' }}>
@@ -242,7 +30,7 @@ const Step3OrganizationLink = ({ formData, formErrors, onFormChange }) => {
             fontSize: { xs: '1.1rem', sm: '1.25rem' },
           }}
         >
-          Link to Organization
+          Freelance Teacher Registration
         </Typography>
         <Typography
           variant="body2"
@@ -251,136 +39,97 @@ const Step3OrganizationLink = ({ formData, formErrors, onFormChange }) => {
             fontSize: { xs: '0.8rem', sm: '0.875rem' },
           }}
         >
-          Enter your organization code to link your account
+          You're registering as an independent teacher with full platform access
         </Typography>
       </Box>
 
-      {/* Form Fields */}
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 1.5, sm: 2, md: 2.5 } }}>
+      {/* Main Content */}
+      <Box sx={{ textAlign: 'center', py: 4 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 80,
+            height: 80,
+            borderRadius: '50%',
+            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+            color: '#16a34a',
+            mb: 3,
+            mx: 'auto',
+          }}
+        >
+          <Person sx={{ fontSize: 40 }} />
+        </Box>
+
+        <Typography
+          variant="h6"
+          sx={{
+            color: '#1a1a1a',
+            mb: 2,
+            fontWeight: 600,
+          }}
+        >
+          Independent Teacher Setup
+        </Typography>
         
-        {/* Organization Code Input */}
-        <TextField
-          fullWidth
-          label="Organization Code"
-          value={formData.organizationCode}
-          onChange={(e) => handleOrganizationCodeChange(e.target.value)}
-          error={!!formErrors.organizationCode}
-          helperText={formErrors.organizationCode}
-          placeholder="Enter your organization code"
-          sx={universalFieldStyle}
-          InputProps={{
-            endAdornment: isValidating ? (
-              <CircularProgress size={20} sx={{ mr: 1 }} />
-            ) : null,
+        <Typography
+          variant="body2"
+          sx={{
+            color: '#666666',
+            mb: 3,
+            maxWidth: 400,
+            mx: 'auto',
+          }}
+        >
+          As a freelance teacher, you'll have access to all platform features including creating assessments, managing students, and accessing educational resources.
+        </Typography>
+
+        <Chip
+          label="Freelance Teacher"
+          icon={<CheckCircle />}
+          sx={{
+            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+            color: '#16a34a',
+            border: '1px solid rgba(34, 197, 94, 0.2)',
+            fontWeight: 500,
+            mb: 3,
           }}
         />
 
-        {/* Organization Verification Badge */}
-        {formData.organizationName && (
-          <VerificationBadge
-            status={formData.associationStatus}
-            organizationName={formData.organizationName}
-            orgCode={formData.organizationCode.toUpperCase()}
-          />
-        )}
-
-        {/* Info Box */}
+        {/* Features List */}
         <Box
           sx={{
-            p: 2.5,
-            backgroundColor: 'rgba(102, 126, 234, 0.05)',
-            borderRadius: 2,
-            border: '1px solid rgba(102, 126, 234, 0.1)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            maxWidth: 400,
+            mx: 'auto',
+            textAlign: 'left',
           }}
         >
-          <Typography
-            variant="body2"
-            sx={{ color: '#555555', fontSize: '0.875rem' }}
-          >
-            <strong style={{ color: '#333333' }}>Note:</strong> Once validated, you'll be automatically linked to your organization. This enables access to institution-specific tools and student management features.
-          </Typography>
-        </Box>
-
-        {/* Test Instructions */}
-        <Box sx={{ 
-          p: 2, 
-          backgroundColor: '#f8fafc', 
-          borderRadius: BORDER_RADIUS.MD, 
-          border: '1px solid #e2e8f0' 
-        }}>
-          <Typography variant="body2" sx={{ color: '#6b7280', textAlign: 'center' }}>
-            <strong>Test Codes:</strong> ORG001 (Verified), ORG002 (Pending), ORG003 (Not Found)
-          </Typography>
-        </Box>
-      </Box>
-
-      {/* Invalid Organization Code Dialog */}
-      <Dialog
-        open={showInvalidDialog}
-        onClose={handleTryAgain}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 2,
-            p: 1,
-          },
-        }}
-      >
-        <DialogTitle sx={{ pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Info sx={{ color: '#f59e0b', fontSize: 24 }} />
-          <Typography variant="h6" sx={{ fontWeight: 600, color: '#1f2937' }}>
-            Invalid Organization Code
-          </Typography>
-        </DialogTitle>
-        <DialogContent sx={{ pb: 2 }}>
-          <Typography variant="body1" sx={{ mb: 2, color: '#4b5563' }}>
-            The organization code you entered could not be validated. This could be due to:
-          </Typography>
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="body2" sx={{ color: '#6b7280', mb: 0.5 }}>
-              • Incorrect or mistyped code
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#6b7280', mb: 0.5 }}>
-              • Organization not registered on our platform
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#6b7280' }}>
-              • Code may have expired or been revoked
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <School sx={{ color: '#667eea', fontSize: 20 }} />
+            <Typography variant="body2" sx={{ color: '#4b5563' }}>
+              Create and manage your own courses
             </Typography>
           </Box>
-          <Typography variant="body1" sx={{ color: '#4b5563', fontWeight: 500 }}>
-            Would you like to continue as an independent teacher instead?
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
-          <Button
-            onClick={handleTryAgain}
-            variant="outlined"
-            sx={{
-              borderColor: '#d1d5db',
-              color: '#6b7280',
-              '&:hover': {
-                borderColor: '#9ca3af',
-                backgroundColor: 'rgba(156, 163, 175, 0.04)',
-              },
-            }}
-          >
-            Try Again
-          </Button>
-          <Button
-            onClick={handleContinueAsIndependent}
-            variant="contained"
-            sx={{
-              backgroundColor: COLORS.PRIMARY,
-              '&:hover': {
-                backgroundColor: '#5a6fd8',
-              },
-            }}
-          >
-            Continue as Independent
-          </Button>
-        </DialogActions>
-      </Dialog>
+          
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Assessment sx={{ color: '#667eea', fontSize: 20 }} />
+            <Typography variant="body2" sx={{ color: '#4b5563' }}>
+              Build comprehensive assessments and exams
+            </Typography>
+          </Box>
+          
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Person sx={{ color: '#667eea', fontSize: 20 }} />
+            <Typography variant="body2" sx={{ color: '#4b5563' }}>
+              Manage your student roster independently
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
     </Box>
   );
 };
