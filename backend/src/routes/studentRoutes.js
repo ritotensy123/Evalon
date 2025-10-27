@@ -1,40 +1,30 @@
 const express = require('express');
 const router = express.Router();
 const {
-  registerStep1,
-  registerStep2,
-  registerStep3,
-  registerStep4,
-  sendEmailOTPForStudent,
-  sendPhoneOTPForStudent,
-  verifyEmailOTPForStudent,
-  verifyPhoneOTPForStudent,
-  getRegistrationStatus
+  getStudents,
+  getStudentById,
+  createStudent,
+  updateStudent,
+  deleteStudent,
+  getStudentStats,
+  assignToDepartment,
+  removeFromDepartment
 } = require('../controllers/studentController');
+const { authenticate } = require('../middleware/auth');
 
-// Student Registration Routes
+// Apply auth middleware to all routes
+router.use(authenticate);
 
-// Step 1: Basic Details
-router.post('/register/step1', registerStep1);
+// Student routes
+router.get('/', getStudents);
+router.get('/stats', getStudentStats);
+router.get('/:id', getStudentById);
+router.post('/', createStudent);
+router.put('/:id', updateStudent);
+router.delete('/:id', deleteStudent);
 
-// Step 2: Organization Verification
-router.post('/register/step2', registerStep2);
-
-// Step 3: Security Verification Status
-router.post('/register/step3', registerStep3);
-
-// Step 3: Security Verification - Email OTP
-router.post('/send-email-otp', sendEmailOTPForStudent);
-router.post('/verify-email-otp', verifyEmailOTPForStudent);
-
-// Step 3: Security Verification - Phone OTP
-router.post('/send-phone-otp', sendPhoneOTPForStudent);
-router.post('/verify-phone-otp', verifyPhoneOTPForStudent);
-
-// Step 4: Auto Mapping & Complete Registration
-router.post('/register/step4', registerStep4);
-
-// Get registration status
-router.get('/registration-status', getRegistrationStatus);
+// Department assignment routes
+router.patch('/:studentId/department', assignToDepartment);
+router.delete('/:studentId/department/:departmentId', removeFromDepartment);
 
 module.exports = router;

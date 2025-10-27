@@ -10,8 +10,10 @@ router.use(authenticate);
 router.post('/', departmentController.createDepartment);
 router.get('/', departmentController.getDepartments);
 router.get('/tree', departmentController.getDepartmentTree);
+router.get('/by-type', departmentController.getDepartmentsByType);
 router.get('/stats', departmentController.getDepartmentStats);
 router.get('/:id', departmentController.getDepartment);
+router.get('/:id/hierarchy', departmentController.getDepartmentHierarchy);
 router.put('/:id', departmentController.updateDepartment);
 router.delete('/:id', departmentController.deleteDepartment);
 

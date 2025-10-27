@@ -11,6 +11,8 @@ import Dashboard from './pages/Dashboard';
 import SystemSetupWizard from './components/setup/SystemSetupWizard';
 import CompleteRegistration from './pages/CompleteRegistration';
 import FirstTimeLoginWizard from './components/FirstTimeLoginWizard';
+import DepartmentDetailPage from './pages/dashboard/DepartmentDetailPage';
+import MonitoringTest from './pages/dashboard/MonitoringTest';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -22,64 +24,49 @@ const AppContent = () => {
 
   // Initialize app state on load
   useEffect(() => {
-    console.log('🚀 App initializing...');
-    setCurrentPage('landing');
-    setManualNavigation(false);
+    
+    // Check if we're on a department detail page
+    const path = window.location.pathname;
+    if (path.startsWith('/dashboard/departments/') && path !== '/dashboard/departments') {
+      const departmentId = path.split('/')[3];
+      setCurrentPage(`department-detail/${departmentId}`);
+      setManualNavigation(true);
+    } else if (path === '/monitoring-test') {
+      setCurrentPage('monitoring-test');
+      setManualNavigation(true);
+    } else {
+      setCurrentPage('landing');
+      setManualNavigation(false);
+    }
   }, []);
 
   // Check authentication status on app load
   useEffect(() => {
-    console.log('🔍 Auth state changed:', { 
-      isAuthenticated, 
-      isLoading, 
-      currentPage, 
-      manualNavigation, 
-      hasUser: !!user,
-      userFirstLogin: user?.firstLogin,
-      userType: user?.userType
-    });
     
     // Only auto-redirect if not manually navigating
     if (!manualNavigation) {
       // If not authenticated and loading is complete, go to landing
       if (!isAuthenticated && !isLoading) {
-        console.log('❌ User is not authenticated, setting page to landing');
         setCurrentPage('landing');
         return;
       }
       
       // If authenticated, check where to go
       if (isAuthenticated && user && (currentPage === 'landing' || currentPage === 'login')) {
-        console.log('🔍 User is authenticated, checking first-time login conditions...');
-        console.log('🔍 User data:', {
-          id: user.id,
-          email: user.email,
-          userType: user.userType,
-          firstLogin: user.firstLogin,
-          isEmailVerified: user.isEmailVerified,
-          authProvider: user.authProvider
-        });
         
         // Check if this is a first-time login - only if user is actually authenticated AND has firstLogin true
-        console.log('🔍 Checking firstLogin status:', user.firstLogin, typeof user.firstLogin);
         if (user.firstLogin === true) {
-          console.log('✅ FIRST LOGIN DETECTED! User needs first-time setup, showing wizard');
-          console.log('✅ Setting currentPage to first-time-login');
           setCurrentPage('first-time-login');
         } else {
-          console.log('✅ User is authenticated but NOT first login, going to dashboard');
-          console.log('✅ Setting currentPage to dashboard');
           setCurrentPage('dashboard');
         }
       }
     } else {
-      console.log('🔍 Manual navigation is true, skipping auto-redirect');
     }
   }, [isAuthenticated, isLoading, manualNavigation, currentPage, user]);
 
   // Debug authentication state changes
   useEffect(() => {
-    console.log('App: Authentication state changed:', { isAuthenticated, isLoading });
   }, [isAuthenticated, isLoading]);
 
   // Memoized navigation functions to prevent unnecessary re-renders
@@ -119,6 +106,11 @@ const AppContent = () => {
     setCurrentPage('dashboard');
   }, []);
 
+  const handleNavigateToDepartmentDetail = React.useCallback((departmentId) => {
+    setManualNavigation(true);
+    setCurrentPage(`department-detail/${departmentId}`);
+  }, []);
+
   const handleNavigateToSetup = React.useCallback(() => {
     setManualNavigation(true);
     setCurrentPage('setup-wizard');
@@ -131,21 +123,21 @@ const AppContent = () => {
 
   // Handle successful login
   const handleLoginSuccess = React.useCallback(() => {
-    console.log('🎯 Login successful, checking user state...');
-    console.log('🎯 Current page before redirect:', currentPage);
-    console.log('🎯 User data after login:', user);
     
     // Clear manual navigation flag to allow auto-redirect
     setManualNavigation(false);
     
-    // Add a small delay to ensure user data is properly set
-    setTimeout(() => {
-      console.log('🎯 Manual navigation cleared, letting useEffect handle routing');
-    }, 100);
-  }, [currentPage, user]);
+    // Immediately check authentication state and redirect
+    if (isAuthenticated && user) {
+      if (user.firstLogin === true) {
+        setCurrentPage('first-time-login');
+      } else {
+        setCurrentPage('dashboard');
+      }
+    }
+  }, [currentPage, user, isAuthenticated]);
 
   const renderPage = () => {
-    console.log('🎯 renderPage called with currentPage:', currentPage);
     switch (currentPage) {
       case 'landing':
         return (
@@ -159,7 +151,8 @@ const AppContent = () => {
           <LoginPage
             onNavigateToLanding={handleNavigateToLanding}
             onNavigateToRegister={handleNavigateToOnboarding}
-            onNavigateToDashboard={handleLoginSuccess}
+            onNavigateToDashboard={handleNavigateToDashboard}
+            onLoginSuccess={handleLoginSuccess}
           />
         );
       case 'onboarding':
@@ -236,7 +229,13 @@ const AppContent = () => {
       case 'dashboard':
         return (
           <ProtectedRoute>
-            <Dashboard />
+            <Dashboard onNavigateToDepartmentDetail={handleNavigateToDepartmentDetail} />
+          </ProtectedRoute>
+        );
+      case 'monitoring-test':
+        return (
+          <ProtectedRoute>
+            <MonitoringTest />
           </ProtectedRoute>
         );
       default:
@@ -244,6 +243,19 @@ const AppContent = () => {
         if (currentPage.startsWith('complete-registration/')) {
           const token = currentPage.split('/')[1];
           return <CompleteRegistration token={token} />;
+        }
+        // Check if it's a department detail route
+        if (currentPage.startsWith('department-detail/')) {
+          const departmentId = currentPage.split('/')[1];
+          console.log('App.js: Rendering DepartmentDetailPage with departmentId:', departmentId);
+          return (
+            <ProtectedRoute>
+              <DepartmentDetailPage 
+                departmentId={departmentId} 
+                onBack={() => setCurrentPage('dashboard')}
+              />
+            </ProtectedRoute>
+          );
         }
         return (
           <LandingPage

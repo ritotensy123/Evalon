@@ -6,11 +6,16 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const session = require('express-session');
 const path = require('path');
+const http = require('http');
 require('dotenv').config();
 
 // Import configurations
 const connectDB = require('./config/database');
 const { initializeFirebase } = require('./config/firebase');
+// Socket functionality moved to dedicated servers
+
+// Import models
+const Exam = require('./models/Exam');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -27,6 +32,8 @@ const questionBankRoutes = require('./routes/questionBankRoutes');
 const departmentRoutes = require('./routes/departmentRoutes');
 const subjectRoutes = require('./routes/subjectRoutes');
 const bulkUploadRoutes = require('./routes/bulkUploadRoutes');
+const teacherClassRoutes = require('./routes/teacherClassRoutes');
+const healthRoutes = require('./routes/healthRoutes');
 
 const app = express();
 
@@ -77,6 +84,13 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for localhost in development
+  skip: (req) => {
+    if (process.env.NODE_ENV === 'development') {
+      return req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1';
+    }
+    return false;
+  }
 });
 
 app.use('/api/', limiter);
@@ -100,6 +114,16 @@ app.use(session({
 
 // Static files
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// Debug JWT secret endpoint
+app.get('/api/debug-jwt-secret', (req, res) => {
+  const jwtSecret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+  res.json({
+    jwtSecret: jwtSecret,
+    hasEnvVar: !!process.env.JWT_SECRET,
+    envVarValue: process.env.JWT_SECRET || 'not set'
+  });
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -127,6 +151,89 @@ app.use('/api/question-banks', questionBankRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/bulk-upload', bulkUploadRoutes);
+app.use('/api/teacher-classes', teacherClassRoutes);
+app.use('/api/health', healthRoutes);
+
+// Time synchronization endpoint
+app.get('/api/time', (req, res) => {
+  res.json({
+    timestamp: new Date().toISOString(),
+    unix: Date.now(),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+  });
+});
+
+// Exam countdown endpoint for real-time synchronization
+app.get('/api/exams/:examId/countdown', async (req, res) => {
+  try {
+    const { examId } = req.params;
+    const exam = await Exam.findById(examId);
+    
+    if (!exam) {
+      return res.status(404).json({
+        success: false,
+        message: 'Exam not found'
+      });
+    }
+
+    const now = new Date();
+    let scheduledDateTime;
+    
+    // Parse exam start time
+    if (exam.scheduledDate instanceof Date) {
+      scheduledDateTime = new Date(exam.scheduledDate);
+      const [hours, minutes] = exam.startTime.split(':');
+      scheduledDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+    } else if (typeof exam.scheduledDate === 'string') {
+      let datePart;
+      if (exam.scheduledDate.includes('T')) {
+        datePart = exam.scheduledDate.split('T')[0];
+      } else {
+        datePart = exam.scheduledDate;
+      }
+      scheduledDateTime = new Date(`${datePart}T${exam.startTime}:00`);
+    }
+
+    const examEndTime = new Date(scheduledDateTime.getTime() + exam.duration * 60 * 1000);
+    
+    let timeRemaining = 0;
+    let examStatus = 'waiting';
+    
+    if (now >= scheduledDateTime && now < examEndTime) {
+      // Exam is active
+      timeRemaining = Math.max(0, Math.floor((examEndTime.getTime() - now.getTime()) / 1000));
+      examStatus = 'active';
+    } else if (now < scheduledDateTime) {
+      // Exam hasn't started yet
+      const timeUntilStart = Math.floor((scheduledDateTime.getTime() - now.getTime()) / 1000);
+      timeRemaining = timeUntilStart;
+      examStatus = 'scheduled';
+    } else {
+      // Exam has ended
+      timeRemaining = 0;
+      examStatus = 'ended';
+    }
+
+    res.json({
+      success: true,
+      data: {
+        examId,
+        timeRemaining,
+        examStatus,
+        examStartTime: scheduledDateTime.toISOString(),
+        examEndTime: examEndTime.toISOString(),
+        serverTime: now.toISOString(),
+        duration: exam.duration
+      }
+    });
+  } catch (error) {
+    console.error('Error getting exam countdown:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get exam countdown'
+    });
+  }
+});
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -217,11 +324,15 @@ const startServer = async () => {
     
     const PORT = process.env.PORT || 5001;
     
-    app.listen(PORT, () => {
-      console.log(`🚀 Evalon Backend Server running on port ${PORT}`);
+    // Create HTTP server
+    const server = http.createServer(app);
+    
+    server.listen(PORT, () => {
+      console.log(`🚀 Evalon Main Server running on port ${PORT}`);
       console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔗 Health check: http://localhost:${PORT}/health`);
       console.log(`📚 API Base URL: http://localhost:${PORT}/api`);
+      console.log(`⚡ Real-time Server: http://localhost:5004`);
     });
     
   } catch (error) {

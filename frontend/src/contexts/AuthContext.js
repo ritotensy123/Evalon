@@ -34,7 +34,8 @@ export const AuthProvider = ({ children }) => {
         if (userData) {
           setUser(userData);
           setDashboardData(dashboardData);
-          setOrganizationData(organizationData);
+          // Only set organization data if it's not null and not an empty object
+          setOrganizationData(organizationData && Object.keys(organizationData).length > 0 ? organizationData : null);
           setIsAuthenticated(true);
         } else {
           // Clear invalid data
@@ -62,17 +63,16 @@ export const AuthProvider = ({ children }) => {
         console.log('AuthContext: Dashboard data:', result.dashboard);
         console.log('AuthContext: Organization data:', result.organization);
         
+        // Set all state synchronously
         setUser(result.user);
         setDashboardData(result.dashboard);
-        setOrganizationData(result.organization);
+        // Only set organization data if it's not null and not an empty object
+        setOrganizationData(result.organization && Object.keys(result.organization).length > 0 ? result.organization : null);
         setIsAuthenticated(true);
+        
         console.log('AuthContext: Auth state updated, isAuthenticated should be true');
         
-        // Force a re-render to ensure state is updated
-        setTimeout(() => {
-          console.log('AuthContext: State update timeout - checking if authenticated:', authService.isAuthenticated());
-        }, 100);
-        
+        // Return the result immediately
         return result;
       }
       

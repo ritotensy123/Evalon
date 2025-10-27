@@ -10,8 +10,11 @@ import {
   TrendingUp,
   TrendingDown,
 } from 'lucide-react';
+import { userManagementAPI } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 const UserStatusMonitor = () => {
+  const { organizationData } = useAuth();
   const [stats, setStats] = useState({
     totalUsers: 0,
     activeUsers: 0,
@@ -24,64 +27,77 @@ const UserStatusMonitor = () => {
   });
   const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   useEffect(() => {
     fetchStatusData();
-  }, []);
+    // Set up auto-refresh every 10 seconds for more real-time updates
+    const interval = setInterval(fetchStatusData, 10000);
+    return () => clearInterval(interval);
+  }, [organizationData]);
 
-  const fetchStatusData = async () => {
-    setLoading(true);
+  const fetchStatusData = async (isManualRefresh = false) => {
+    if (!organizationData?._id) return;
+    
+    if (isManualRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Fetch user statistics
+      const statsResponse = await userManagementAPI.getUserStats(organizationData._id);
+      const statsData = statsResponse.data;
       
-      // Mock data - replace with actual API call
+      // Fetch online users
+      const onlineResponse = await userManagementAPI.getOnlineUsers(organizationData._id);
+      const onlineUsers = onlineResponse.data?.users || [];
+      
+      // Fetch recent activity
+      const activityResponse = await userManagementAPI.getRecentActivity(organizationData._id);
+      const recentActivityData = activityResponse.data?.activities || [];
+      
       setStats({
-        totalUsers: 150,
-        activeUsers: 120,
-        inactiveUsers: 20,
-        pendingUsers: 10,
-        onlineNow: 45,
-        lastLogin: new Date(Date.now() - 5 * 60 * 1000), // 5 minutes ago
+        totalUsers: statsData.total || 0,
+        activeUsers: statsData.active || 0,
+        inactiveUsers: statsData.inactive || 0,
+        pendingUsers: statsData.pending || 0,
+        onlineNow: onlineUsers.length,
+        lastLogin: recentActivityData.length > 0 ? new Date(recentActivityData[0].timestamp) : null,
+        activityTrend: 'up', // Could be calculated based on historical data
+        loginTrend: 'up', // Could be calculated based on historical data
+      });
+
+      // Format recent activity data
+      const formattedActivity = recentActivityData.map((activity, index) => ({
+        id: activity._id || index,
+        user: activity.userName || activity.user || 'Unknown User',
+        action: activity.action || 'Activity',
+        timestamp: new Date(activity.timestamp || activity.createdAt),
+        status: activity.status || 'success',
+      }));
+
+      setRecentActivity(formattedActivity);
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error('Failed to fetch status data:', error);
+      // Set fallback data on error
+      setStats({
+        totalUsers: 0,
+        activeUsers: 0,
+        inactiveUsers: 0,
+        pendingUsers: 0,
+        onlineNow: 0,
+        lastLogin: null,
         activityTrend: 'up',
         loginTrend: 'up',
       });
-
-      setRecentActivity([
-        {
-          id: 1,
-          user: 'John Doe',
-          action: 'Logged in',
-          timestamp: new Date(Date.now() - 2 * 60 * 1000),
-          status: 'success',
-        },
-        {
-          id: 2,
-          user: 'Jane Smith',
-          action: 'Password changed',
-          timestamp: new Date(Date.now() - 15 * 60 * 1000),
-          status: 'success',
-        },
-        {
-          id: 3,
-          user: 'Bob Johnson',
-          action: 'Failed login attempt',
-          timestamp: new Date(Date.now() - 30 * 60 * 1000),
-          status: 'warning',
-        },
-        {
-          id: 4,
-          user: 'Alice Brown',
-          action: 'Account deactivated',
-          timestamp: new Date(Date.now() - 45 * 60 * 1000),
-          status: 'error',
-        },
-      ]);
-    } catch (error) {
-      console.error('Failed to fetch status data:', error);
+      setRecentActivity([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -162,8 +178,11 @@ const UserStatusMonitor = () => {
 
         <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
           <div className="flex items-center justify-between mb-3">
-            <div className="w-10 h-10 bg-yellow-50 rounded-lg flex items-center justify-center">
-              <Clock className="w-5 h-5 text-yellow-600" />
+            <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
+              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+            </div>
+            <div className="text-xs text-gray-500">
+              {stats.onlineNow > 0 ? 'Live' : 'Offline'}
             </div>
           </div>
           <h3 className="text-2xl font-bold text-gray-900 mb-1">{stats.onlineNow}</h3>
@@ -184,13 +203,21 @@ const UserStatusMonitor = () => {
       {/* Recent Activity */}
       <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
+            {lastUpdated && (
+              <p className="text-xs text-gray-500 mt-1">
+                Last updated: {formatTime(lastUpdated)}
+              </p>
+            )}
+          </div>
           <button 
-            onClick={fetchStatusData}
-            className="flex items-center gap-2 px-3 py-1 text-sm text-purple-600 hover:text-purple-700 transition-colors"
+            onClick={() => fetchStatusData(true)}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-3 py-1 text-sm text-purple-600 hover:text-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
 

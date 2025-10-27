@@ -55,7 +55,21 @@ const getQuestionBanks = async (req, res) => {
       search
     } = req.query;
 
-    const filter = { organizationId: req.user.organizationId };
+    console.log('🔍 Question Bank Query - req.user:', req.user);
+    console.log('🔍 Question Bank Query - organizationId:', req.user.organizationId);
+    
+    // Get the actual organizationId - handle both ObjectId and full object
+    let organizationId = req.user.organizationId;
+    if (typeof organizationId === 'object' && organizationId._id) {
+      organizationId = organizationId._id;
+    }
+    if (!organizationId) {
+      organizationId = req.user.userId; // Fallback for org admin
+    }
+    
+    console.log('🔍 Using organizationId:', organizationId);
+    
+    const filter = { organizationId: organizationId };
     
     if (subject) filter.subject = subject;
     if (className) filter.class = className;
@@ -67,6 +81,19 @@ const getQuestionBanks = async (req, res) => {
       ];
     }
 
+    console.log('🔍 Question Bank Filter:', JSON.stringify(filter, null, 2));
+    
+    // Check if any question banks exist at all
+    const totalBanks = await QuestionBank.countDocuments({});
+    console.log('🔍 Total question banks in DB:', totalBanks);
+    
+    // Check if any for this organization exist
+    const orgBanks = await QuestionBank.find({ organizationId: organizationId });
+    console.log('🔍 Question banks for this org:', orgBanks.length);
+    if (orgBanks.length > 0) {
+      console.log('📋 Sample question bank:', JSON.stringify(orgBanks[0], null, 2));
+    }
+
     const questionBanks = await QuestionBank.find(filter)
       .populate('createdBy', 'profile.firstName profile.lastName email')
       .sort({ createdAt: -1 })
@@ -74,6 +101,9 @@ const getQuestionBanks = async (req, res) => {
       .skip((page - 1) * limit);
 
     const total = await QuestionBank.countDocuments(filter);
+    
+    console.log('✅ Found question banks:', questionBanks.length);
+    console.log('✅ Total count:', total);
 
     res.json({
       success: true,

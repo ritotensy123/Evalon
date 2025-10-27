@@ -15,7 +15,7 @@ const authenticateUserManagement = async (req, res, next) => {
     }
 
     // Verify JWT token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production');
     
     // Find user in User collection
     const user = await User.findById(decoded.userId).select('-password');
@@ -40,10 +40,19 @@ const authenticateUserManagement = async (req, res, next) => {
     if (user.userType === 'organization_admin') {
       organizationId = user.userId.toString();
     } else if (user.userType === 'teacher' || user.userType === 'student') {
-      // For teachers and students, we need to get the organization from their profile
-      await user.populate('userId');
-      if (user.userId && user.userId.organizationId) {
-        organizationId = user.userId.organizationId.toString();
+      // Try multiple ways to get organizationId
+      // First, try direct organizationId field
+      if (user.organizationId) {
+        organizationId = user.organizationId.toString();
+      } 
+      // Second, try to get from populated userId
+      else if (user.userId) {
+        await user.populate('userId');
+        if (user.userId && user.userId.organizationId) {
+          organizationId = user.userId.organizationId.toString();
+        } else if (user.userId && user.userId.organization) {
+          organizationId = user.userId.organization.toString();
+        }
       }
     }
     

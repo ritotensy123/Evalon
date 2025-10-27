@@ -1,215 +1,127 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
 
 const studentSchema = new mongoose.Schema({
-  // Basic Details (Step 1)
-  fullName: {
+  // Basic Information
+  firstName: {
     type: String,
     required: true,
     trim: true
   },
-  phoneNumber: {
+  lastName: {
     type: String,
     required: true,
     trim: true
   },
-  countryCode: {
+  email: {
     type: String,
     required: true,
-    default: '+91'
-  },
-  emailAddress: {
-    type: String,
-    required: true,
+    unique: true,
     lowercase: true,
-    trim: true,
-    unique: true
+    trim: true
+  },
+  phone: {
+    type: String,
+    trim: true
   },
   dateOfBirth: {
-    type: Date,
-    required: true
+    type: Date
   },
   gender: {
     type: String,
-    enum: ['male', 'female', 'other'],
-    required: true
-  },
-  country: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  city: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  pincode: {
-    type: String,
-    required: true,
-    trim: true
+    enum: ['male', 'female', 'other']
   },
   
-  // Organization Verification (Step 2)
-  organizationCode: {
-    type: String,
-    required: false,
-    trim: true,
-    uppercase: true
-  },
-  organizationName: {
-    type: String,
-    required: false,
-    trim: true
-  },
-  organizationId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Organization',
-    required: false
-  },
-  isStandalone: {
-    type: Boolean,
-    default: false
-  },
-  isOrganizationValid: {
-    type: Boolean,
-    default: false
-  },
-  associationStatus: {
-    type: String,
-    enum: ['verified', 'pending', 'not_found', 'standalone'],
-    default: 'pending'
-  },
-  
-  // Security Verification (Step 3)
-  emailVerified: {
-    type: Boolean,
-    default: false
-  },
-  phoneVerified: {
-    type: Boolean,
-    default: false
-  },
-  
-  // Auto Mapping (Step 4)
-  studentCode: {
+  // Academic Information
+  studentId: {
     type: String,
     unique: true,
-    sparse: true
-  },
-  enrollmentDate: {
-    type: Date,
-    default: Date.now
-  },
-  academicYear: {
-    type: String,
     required: true
   },
   grade: {
     type: String,
     required: true
   },
-  section: {
-    type: String,
-    required: true
+  department: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department'
   },
-  rollNumber: {
-    type: String,
-    required: true
+  class: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department'
   },
   subjects: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subject'
+  }],
+  
+  // Parent/Guardian Information
+  parentName: {
     type: String,
     trim: true
-  }],
-  assignedTeachers: [{
-    teacherId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Teacher'
-    },
-    subject: {
-      type: String,
-      trim: true
-    },
-    assignedDate: {
-      type: Date,
-      default: Date.now
-    }
-  }],
+  },
+  parentEmail: {
+    type: String,
+    trim: true
+  },
+  parentPhone: {
+    type: String,
+    trim: true
+  },
+  parentRelationship: {
+    type: String,
+    default: 'Parent'
+  },
+  emergencyContact: {
+    type: Boolean,
+    default: false
+  },
   
-  // Account Security - handled in User model
+  // Academic Performance
+  averageGrade: {
+    type: String,
+    default: 'N/A'
+  },
+  attendanceRate: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+  
+  // Status and Dates
   status: {
     type: String,
-    enum: ['active', 'inactive', 'suspended'],
+    enum: ['active', 'inactive', 'graduated', 'transferred'],
     default: 'active'
   },
-  
-  // Timestamps
-  createdAt: {
+  enrollmentDate: {
     type: Date,
     default: Date.now
   },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+  graduationDate: {
+    type: Date
+  },
+  
+  // System Information
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  organization: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    required: true
   }
 }, {
   timestamps: true
 });
 
-// Indexes for better query performance
-studentSchema.index({ emailAddress: 1 });
-studentSchema.index({ organizationCode: 1 });
-studentSchema.index({ studentCode: 1 });
-studentSchema.index({ organizationId: 1 });
-studentSchema.index({ rollNumber: 1, organizationId: 1 }, { unique: true });
-
-// Pre-save middleware to update updatedAt
-studentSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
-});
-
-// Method to generate student code
-studentSchema.methods.generateStudentCode = function() {
-  const prefix = 'STU';
-  const randomNum = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-  return `${prefix}${randomNum}`;
-};
-
-// Method to generate roll number
-studentSchema.methods.generateRollNumber = function() {
-  const year = new Date().getFullYear().toString().slice(-2);
-  const randomNum = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `${year}${randomNum}`;
-};
-
-// Virtual for age calculation
-studentSchema.virtual('age').get(function() {
-  if (!this.dateOfBirth) return null;
-  const today = new Date();
-  const birthDate = new Date(this.dateOfBirth);
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-  
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-    age--;
-  }
-  
-  return age;
-});
-
-// Virtual for full phone number
-studentSchema.virtual('fullPhoneNumber').get(function() {
-  return `${this.countryCode}${this.phoneNumber}`;
-});
-
-// Ensure virtual fields are serialized
-studentSchema.set('toJSON', { 
-  virtuals: true,
-  transform: function(doc, ret) {
-    delete ret.__v;
-    return ret;
-  }
-});
+// Indexes for better performance
+studentSchema.index({ email: 1 });
+studentSchema.index({ studentId: 1 });
+studentSchema.index({ organization: 1 });
+studentSchema.index({ department: 1 });
+studentSchema.index({ status: 1 });
 
 module.exports = mongoose.model('Student', studentSchema);

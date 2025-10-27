@@ -26,7 +26,8 @@ const {
   getUsersByRole,
   getRegistrationDetails,
   completeRegistration,
-  validateOrganizationCode
+  validateOrganizationCode,
+  removeUserFromDepartment
 } = require('../controllers/userManagementController');
 const {
   authenticateUserManagement,
@@ -176,6 +177,47 @@ router.get('/organization/:organizationId/users/role/:role',
   validateOrganizationMembership, 
   canViewUsers, 
   getUsersByRole
+);
+
+// Department-specific user management
+router.get('/users', 
+  authenticateUserManagement,
+  canViewUsers,
+  rateLimitUserOperations(15 * 60 * 1000, 50),
+  logUserAction('get_users_by_filters'),
+  getAllUserManagements
+);
+
+router.post('/users/import', 
+  authenticateUserManagement,
+  canManageUsers,
+  rateLimitUserOperations(5 * 60 * 1000, 10),
+  logUserAction('import_users'),
+  bulkCreateUserManagements
+);
+
+router.get('/users/export', 
+  authenticateUserManagement,
+  canViewUsers,
+  rateLimitUserOperations(15 * 60 * 1000, 20),
+  logUserAction('export_users'),
+  getAllUserManagements
+);
+
+router.delete('/departments/:departmentId/users/:userId', 
+  authenticateUserManagement,
+  canManageUsers,
+  rateLimitUserOperations(15 * 60 * 1000, 20),
+  logUserAction('remove_user_from_department'),
+  removeUserFromDepartment
+);
+
+router.post('/users/bulk-action', 
+  authenticateUserManagement,
+  canManageUsers,
+  rateLimitUserOperations(5 * 60 * 1000, 10),
+  logUserAction('bulk_user_action'),
+  bulkToggleUserManagementStatus
 );
 
 // Role management

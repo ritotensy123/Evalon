@@ -51,6 +51,10 @@ import {
 } from 'recharts';
 import { useAuth } from '../../contexts/AuthContext';
 import { clearAuthData } from '../../utils/clearAuth';
+import { examAPI } from '../../services/api';
+import ExamManagement from './ExamManagement';
+import TeacherClassManagement from './TeacherClassManagement';
+import QuestionBankManagement from './QuestionBankManagement';
 import '../../styles/dashboard/organization.css';
 
 const TeacherDashboard = () => {
@@ -58,10 +62,27 @@ const TeacherDashboard = () => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [activeModule, setActiveModule] = useState('dashboard');
   const [selectedPeriod, setSelectedPeriod] = useState('12 Months');
+  const [assignedExams, setAssignedExams] = useState([]);
+  const [examsLoading, setExamsLoading] = useState(false);
 
   useEffect(() => {
     setTimeout(() => setIsLoaded(true), 500);
+    fetchAssignedExams();
   }, []);
+
+  const fetchAssignedExams = async () => {
+    try {
+      setExamsLoading(true);
+      const response = await examAPI.getExamsByTeacher({ status: 'scheduled' });
+      if (response.success) {
+        setAssignedExams(response.data.exams || []);
+      }
+    } catch (error) {
+      console.error('Error fetching assigned exams:', error);
+    } finally {
+      setExamsLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -114,11 +135,14 @@ const TeacherDashboard = () => {
     { name: 'Sarah Wilson', class: 'Grade 12A', grade: 'A-', performance: 90, avatar: 'SW' },
   ];
 
-  const upcomingClasses = [
-    { id: 1, title: 'Mathematics Class', date: 'Jan 20', time: '9:00 AM', type: 'class' },
-    { id: 2, title: 'Physics Lab', date: 'Jan 25', time: '11:00 AM', type: 'lab' },
-    { id: 3, title: 'Chemistry Test', date: 'Jan 30', time: '2:00 PM', type: 'exam' },
-  ];
+  // Format exams as upcoming classes
+  const upcomingClasses = assignedExams.slice(0, 3).map((exam, index) => ({
+    id: exam._id || `exam-${index}`,
+    title: exam.title,
+    date: new Date(exam.scheduledDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    time: exam.startTime || 'TBD',
+    type: 'exam'
+  }));
 
   // Navigation modules for teachers
   const coreModules = [
@@ -130,7 +154,8 @@ const TeacherDashboard = () => {
   ];
 
   const academicModules = [
-    { id: 'exams', label: 'Exams', icon: <ClipboardList className="w-5 h-5" />, count: '8' },
+    { id: 'exams', label: 'Exams', icon: <ClipboardList className="w-5 h-5" />, count: assignedExams.length.toString() },
+    { id: 'questionBank', label: 'Question Bank', icon: <BookOpen className="w-5 h-5" />, count: '10' },
     { id: 'grades', label: 'Grades', icon: <Grade className="w-5 h-5" />, count: '45' },
     { id: 'quizzes', label: 'Quizzes', icon: <Quiz className="w-5 h-5" />, count: '15' },
     { id: 'reports', label: 'Reports', icon: <FileBarChart className="w-5 h-5" />, count: '3' },
@@ -469,8 +494,10 @@ const TeacherDashboard = () => {
 
               {/* Bottom Section */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Recent Assignments */}
-                <div className="lg:col-span-2 bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                {/* Left Column - Two sections stacked */}
+                <div className="lg:col-span-2 space-y-4">
+                  {/* Recent Assignments */}
+                  <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
                     <h2 className="text-lg font-bold text-gray-900">Recent Assignments</h2>
                     <span className="text-sm text-purple-600 font-medium cursor-pointer hover:underline">See All Assignments →</span>
@@ -498,6 +525,48 @@ const TeacherDashboard = () => {
                         </div>
                       </div>
                     ))}
+                  </div>
+                  </div>
+
+                  {/* Upcoming Exams */}
+                  <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-bold text-gray-900">Upcoming Exams</h2>
+                      <span className="text-sm text-purple-600 font-medium cursor-pointer hover:underline">View All →</span>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-4">Your assigned upcoming examinations.</p>
+                    <div className="space-y-3">
+                      {examsLoading ? (
+                        <div className="text-center py-4">
+                          <RefreshCw className="w-5 h-5 animate-spin mx-auto text-gray-400" />
+                        </div>
+                      ) : assignedExams.length > 0 ? (
+                        assignedExams.slice(0, 5).map((exam) => (
+                          <div key={exam._id} className="flex items-center py-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 rounded-lg px-2 transition-colors">
+                            <div className="w-7 h-7 rounded-md bg-purple-100 text-purple-600 flex items-center justify-center mr-3">
+                              <ClipboardList className="w-4 h-4" />
+                            </div>
+                            <div className="flex-1 ml-3">
+                              <h3 className="text-sm font-semibold text-gray-900 mb-1">{exam.title}</h3>
+                              <p className="text-xs text-gray-600">{exam.subject} • {exam.class}</p>
+                            </div>
+                            <div className="text-right mr-3">
+                              <p className="text-sm font-semibold text-gray-900 mb-1">{new Date(exam.scheduledDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+                              <p className="text-xs text-gray-600">{exam.startTime}</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button className="p-1 rounded-md hover:bg-gray-100 transition-colors">
+                                <Eye className="w-4 h-4 text-gray-400" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-center py-4 text-gray-500 text-sm">
+                          No upcoming exams assigned
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 
@@ -560,6 +629,12 @@ const TeacherDashboard = () => {
                 </div>
               </div>
             </>
+          ) : activeModule === 'exams' ? (
+            <ExamManagement />
+          ) : activeModule === 'classes' ? (
+            <TeacherClassManagement />
+          ) : activeModule === 'questionBank' ? (
+            <QuestionBankManagement />
           ) : (
             <div className="flex items-center justify-center h-64">
               <div className="text-center">

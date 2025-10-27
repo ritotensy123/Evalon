@@ -1,0 +1,106 @@
+{
+  "users": {
+    "admin": {
+      "email": "admin@evalon.test",
+      "password": "Admin@12345",
+      "name": "Test Admin",
+      "role": "admin"
+    },
+    "organizationAdmin": {
+      "email": "orgadmin@evalon.test",
+      "password": "OrgAdmin@12345",
+      "name": "Test Organization Admin",
+      "role": "organization_admin"
+    },
+    "teacher": {
+      "email": "teacher@evalon.test",
+      "password": "Teacher@12345",
+      "name": "Test Teacher",
+      "role": "teacher"
+    },
+    "student": {
+      "email": "student@evalon.test",
+      "password": "Student@12345",
+      "name": "Test Student",
+      "role": "student"
+    }
+  },
+  "organizations": {
+    "college": {
+      "name": "Test College",
+      "type": "college",
+      "email": "college@test.com",
+      "phone": "+919876543210",
+      "address": {
+        "street": "123 College Street",
+        "city": "Bangalore",
+        "state": "Karnataka",
+        "country": "India",
+        "postalCode": "560001"
+      }
+    },
+    "school": {
+      "name": "Test School",
+      "type": "school",
+      "email": "school@test.com",
+      "phone": "+919876543211",
+      "address": {
+        "street": "456 School Road",
+        "city": "Mumbai",
+        "state": "Maharashtra",
+        "country": "India",
+        "postalCode": "400001"
+      }
+    }
+  },
+  "departments": {
+    "engineering": {
+      "name": "Computer Science Engineering",
+      "code": "CSE",
+      "description": "Department of Computer Science and Engineering"
+    },
+    "science": {
+      "name": "Physics Department",
+      "code": "PHY",
+      "description": "Department of Physics"
+    }
+  },
+  "subjects": {
+    "dataStructures": {
+      "name": "Data Structures and Algorithms",
+      "code": "CS301",
+      "description": "Fundamentals of data structures and algorithms"
+    },
+    "physics": {
+      "name": "Classical Mechanics",
+      "code": "PHY201",
+      "description": "Introduction to classical mechanics"
+    }
+  },
+  "invalidInputs": {
+    "emails": [
+      "invalid-email",
+      "@test.com",
+      "test@",
+      "test..test@test.com",
+      ""
+    ],
+    "passwords": [
+      "weak",
+      "12345678",
+      "password",
+      "abc",
+      ""
+    ],
+    "phones": [
+      "123",
+      "+1234",
+      "abcdefghij",
+      ""
+    ]
+  }
+}
+
+
+
+

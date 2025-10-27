@@ -32,7 +32,7 @@ import DepartmentForm from '../../components/department/DepartmentForm';
 import DepartmentStats from '../../components/department/DepartmentStats';
 import TeacherAssignment from '../../components/department/TeacherAssignment';
 
-const DepartmentManagement = () => {
+const DepartmentManagement = ({ onNavigateToDepartmentDetail }) => {
   const { user } = useAuth();
   const [departments, setDepartments] = useState([]);
   const [departmentTree, setDepartmentTree] = useState([]);
@@ -44,8 +44,20 @@ const DepartmentManagement = () => {
   const [showTeacherAssignment, setShowTeacherAssignment] = useState(false);
   const [stats, setStats] = useState(null);
 
+  // Helper function to generate alternative department codes
+  const generateAlternativeCodes = (baseCode) => {
+    const alternatives = [];
+    for (let i = 1; i <= 5; i++) {
+      alternatives.push(`${baseCode}${i}`);
+    }
+    alternatives.push(`${baseCode}_NEW`);
+    alternatives.push(`${baseCode}_2024`);
+    return alternatives;
+  };
+
   useEffect(() => {
     fetchDepartments();
+    fetchDepartmentTree();
     fetchStats();
   }, []);
 
@@ -91,17 +103,42 @@ const DepartmentManagement = () => {
     try {
       const response = await departmentAPI.create(departmentData);
       if (response.success) {
-        await fetchDepartments();
-        await fetchDepartmentTree();
-        await fetchStats();
+        // Refresh all data in parallel
+        await Promise.all([
+          fetchDepartments(),
+          fetchDepartmentTree(),
+          fetchStats()
+        ]);
         setShowForm(false);
         setSelectedDepartment(null);
+        setError(''); // Clear any previous errors
       } else {
+        console.error('Department creation failed:', response);
         setError(response.message || 'Failed to create department');
       }
     } catch (err) {
-      setError('Failed to create department');
       console.error('Error creating department:', err);
+      console.error('Error response:', err.response?.data);
+      
+      // Handle specific error cases
+      if (err.response?.data?.message) {
+        if (err.response.data.message.includes('already exists')) {
+          const alternatives = generateAlternativeCodes(departmentData.code);
+          setError(`Department code "${departmentData.code}" already exists. Suggested alternatives: ${alternatives.slice(0, 3).join(', ')}`);
+          
+          // Keep the form open and suggest the first alternative
+          const suggestedCode = alternatives[0];
+          setSelectedDepartment({
+            ...departmentData,
+            code: suggestedCode,
+            suggestedCode: true
+          });
+        } else {
+          setError(err.response.data.message);
+        }
+      } else {
+        setError('Failed to create department. Please try again.');
+      }
     }
   };
 
@@ -109,9 +146,12 @@ const DepartmentManagement = () => {
     try {
       const response = await departmentAPI.update(id, departmentData);
       if (response.success) {
-        await fetchDepartments();
-        await fetchDepartmentTree();
-        await fetchStats();
+        // Refresh all data in parallel
+        await Promise.all([
+          fetchDepartments(),
+          fetchDepartmentTree(),
+          fetchStats()
+        ]);
         setShowForm(false);
         setSelectedDepartment(null);
       } else {
@@ -128,9 +168,12 @@ const DepartmentManagement = () => {
       try {
         const response = await departmentAPI.delete(id);
         if (response.success) {
-          await fetchDepartments();
-          await fetchDepartmentTree();
-          await fetchStats();
+          // Refresh all data in parallel
+          await Promise.all([
+            fetchDepartments(),
+            fetchDepartmentTree(),
+            fetchStats()
+          ]);
         } else {
           setError(response.message || 'Failed to delete department');
         }
@@ -145,8 +188,12 @@ const DepartmentManagement = () => {
     try {
       const response = await departmentAPI.assignTeacher(departmentId, teacherData);
       if (response.success) {
-        await fetchDepartments();
-        await fetchDepartmentTree();
+        // Refresh all data in parallel
+        await Promise.all([
+          fetchDepartments(),
+          fetchDepartmentTree(),
+          fetchStats()
+        ]);
         setShowTeacherAssignment(false);
         setSelectedDepartment(null);
       } else {
@@ -166,6 +213,18 @@ const DepartmentManagement = () => {
   const handleAssignTeacherToDepartment = (department) => {
     setSelectedDepartment(department);
     setShowTeacherAssignment(true);
+  };
+
+
+
+  const handleViewDepartment = (department) => {
+    // Navigate to dedicated department page using the navigation handler
+    if (onNavigateToDepartmentDetail) {
+      onNavigateToDepartmentDetail(department._id);
+    } else {
+      // Fallback to URL navigation
+      window.location.href = `/dashboard/departments/${department._id}`;
+    }
   };
 
   const tabs = [
@@ -193,11 +252,20 @@ const DepartmentManagement = () => {
         </div>
         <div className="flex items-center space-x-3">
           <button
-            onClick={() => {
+            onClick={async () => {
               setError(null);
-              fetchDepartments();
-              fetchDepartmentTree();
-              fetchStats();
+              setLoading(true);
+              try {
+                await Promise.all([
+                  fetchDepartments(),
+                  fetchDepartmentTree(),
+                  fetchStats()
+                ]);
+              } catch (err) {
+                setError('Failed to refresh data');
+              } finally {
+                setLoading(false);
+              }
             }}
             className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
@@ -262,9 +330,7 @@ const DepartmentManagement = () => {
           {activeTab === 'tree' && (
             <DepartmentTree
               departments={departmentTree}
-              onEdit={handleEditDepartment}
-              onDelete={handleDeleteDepartment}
-              onAssignTeacher={handleAssignTeacherToDepartment}
+              onView={handleViewDepartment}
               onRefresh={fetchDepartmentTree}
             />
           )}
@@ -357,6 +423,13 @@ const DepartmentManagement = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <div className="flex items-center justify-end space-x-2">
                               <button
+                                onClick={() => handleViewDepartment(department)}
+                                className="text-blue-600 hover:text-blue-900 p-1 rounded"
+                                title="View Department"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
                                 onClick={() => handleEditDepartment(department)}
                                 className="text-purple-600 hover:text-purple-900 p-1 rounded"
                                 title="Edit Department"
@@ -394,18 +467,55 @@ const DepartmentManagement = () => {
         </div>
       </div>
 
+      {/* Error Display */}
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800">
+                Error
+              </h3>
+              <div className="mt-2 text-sm text-red-700">
+                {error}
+              </div>
+            </div>
+            <div className="ml-auto pl-3">
+              <div className="-mx-1.5 -my-1.5">
+                <button
+                  type="button"
+                  onClick={() => setError('')}
+                  className="inline-flex bg-red-50 rounded-md p-1.5 text-red-500 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-red-50 focus:ring-red-600"
+                >
+                  <span className="sr-only">Dismiss</span>
+                  <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Department Form Modal */}
       {showForm && (
         <DepartmentForm
           department={selectedDepartment}
           departments={departments}
-          onSubmit={selectedDepartment ? 
+          parentDepartment={selectedDepartment}
+          onSubmit={selectedDepartment && selectedDepartment._id && !selectedDepartment.parentDepartment ? 
             (data) => handleUpdateDepartment(selectedDepartment._id, data) :
             handleCreateDepartment
           }
           onClose={() => {
             setShowForm(false);
             setSelectedDepartment(null);
+            setError(''); // Clear error when closing form
           }}
         />
       )}
@@ -421,6 +531,7 @@ const DepartmentManagement = () => {
           }}
         />
       )}
+
     </div>
   );
 };

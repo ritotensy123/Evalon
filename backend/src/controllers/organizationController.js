@@ -653,7 +653,7 @@ const completeRegistration = async (req, res) => {
         userType: 'organization_admin',
         organizationId: organization._id
       },
-      process.env.JWT_SECRET || 'your-secret-key',
+      process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
       { expiresIn: '7d' }
     );
 

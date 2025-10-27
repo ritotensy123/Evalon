@@ -13,14 +13,14 @@ import {
   UserPlus,
 } from 'lucide-react';
 
-const UserForm = ({ user, onClose, onSave }) => {
+const UserForm = ({ user, onClose, onSave, userType }) => {
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     email: '',
     phone: '',
     countryCode: '+1',
-    role: 'student',
+    role: userType || 'student',
     department: '',
     status: 'active',
     dateOfBirth: '',
@@ -246,6 +246,10 @@ const UserForm = ({ user, onClose, onSave }) => {
         fullPhone: `${formData.countryCode}${formData.phone}`,
         // Convert status back to isActive for backend
         isActive: formData.status === 'active',
+        // Ensure role is properly set
+        role: formData.role,
+        // Add userType for backend compatibility
+        userType: formData.role,
       };
 
       await onSave(userData);
@@ -422,10 +426,10 @@ const UserForm = ({ user, onClose, onSave }) => {
                 <select
                   value={formData.role}
                   onChange={(e) => handleInputChange('role', e.target.value)}
-                  disabled={!!user} // Disable role editing for existing users
+                  disabled={!!user || !!userType} // Disable role editing for existing users or when userType is specified
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
                     errors.role ? 'border-red-300' : 'border-gray-300'
-                  } ${user ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                  } ${user || userType ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                 >
                   {roles.map((role) => (
                     <option key={role.value} value={role.value}>
@@ -439,6 +443,7 @@ const UserForm = ({ user, onClose, onSave }) => {
                 <p className="text-xs text-gray-500 mt-1">
                   {roles.find(r => r.value === formData.role)?.description}
                   {user && ' (Role cannot be changed for existing users)'}
+                  {userType && ' (Role is pre-set for this form)'}
                 </p>
               </div>
 

@@ -1,0 +1,16 @@
+# Playwright Test Artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Test output
+*.log
+coverage/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+
+
+

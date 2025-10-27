@@ -38,8 +38,9 @@ const subjectSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ['science', 'mathematics', 'language', 'social', 'arts', 'commerce', 'technology', 'physical', 'other'],
-    required: true
+    trim: true
+    // No enum - allows custom categories
+    // No required - makes it optional
   },
   
   // Academic Configuration

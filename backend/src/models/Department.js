@@ -48,6 +48,14 @@ const departmentSchema = new mongoose.Schema({
     required: true
   },
   
+  // Department Type Configuration
+  departmentType: {
+    type: String,
+    enum: ['department', 'sub-department', 'class', 'section'],
+    required: true,
+    default: 'department'
+  },
+  
   // For Schools - Class Configuration
   isClass: {
     type: Boolean,
@@ -55,29 +63,48 @@ const departmentSchema = new mongoose.Schema({
   },
   classLevel: {
     type: String,
-    enum: ['pre-primary', 'primary', 'middle', 'secondary', 'senior-secondary'],
-    required: function() {
-      return this.isClass === true;
-    }
+    enum: {
+      values: [null, 'pre-primary', 'primary', 'middle', 'secondary', 'senior-secondary'],
+      message: 'Class level must be one of: pre-primary, primary, middle, secondary, senior-secondary'
+    },
+    default: null
   },
   standard: {
-    type: String,
-    required: function() {
-      return this.isClass === true;
-    }
+    type: String
   },
   section: {
     type: String,
     trim: true
   },
   
-  // For Colleges - Department Configuration
-  departmentType: {
+  // For Colleges - Academic Configuration
+  academicType: {
     type: String,
     enum: ['academic', 'administrative', 'support', 'research'],
     default: 'academic'
   },
   specialization: {
+    type: String,
+    trim: true
+  },
+  
+  // Academic Year/Semester (for colleges)
+  academicYear: {
+    type: String,
+    trim: true
+  },
+  semester: {
+    type: String,
+    enum: {
+      values: [null, '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'],
+      message: 'Semester must be one of: 1st, 2nd, 3rd, 4th, 5th, 6th, 7th, 8th'
+    },
+    trim: true,
+    default: null
+  },
+  
+  // Batch Information
+  batch: {
     type: String,
     trim: true
   },
@@ -227,14 +254,19 @@ departmentSchema.methods.getDescendants = async function() {
 departmentSchema.methods.updatePath = async function() {
   if (this.parentDepartment) {
     const parent = await this.constructor.findById(this.parentDepartment);
-    this.path = parent ? `${parent.path}/${this.code}` : this.code;
-    this.level = parent ? parent.level + 1 : 0;
+    if (parent) {
+      this.path = `${parent.path}/${this.code}`;
+      this.level = parent.level + 1;
+    } else {
+      this.path = this.code;
+      this.level = 0;
+    }
   } else {
     this.path = this.code;
     this.level = 0;
   }
   
-  // Update all children paths
+  // Update all children paths recursively
   const children = await this.getChildren();
   for (const child of children) {
     await child.updatePath();
@@ -268,8 +300,21 @@ departmentSchema.statics.getDepartmentTree = async function(organizationId) {
 
 // Pre-save middleware to update path and level
 departmentSchema.pre('save', async function(next) {
-  if (this.isModified('parentDepartment') || this.isNew) {
-    await this.updatePath();
+  if (this.isModified('parentDepartment') || this.isModified('code') || this.isNew) {
+    // Calculate path and level before saving
+    if (this.parentDepartment) {
+      const parent = await this.constructor.findById(this.parentDepartment);
+      if (parent) {
+        this.path = `${parent.path}/${this.code}`;
+        this.level = parent.level + 1;
+      } else {
+        this.path = this.code;
+        this.level = 0;
+      }
+    } else {
+      this.path = this.code;
+      this.level = 0;
+    }
   }
   next();
 });
@@ -282,17 +327,73 @@ departmentSchema.methods.getSummary = function() {
     code: this.code,
     description: this.description,
     institutionType: this.institutionType,
+    departmentType: this.departmentType,
     isClass: this.isClass,
     classLevel: this.classLevel,
     standard: this.standard,
     section: this.section,
-    departmentType: this.departmentType,
+    academicType: this.academicType,
     specialization: this.specialization,
+    academicYear: this.academicYear,
+    semester: this.semester,
+    batch: this.batch,
     level: this.level,
     path: this.path,
     status: this.status,
     stats: this.stats
   };
+};
+
+// Method to get department hierarchy path
+departmentSchema.methods.getHierarchyPath = async function() {
+  const path = [];
+  let current = this;
+  
+  while (current) {
+    path.unshift({
+      id: current._id,
+      name: current.name,
+      code: current.code,
+      type: current.departmentType
+    });
+    
+    if (current.parentDepartment) {
+      current = await this.constructor.findById(current.parentDepartment);
+    } else {
+      current = null;
+    }
+  }
+  
+  return path;
+};
+
+// Method to validate department hierarchy
+departmentSchema.methods.validateHierarchy = async function() {
+  const errors = [];
+  
+  // Check if parent department exists and is valid
+  if (this.parentDepartment) {
+    const parent = await this.constructor.findById(this.parentDepartment);
+    if (!parent) {
+      errors.push('Parent department not found');
+    } else if (parent.institutionType !== this.institutionType) {
+      errors.push('Parent department must be of the same institution type');
+    } else if (parent.level >= 3) {
+      errors.push('Maximum hierarchy depth exceeded (max 3 levels)');
+    }
+  }
+  
+  // Validate department type based on institution type
+  if (this.institutionType === 'school') {
+    if (this.departmentType === 'sub-department') {
+      errors.push('Schools cannot have sub-departments');
+    }
+  } else if (this.institutionType === 'college') {
+    // Classes in colleges can be standalone or under departments
+    // No strict requirement for parent department
+  }
+  
+  return errors;
 };
 
 module.exports = mongoose.model('Department', departmentSchema);

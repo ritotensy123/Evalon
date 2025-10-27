@@ -1,6 +1,7 @@
 const Department = require('../models/Department');
 const Subject = require('../models/Subject');
 const Teacher = require('../models/Teacher');
+const Student = require('../models/Student');
 const Organization = require('../models/Organization');
 
 // Create a new department
@@ -12,18 +13,24 @@ const createDepartment = async (req, res) => {
       description,
       parentDepartment,
       institutionType,
+      departmentType,
       isClass,
       classLevel,
       standard,
       section,
-      departmentType,
+      academicType,
       specialization,
+      academicYear,
+      semester,
+      batch,
       headOfDepartment,
       coordinator,
       settings
     } = req.body;
 
+
     const organizationId = req.user.organizationId;
+
 
     // Check if organization exists
     const organization = await Organization.findById(organizationId);
@@ -42,6 +49,9 @@ const createDepartment = async (req, res) => {
     const cleanStandard = standard === '' ? null : standard;
     const cleanSection = section === '' ? null : section;
     const cleanSpecialization = specialization === '' ? null : specialization;
+    const cleanAcademicYear = academicYear === '' ? null : academicYear;
+    const cleanSemester = semester === '' ? null : semester;
+    const cleanBatch = batch === '' ? null : batch;
 
     // Check if department code already exists in organization
     const existingDepartment = await Department.findOne({
@@ -50,24 +60,37 @@ const createDepartment = async (req, res) => {
     });
 
     if (existingDepartment) {
+      console.error('Department code already exists:', code);
       return res.status(400).json({
         success: false,
-        message: 'Department code already exists in this organization'
+        message: 'Department code already exists in this organization',
+        code: code
       });
     }
 
     // Validate parent department if provided
     if (cleanParentDepartment) {
-      const parent = await Department.findOne({
-        _id: cleanParentDepartment,
-        organizationId,
-        status: 'active'
-      });
+      try {
+        const parent = await Department.findOne({
+          _id: cleanParentDepartment,
+          organizationId,
+          status: 'active'
+        });
 
-      if (!parent) {
+        if (!parent) {
+          console.error('Parent department not found:', cleanParentDepartment);
+          return res.status(400).json({
+            success: false,
+            message: 'Parent department not found or inactive',
+            parentDepartment: cleanParentDepartment
+          });
+        }
+      } catch (error) {
+        console.error('Error validating parent department:', error);
         return res.status(400).json({
           success: false,
-          message: 'Parent department not found or inactive'
+          message: 'Invalid parent department ID',
+          parentDepartment: cleanParentDepartment
         });
       }
     }
@@ -112,20 +135,38 @@ const createDepartment = async (req, res) => {
       organizationId,
       parentDepartment: cleanParentDepartment,
       institutionType: institutionType || organization.institutionStructure,
+      departmentType: departmentType || 'department',
       isClass,
       classLevel: cleanClassLevel,
       standard: cleanStandard,
       section: cleanSection,
-      departmentType,
+      academicType: academicType || 'academic',
       specialization: cleanSpecialization,
+      academicYear: cleanAcademicYear,
+      semester: cleanSemester,
+      batch: cleanBatch,
       headOfDepartment: cleanHeadOfDepartment,
       coordinator: cleanCoordinator,
-      level: 0, // Will be calculated
-      path: name.toLowerCase().replace(/\s+/g, '-'), // Will be updated
+      level: 0, // Will be calculated by pre-save middleware
+      path: code.toUpperCase(), // Will be updated by pre-save middleware
       settings: settings || {}
     });
 
+    // Validate hierarchy before saving
+    const hierarchyErrors = await department.validateHierarchy();
+    if (hierarchyErrors.length > 0) {
+      console.error('Hierarchy validation failed:', hierarchyErrors);
+      return res.status(400).json({
+        success: false,
+        message: 'Hierarchy validation failed',
+        errors: hierarchyErrors
+      });
+    }
+
     await department.save();
+
+    // Update department statistics
+    await updateDepartmentStats(organizationId);
 
     // Populate references
     await department.populate([
@@ -145,7 +186,8 @@ const createDepartment = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error',
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
   }
 };
@@ -187,7 +229,7 @@ const getDepartments = async (req, res) => {
 const getDepartmentTree = async (req, res) => {
   try {
     const organizationId = req.user.organizationId;
-    const { includeArchived = false } = req.query;
+    const { includeArchived = false, institutionType } = req.query;
 
     let query = { organizationId };
     
@@ -195,13 +237,17 @@ const getDepartmentTree = async (req, res) => {
       query.status = 'active';
     }
 
+    if (institutionType) {
+      query.institutionType = institutionType;
+    }
+
     const departments = await Department.find(query)
-      .populate('parentDepartment', 'name code')
+      .populate('parentDepartment', 'name code departmentType')
       .populate('headOfDepartment', 'fullName emailAddress')
       .populate('coordinator', 'fullName emailAddress')
-      .sort({ level: 1, name: 1 });
+      .sort({ level: 1, departmentType: 1, name: 1 });
 
-    // Build tree structure
+    // Build tree structure with enhanced information
     const buildTree = (parentId = null) => {
       return departments
         .filter(dept => {
@@ -212,7 +258,9 @@ const getDepartmentTree = async (req, res) => {
         })
         .map(dept => ({
           ...dept.toObject(),
-          children: buildTree(dept._id)
+          children: buildTree(dept._id),
+          hierarchyPath: dept.path,
+          displayName: getDisplayName(dept)
         }));
     };
 
@@ -230,6 +278,31 @@ const getDepartmentTree = async (req, res) => {
       message: 'Internal server error',
       error: error.message
     });
+  }
+};
+
+// Helper function to get display name based on department type
+const getDisplayName = (dept) => {
+  if (!dept) return 'Unknown Department';
+  
+  const baseName = dept.name || 'Unnamed Department';
+  
+  switch (dept.departmentType) {
+    case 'class':
+      // For classes, prioritize standard + section, fallback to name
+      if (dept.standard) {
+        return `${dept.standard}${dept.section ? ` - ${dept.section}` : ''}`;
+      }
+      return baseName;
+    case 'section':
+      // For sections, show name with section info
+      return `${baseName}${dept.section ? ` (${dept.section})` : ''}`;
+    case 'sub-department':
+      // For sub-departments, show name with specialization
+      return `${baseName}${dept.specialization ? ` (${dept.specialization})` : ''}`;
+    case 'department':
+    default:
+      return baseName;
   }
 };
 
@@ -355,6 +428,9 @@ const updateDepartment = async (req, res) => {
     Object.assign(department, updateData);
     await department.save();
 
+    // Update department statistics
+    await updateDepartmentStats(organizationId);
+
     // Populate references
     await department.populate([
       { path: 'parentDepartment', select: 'name code' },
@@ -426,6 +502,9 @@ const deleteDepartment = async (req, res) => {
     department.status = 'archived';
     await department.save();
 
+    // Update department statistics
+    await updateDepartmentStats(organizationId);
+
     res.json({
       success: true,
       message: 'Department archived successfully'
@@ -483,26 +562,23 @@ const assignTeacher = async (req, res) => {
 
     await department.save();
 
-    // Update teacher's subjects to include this department
-    if (!teacher.subjects) {
-      teacher.subjects = [];
+    // Update teacher's departments array
+    if (!teacher.departments) {
+      teacher.departments = [];
     }
 
-    // Add department reference to teacher's subjects if not already present
-    const departmentRef = {
-      departmentId: departmentId,
-      role: role,
-      assignedAt: new Date()
-    };
-
-    const existingRef = teacher.subjects.find(sub => 
-      sub.departmentId && sub.departmentId.toString() === departmentId
+    // Add department to teacher's departments if not already present
+    const departmentExists = teacher.departments.some(
+      dept => dept.toString() === departmentId
     );
 
-    if (!existingRef) {
-      teacher.subjects.push(departmentRef);
+    if (!departmentExists) {
+      teacher.departments.push(departmentId);
       await teacher.save();
     }
+
+    // Update department statistics
+    await updateDepartmentStats(organizationId);
 
     res.json({
       success: true,
@@ -585,6 +661,118 @@ const getDepartmentStats = async (req, res) => {
   }
 };
 
+// Helper function to update department statistics
+const updateDepartmentStats = async (organizationId) => {
+  try {
+    const departments = await Department.find({ organizationId, status: 'active' });
+    
+    for (const department of departments) {
+      // Count subjects in this department
+      const subjectCount = await Subject.countDocuments({
+        departmentId: department._id,
+        status: 'active'
+      });
+
+      // Count teachers assigned to this department
+      const teacherCount = await Teacher.countDocuments({
+        organizationId,
+        status: 'active',
+        'subjects.departmentId': department._id
+      });
+
+      // Count students in this department (if applicable)
+      const studentCount = await Student.countDocuments({
+        organizationId,
+        department: department._id,
+        status: 'active'
+      });
+
+      // Update department stats
+      department.stats = {
+        totalSubjects: subjectCount,
+        totalTeachers: teacherCount,
+        totalStudents: studentCount
+      };
+
+      await department.save();
+    }
+  } catch (error) {
+    console.error('Error updating department stats:', error);
+  }
+};
+
+// Get department hierarchy path
+const getDepartmentHierarchy = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organizationId = req.user.organizationId;
+
+    const department = await Department.findOne({
+      _id: id,
+      organizationId
+    });
+
+    if (!department) {
+      return res.status(404).json({
+        success: false,
+        message: 'Department not found'
+      });
+    }
+
+    const hierarchyPath = await department.getHierarchyPath();
+
+    res.json({
+      success: true,
+      data: hierarchyPath
+    });
+
+  } catch (error) {
+    console.error('Error fetching department hierarchy:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Get departments by type
+const getDepartmentsByType = async (req, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const { departmentType, institutionType } = req.query;
+
+    let query = { organizationId, status: 'active' };
+    
+    if (departmentType) {
+      query.departmentType = departmentType;
+    }
+    
+    if (institutionType) {
+      query.institutionType = institutionType;
+    }
+
+    const departments = await Department.find(query)
+      .populate('parentDepartment', 'name code departmentType')
+      .populate('headOfDepartment', 'fullName emailAddress')
+      .populate('coordinator', 'fullName emailAddress')
+      .sort({ level: 1, name: 1 });
+
+    res.json({
+      success: true,
+      data: departments
+    });
+
+  } catch (error) {
+    console.error('Error fetching departments by type:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createDepartment,
   getDepartments,
@@ -593,5 +781,7 @@ module.exports = {
   updateDepartment,
   deleteDepartment,
   assignTeacher,
-  getDepartmentStats
+  getDepartmentStats,
+  getDepartmentHierarchy,
+  getDepartmentsByType
 };

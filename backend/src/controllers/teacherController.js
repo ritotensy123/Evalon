@@ -408,7 +408,7 @@ const registerStep4 = async (req, res) => {
         userType: teacherUser.userType,
         teacherId: teacher._id
       },
-      process.env.JWT_SECRET || 'your-secret-key',
+      process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
       { expiresIn: '7d' }
     );
 
@@ -588,15 +588,15 @@ const getAllTeachers = async (req, res) => {
     
     let query = {};
     if (organizationId) {
-      query.organizationId = organizationId;
+      query.organization = organizationId;
     }
     if (status) {
       query.status = status;
     }
 
     const teachers = await Teacher.find(query)
-      .select('fullName emailAddress subjects role organizationName yearsOfExperience status')
-      .sort({ fullName: 1 });
+      .select('firstName lastName email subjects role organizationName yearsOfExperience status')
+      .sort({ firstName: 1 });
 
     res.json({
       success: true,
@@ -1017,6 +1017,111 @@ const verifyPhoneOTPForTeacher = async (req, res) => {
   }
 };
 
+// Assign teacher to department
+const assignToDepartment = async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+    const { departmentId } = req.body;
+
+    console.log('🎯 Assigning teacher to department:', { teacherId, departmentId });
+
+    if (!departmentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Department ID is required'
+      });
+    }
+
+    // Find the teacher
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Teacher not found'
+      });
+    }
+
+    // Add department to teacher's departments array if not already present
+    if (!teacher.departments.includes(departmentId)) {
+      teacher.departments.push(departmentId);
+      await teacher.save();
+    }
+
+    console.log('✅ Teacher assigned to department successfully');
+
+    res.json({
+      success: true,
+      message: 'Teacher assigned to department successfully',
+      data: {
+        teacher: {
+          id: teacher._id,
+          departments: teacher.departments
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error assigning teacher to department:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to assign teacher to department',
+      error: error.message
+    });
+  }
+};
+
+// Remove teacher from department
+const removeFromDepartment = async (req, res) => {
+  try {
+    const { teacherId, departmentId } = req.params;
+
+    console.log('🎯 Removing teacher from department:', { teacherId, departmentId });
+
+    if (!departmentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Department ID is required'
+      });
+    }
+
+    // Find the teacher
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Teacher not found'
+      });
+    }
+
+    // Remove department from teacher's departments array
+    teacher.departments = teacher.departments.filter(
+      dept => dept.toString() !== departmentId
+    );
+    await teacher.save();
+
+    console.log('✅ Teacher removed from department successfully');
+
+    res.json({
+      success: true,
+      message: 'Teacher removed from department successfully',
+      data: {
+        teacher: {
+          id: teacher._id,
+          departments: teacher.departments
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error removing teacher from department:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove teacher from department',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   // Multi-step registration functions
   registerStep1,
@@ -1034,5 +1139,8 @@ module.exports = {
   sendEmailOTPForTeacher,
   sendPhoneOTPForTeacher,
   verifyEmailOTPForTeacher,
-  verifyPhoneOTPForTeacher
+  verifyPhoneOTPForTeacher,
+  // Department assignment
+  assignToDepartment,
+  removeFromDepartment
 };

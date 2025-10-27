@@ -93,9 +93,12 @@ const UserManagement = () => {
   const fetchUserStats = async () => {
     if (!organizationId) return;
     try {
+      console.log('📊 Fetching user stats for organization:', organizationId);
       const response = await userManagementAPI.getUserStats(organizationId);
+      console.log('📊 User stats response:', response);
       if (response.success) {
         setStats(response.data);
+        console.log('📊 Stats updated:', response.data);
       }
     } catch (error) {
       console.error('Failed to fetch user stats:', error);
@@ -106,9 +109,12 @@ const UserManagement = () => {
   const fetchRoleDistribution = async () => {
     if (!organizationId) return;
     try {
+      console.log('📊 Fetching role distribution for organization:', organizationId);
       const response = await userManagementAPI.getRoleDistribution(organizationId);
+      console.log('📊 Role distribution response:', response);
       if (response.success) {
         setRoleDistribution(response.data);
+        console.log('📊 Role distribution updated:', response.data);
       }
     } catch (error) {
       console.error('Failed to fetch role distribution:', error);
@@ -118,9 +124,12 @@ const UserManagement = () => {
   const fetchRecentActivity = async () => {
     if (!organizationId) return;
     try {
+      console.log('📊 Fetching recent activity for organization:', organizationId);
       const response = await userManagementAPI.getRecentActivity(organizationId, 5);
+      console.log('📊 Recent activity response:', response);
       if (response.success) {
         setRecentActivity(response.data);
+        console.log('📊 Recent activity updated:', response.data);
       }
     } catch (error) {
       console.error('Failed to fetch recent activity:', error);
@@ -175,6 +184,14 @@ const UserManagement = () => {
       fetchUsers(1, pagination.limit);
     }
   }, [filterRole, filterStatus, searchTerm, activeTab, organizationId]);
+
+  // Refresh overview data when switching to overview tab
+  useEffect(() => {
+    if (organizationId && activeTab === 'overview') {
+      console.log('🔄 Refreshing overview data...');
+      refreshData();
+    }
+  }, [activeTab, organizationId]);
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: <Users className="w-4 h-4" /> },
@@ -548,44 +565,44 @@ const UserManagement = () => {
       {/* Quick Actions */}
       <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
         <h3 className="text-lg font-bold text-gray-900 mb-4">Quick Actions</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex flex-wrap gap-4">
           <button 
             onClick={() => setShowUserForm(true)}
-            className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-2 px-5 py-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex-1 min-w-0 max-w-80"
           >
-            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-              <UserPlus className="w-5 h-5 text-blue-600" />
+            <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <UserPlus className="w-4 h-4 text-blue-600" />
             </div>
-            <div className="text-left">
-              <h4 className="font-medium text-gray-900">Add User</h4>
-              <p className="text-sm text-gray-600">Create individual user</p>
+            <div className="text-left min-w-0">
+              <h4 className="font-medium text-gray-900 text-sm">Add User</h4>
+              <p className="text-xs text-gray-600">Create individual user</p>
             </div>
           </button>
           
           <button 
             onClick={() => setShowBulkUploadSelection(true)}
-            className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-2 px-5 py-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex-1 min-w-0 max-w-80"
           >
-            <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
-              <Upload className="w-5 h-5 text-green-600" />
+            <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Upload className="w-4 h-4 text-green-600" />
             </div>
-            <div className="text-left">
-              <h4 className="font-medium text-gray-900">Bulk Upload</h4>
-              <p className="text-sm text-gray-600">Import users via CSV</p>
+            <div className="text-left min-w-0">
+              <h4 className="font-medium text-gray-900 text-sm">Bulk Upload</h4>
+              <p className="text-xs text-gray-600">Import users via CSV</p>
             </div>
           </button>
           
           
           <button 
             onClick={() => setShowInvitations(true)}
-            className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-2 px-5 py-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex-1 min-w-0 max-w-80"
           >
-            <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center">
-              <Mail className="w-5 h-5 text-purple-600" />
+            <div className="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Mail className="w-4 h-4 text-purple-600" />
             </div>
-            <div className="text-left">
-              <h4 className="font-medium text-gray-900">Send Invites</h4>
-              <p className="text-sm text-gray-600">Email invitations</p>
+            <div className="text-left min-w-0">
+              <h4 className="font-medium text-gray-900 text-sm">Send Invites</h4>
+              <p className="text-xs text-gray-600">Email invitations</p>
             </div>
           </button>
         </div>
@@ -983,8 +1000,24 @@ const UserManagement = () => {
                 const response = await userManagementAPI.createUser(userDataWithOrg);
                 console.log('User created successfully:', response);
                 
-                // Refresh the users list
-                await fetchUsers(pagination.current, pagination.limit);
+                // Force refresh all data
+                console.log('🔄 Refreshing user data after creation...');
+                setLoading(true); // Show loading state
+                await Promise.all([
+                  fetchUsers(1, 10), // Reset to first page
+                  fetchUserStats(),
+                  fetchRoleDistribution(),
+                  fetchRecentActivity()
+                ]);
+                setLoading(false); // Hide loading state
+                console.log('✅ User data refreshed');
+                
+                // Force re-render of overview if we're on overview tab
+                if (activeTab === 'overview') {
+                  console.log('🔄 Forcing overview refresh...');
+                  // Trigger a state update to force re-render
+                  setStats(prevStats => ({ ...prevStats }));
+                }
                 
                 // Show success message
                 alert(`User created successfully! ${response.data?.generatedPassword ? `Generated password: ${response.data.generatedPassword}` : ''}`);
@@ -994,7 +1027,27 @@ const UserManagement = () => {
               }
             } catch (error) {
               console.error('Error saving user:', error);
-              alert(`Failed to save user: ${error.message || 'Unknown error'}`);
+              
+              // Enhanced error handling with better messages
+              let errorMessage = 'Failed to save user: ';
+              
+              if (error.response?.data?.message) {
+                errorMessage += error.response.data.message;
+                
+                // Add suggestion if available
+                if (error.response.data.data?.suggestion) {
+                  errorMessage += `\n\nSuggestion: ${error.response.data.data.suggestion}`;
+                }
+                
+                // Add existing user type info if available
+                if (error.response.data.data?.existingUserType) {
+                  errorMessage += `\n\nExisting account type: ${error.response.data.data.existingUserType}`;
+                }
+              } else {
+                errorMessage += error.message || 'Unknown error';
+              }
+              
+              alert(errorMessage);
             }
           }}
         />

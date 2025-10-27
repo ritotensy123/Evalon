@@ -8,7 +8,7 @@ import SubAdminDashboard from './dashboard/SubAdminDashboard';
 import SystemSetupWizard from '../components/setup/SystemSetupWizard';
 import api from '../services/api';
 
-const Dashboard = () => {
+const Dashboard = ({ onNavigateToDepartmentDetail }) => {
   const { user, isLoading, isAuthenticated, organizationData, updateUser, updateDashboardData } = useAuth();
   const [setupStatus, setSetupStatus] = useState(null);
   const [checkingSetup, setCheckingSetup] = useState(false);
@@ -123,7 +123,7 @@ const Dashboard = () => {
 
     switch (user.userType) {
       case 'organization_admin':
-        return <OrganizationDashboard />;
+        return <OrganizationDashboard onNavigateToDepartmentDetail={onNavigateToDepartmentDetail} />;
       case 'sub_admin':
         return <SubAdminDashboard />;
       case 'teacher':

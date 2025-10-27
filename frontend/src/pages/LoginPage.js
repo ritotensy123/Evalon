@@ -32,7 +32,7 @@ import { COLORS, BORDER_RADIUS, SHADOWS, GRADIENTS } from '../theme/constants';
 import { useAuth } from '../contexts/AuthContext';
 import googleAuthService from '../services/googleAuthService';
 
-const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDashboard }) => {
+const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDashboard, onLoginSuccess }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const { login } = useAuth();
@@ -176,14 +176,18 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
       
       console.log('Login result:', result);
       if (result.success) {
-        console.log('Login successful, calling onNavigateToDashboard');
-        // Keep loading state active while navigating to dashboard
-        if (onNavigateToDashboard) {
-          console.log('Calling onNavigateToDashboard callback');
+        console.log('Login successful, calling onLoginSuccess');
+        // Call the login success handler
+        if (onLoginSuccess) {
+          console.log('Calling onLoginSuccess callback');
+          onLoginSuccess();
+          console.log('onLoginSuccess callback called');
+        } else if (onNavigateToDashboard) {
+          console.log('Fallback: calling onNavigateToDashboard callback');
           onNavigateToDashboard();
           console.log('onNavigateToDashboard callback called');
         } else {
-          console.log('onNavigateToDashboard callback is not available');
+          console.log('No navigation callback available');
         }
       }
     } catch (error) {

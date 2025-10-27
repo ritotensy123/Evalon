@@ -13,7 +13,9 @@ const {
   sendEmailOTPForTeacher,
   sendPhoneOTPForTeacher,
   verifyEmailOTPForTeacher,
-  verifyPhoneOTPForTeacher
+  verifyPhoneOTPForTeacher,
+  assignToDepartment,
+  removeFromDepartment
 } = require('../controllers/teacherController');
 
 // Multi-step registration routes
@@ -33,6 +35,10 @@ router.post('/verify-phone-otp', verifyPhoneOTPForTeacher);
 
 router.get('/:teacherId', getTeacherById);
 router.get('/', getAllTeachers);
+
+// Department assignment routes
+router.patch('/:teacherId/department', assignToDepartment);
+router.delete('/:teacherId/department/:departmentId', removeFromDepartment);
 
 // Protected routes (require authentication)
 // router.put('/:teacherId', auth, updateTeacher);

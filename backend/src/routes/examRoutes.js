@@ -4,10 +4,13 @@ const {
   createExam,
   getExams,
   getExamById,
+  getExamsByTeacher,
+  getExamsByStudent,
   updateExam,
   deleteExam,
   updateExamStatus,
   assignQuestionBankToExam,
+  assignTeachersToExam,
   getExamQuestions,
   removeQuestionBankFromExam,
   getExamStatistics,
@@ -23,6 +26,8 @@ router.use(authenticate);
 // Exam CRUD routes
 router.post('/', createExam);
 router.get('/', getExams);
+router.get('/teacher', getExamsByTeacher);
+router.get('/student', getExamsByStudent);
 router.get('/:examId', getExamById);
 router.put('/:examId', updateExam);
 router.delete('/:examId', deleteExam);
@@ -32,6 +37,7 @@ router.patch('/:examId/status', updateExamStatus);
 
 // Question bank management for exams
 router.post('/:examId/assign-question-bank', assignQuestionBankToExam);
+router.post('/:examId/assign-teachers', assignTeachersToExam);
 router.get('/:examId/questions', getExamQuestions);
 router.delete('/:examId/question-bank', removeQuestionBankFromExam);
 

@@ -30,6 +30,11 @@ const examSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  department: {
+    type: String,
+    required: false,
+    trim: true
+  },
   
   // Teacher who created the exam
   createdBy: {
@@ -37,6 +42,12 @@ const examSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  
+  // Assigned teachers (can be multiple)
+  assignedTeachers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   
   // Question Bank reference
   questionBankId: {
@@ -90,7 +101,7 @@ const examSchema = new mongoose.Schema({
   // Exam status
   status: {
     type: String,
-    enum: ['draft', 'scheduled', 'active', 'completed', 'cancelled'],
+    enum: ['draft', 'scheduled', 'active', 'paused', 'completed', 'cancelled', 'expired'],
     default: 'draft'
   },
   

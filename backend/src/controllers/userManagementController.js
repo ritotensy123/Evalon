@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Organization = require('../models/Organization');
 const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
+const Department = require('../models/Department');
 const Invitation = require('../models/Invitation');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -13,29 +14,258 @@ const { sendRegistrationEmail, sendTemporaryCredentialsEmail } = require('../ser
 const getAllUserManagements = async (req, res) => {
   try {
     const { organizationId } = req.params;
-    const { page = 1, limit = 10, role, status, search } = req.query;
+    const { page = 1, limit = 10, role, status, search, departmentId, userType } = req.query;
 
     // Get all users for this organization
-    const teachersInOrg = await Teacher.find({ organizationId }).select('_id');
-    const studentsInOrg = await Student.find({ organizationId }).select('_id');
+    let teachersInOrg = await Teacher.find({ organization: organizationId }).select('_id');
+    let studentsInOrg = await Student.find({ organization: organizationId }).select('_id');
+    
+    // Filter by department if specified
+    if (departmentId) {
+      // Teacher model uses 'departments' array, Student model uses 'department' field
+      teachersInOrg = await Teacher.find({ 
+        organization: organizationId, 
+        departments: departmentId 
+      }).select('_id');
+      studentsInOrg = await Student.find({ 
+        organization: organizationId, 
+        department: departmentId 
+      }).select('_id');
+    }
     
     console.log('🔍 User Management - Organization users query:', {
       organizationId,
+      departmentId,
+      userType,
       teachersCount: teachersInOrg.length,
       studentsCount: studentsInOrg.length,
       teacherIds: teachersInOrg.map(t => t._id),
       studentIds: studentsInOrg.map(s => s._id)
     });
 
+    // Debug: Check if there are any users with this organizationId
+    const usersByOrgId = await User.find({ organizationId }).select('_id email userType userId');
+    console.log('🔍 Users by organizationId:', {
+      count: usersByOrgId.length,
+      users: usersByOrgId.map(u => ({
+        id: u._id,
+        email: u.email,
+        userType: u.userType,
+        userId: u.userId
+      }))
+    });
+
+    // Get all users for this organization - both org admins and regular users
     let organizationUsers = await User.find({
       $or: [
-        { userType: 'organization_admin', userId: organizationId },
-        { userType: 'teacher', userId: { $in: teachersInOrg } },
-        { userType: 'student', userId: { $in: studentsInOrg } }
+        { organizationId: organizationId }, // Regular users (teachers, students)
+        { userType: 'organization_admin', userId: organizationId } // Organization admin users
       ]
     })
       .select('-password')
       .sort({ createdAt: -1 });
+
+    // Fetch teachers directly from Teacher model
+    if (departmentId && userType === 'teacher') {
+      // Get the current department and its hierarchy
+      const Department = require('../models/Department');
+      const currentDepartment = await Department.findById(departmentId);
+      
+      if (!currentDepartment) {
+        console.log('❌ Department not found:', departmentId);
+        return res.status(404).json({
+          success: false,
+          message: 'Department not found'
+        });
+      }
+
+      // Get all parent departments in the hierarchy
+      const hierarchyPath = await currentDepartment.getHierarchyPath();
+      const parentDepartmentIds = hierarchyPath.map(dept => dept.id);
+      
+      console.log('🏗️ Department hierarchy for teacher assignment:', {
+        currentDepartment: currentDepartment.name,
+        hierarchyPath: hierarchyPath.map(h => ({ name: h.name, id: h.id })),
+        parentDepartmentIds
+      });
+
+      // Fetch teachers from current department AND all parent departments
+      const teachersInDepartment = await Teacher.find({
+        organization: organizationId,
+        departments: { $in: parentDepartmentIds }
+      }).select('firstName lastName email phoneNumber subjects role organizationName yearsOfExperience status departments organization createdAt');
+
+      // Convert Teacher model entries to User-like format for consistency
+      const teacherUsers = teachersInDepartment.map(teacher => ({
+        _id: teacher._id,
+        email: teacher.email,
+        userType: 'teacher',
+        userId: teacher._id,
+        isActive: teacher.status === 'active',
+        organizationId: teacher.organization,
+        profile: {
+          firstName: teacher.firstName,
+          lastName: teacher.lastName,
+          phone: teacher.phoneNumber,
+          department: teacher.departments
+        },
+        createdAt: teacher.createdAt,
+        // Add teacher-specific fields
+        teacherData: {
+          subjects: teacher.subjects,
+          yearsOfExperience: teacher.yearsOfExperience,
+          role: teacher.role,
+          organizationName: teacher.organizationName
+        }
+      }));
+
+      // Add teacher users to organization users
+      organizationUsers = [...organizationUsers, ...teacherUsers];
+      
+      console.log('🔍 Added teachers from Teacher model (hierarchical filter):', {
+        count: teacherUsers.length,
+        teachers: teacherUsers.map(t => ({
+          id: t._id,
+          name: `${t.profile.firstName} ${t.profile.lastName}`,
+          email: t.email,
+          departments: t.profile.department
+        }))
+      });
+    } else if (departmentId && userType === 'student') {
+      // Get department hierarchy for student assignment
+      const currentDepartment = await Department.findById(departmentId);
+      let parentDepartmentIds = [departmentId]; // Include current department
+      
+      if (currentDepartment) {
+        const hierarchyPath = await currentDepartment.getHierarchyPath();
+        console.log('🏗️ Department hierarchy for student assignment:', {
+          currentDepartment: currentDepartment.name,
+          hierarchyPath: hierarchyPath.map(dept => ({ name: dept.name, id: dept.id })),
+          parentDepartmentIds: hierarchyPath.map(dept => dept.id)
+        });
+        
+        // Get all parent department IDs for hierarchical assignment
+        parentDepartmentIds = hierarchyPath.map(dept => dept.id);
+      }
+
+      // Fetch students from current department AND all parent departments (hierarchical)
+      const studentsInDepartment = await Student.find({
+        organization: organizationId,
+        department: { $in: parentDepartmentIds }
+      }).select('firstName lastName email phoneNumber academicYear grade section rollNumber studentCode status department organization createdAt');
+
+      // Convert Student model entries to User-like format for consistency
+      const studentUsers = studentsInDepartment.map(student => ({
+        _id: student._id,
+        email: student.email,
+        userType: 'student',
+        userId: student._id,
+        isActive: student.status === 'active',
+        organizationId: student.organization,
+        profile: {
+          firstName: student.firstName,
+          lastName: student.lastName,
+          phone: student.phoneNumber,
+          department: student.department
+        },
+        createdAt: student.createdAt,
+        // Add student-specific fields
+        studentData: {
+          academicYear: student.academicYear,
+          grade: student.grade,
+          section: student.section,
+          rollNumber: student.rollNumber,
+          studentCode: student.studentCode
+        }
+      }));
+
+      // Add student users to organization users
+      organizationUsers = [...organizationUsers, ...studentUsers];
+      
+      console.log('🔍 Added students from Student model (hierarchical filter):', {
+        count: studentUsers.length,
+        students: studentUsers.map(s => ({
+          id: s._id,
+          name: `${s.profile.firstName} ${s.profile.lastName}`,
+          email: s.email,
+          department: s.profile.department
+        }))
+      });
+    } else if (!departmentId) {
+      // Fetch ALL teachers and students from organization (no department filter)
+      const allTeachers = await Teacher.find({
+        organization: organizationId
+      }).select('firstName lastName email phoneNumber subjects role organizationName yearsOfExperience status departments organization createdAt');
+
+      const allStudents = await Student.find({
+        organization: organizationId
+      }).select('firstName lastName email phoneNumber academicYear grade section rollNumber studentCode status department organization createdAt');
+
+      // Convert teachers
+      const teacherUsers = allTeachers.map(teacher => ({
+        _id: teacher._id,
+        email: teacher.email,
+        userType: 'teacher',
+        userId: teacher._id,
+        isActive: teacher.status === 'active',
+        organizationId: teacher.organization,
+        profile: {
+          firstName: teacher.firstName,
+          lastName: teacher.lastName,
+          phone: teacher.phoneNumber,
+          department: teacher.departments
+        },
+        createdAt: teacher.createdAt,
+        teacherData: {
+          subjects: teacher.subjects,
+          yearsOfExperience: teacher.yearsOfExperience,
+          role: teacher.role,
+          organizationName: teacher.organizationName
+        }
+      }));
+
+      // Convert students
+      const studentUsers = allStudents.map(student => ({
+        _id: student._id,
+        email: student.email,
+        userType: 'student',
+        userId: student._id,
+        isActive: student.status === 'active',
+        organizationId: student.organization,
+        profile: {
+          firstName: student.firstName,
+          lastName: student.lastName,
+          phone: student.phoneNumber,
+          department: student.department
+        },
+        createdAt: student.createdAt,
+        studentData: {
+          academicYear: student.academicYear,
+          grade: student.grade,
+          section: student.section,
+          rollNumber: student.rollNumber,
+          studentCode: student.studentCode
+        }
+      }));
+
+      // Add all teachers and students
+      organizationUsers = [...organizationUsers, ...teacherUsers, ...studentUsers];
+      
+      console.log('🔍 Added teachers and students from models (no department filter):', {
+        teachersCount: teacherUsers.length,
+        studentsCount: studentUsers.length,
+        teachers: teacherUsers.map(t => ({
+          id: t._id,
+          name: `${t.profile.firstName} ${t.profile.lastName}`,
+          email: t.email
+        })),
+        students: studentUsers.map(s => ({
+          id: s._id,
+          name: `${s.profile.firstName} ${s.profile.lastName}`,
+          email: s.email
+        }))
+      });
+    }
 
     console.log('🔍 User Management - Found users:', {
       totalUsers: organizationUsers.length,
@@ -49,9 +279,32 @@ const getAllUserManagements = async (req, res) => {
       }))
     });
 
+    // Debug: Check user types
+    const userTypes = organizationUsers.reduce((acc, user) => {
+      acc[user.userType] = (acc[user.userType] || 0) + 1;
+      return acc;
+    }, {});
+    console.log('🔍 User types found:', userTypes);
+
+    // Additional debug - check for the specific user we just created
+    const recentUsers = await User.find({ organizationId })
+      .select('_id email userType createdAt')
+      .sort({ createdAt: -1 })
+      .limit(5);
+    console.log('🔍 Recent users in organization:', recentUsers.map(u => ({
+      id: u._id,
+      email: u.email,
+      userType: u.userType,
+      createdAt: u.createdAt
+    })));
+
     // Apply filters
     if (role && role !== 'all') {
       organizationUsers = organizationUsers.filter(user => user.userType === role);
+    }
+    
+    if (userType && userType !== 'all') {
+      organizationUsers = organizationUsers.filter(user => user.userType === userType);
     }
     
     if (status && status !== 'all') {
@@ -79,8 +332,43 @@ const getAllUserManagements = async (req, res) => {
     const formattedUsers = await Promise.all(paginatedUsers.map(async (user) => {
       let additionalData = {};
       
-      // Fetch Teacher or Student data based on user type
-      if (user.userType === 'teacher' && user.userId) {
+      // If user already has teacherData (from direct Teacher model fetch), use it
+      if (user.teacherData) {
+        additionalData = {
+          firstName: user.profile?.firstName || '',
+          lastName: user.profile?.lastName || '',
+          phone: user.profile?.phone || '',
+          department: user.profile?.department || '',
+          subjects: user.teacherData.subjects || [],
+          experienceLevel: user.teacherData.experienceLevel || '',
+          yearsOfExperience: user.teacherData.yearsOfExperience || '',
+          qualification: user.teacherData.qualification || '',
+          specialization: user.teacherData.specialization || '',
+          address: user.teacherData.address || '',
+          dateOfBirth: user.teacherData.dateOfBirth || '',
+          emergencyContact: user.teacherData.emergencyContact || '',
+          notes: user.teacherData.notes || ''
+        };
+      } else if (user.studentData) {
+        // If user already has studentData (from direct Student model fetch), use it
+        additionalData = {
+          firstName: user.profile?.firstName || '',
+          lastName: user.profile?.lastName || '',
+          phone: user.profile?.phone || '',
+          department: user.profile?.department || '',
+          academicYear: user.studentData.academicYear || '',
+          grade: user.studentData.grade || '',
+          section: user.studentData.section || '',
+          rollNumber: user.studentData.rollNumber || '',
+          studentCode: user.studentData.studentCode || '',
+          address: user.studentData.address || '',
+          dateOfBirth: user.studentData.dateOfBirth || '',
+          emergencyContact: user.studentData.emergencyContact || '',
+          parentName: user.studentData.parentName || '',
+          parentPhone: user.studentData.parentPhone || '',
+          notes: user.studentData.notes || ''
+        };
+      } else if (user.userType === 'teacher' && user.userId) {
         try {
           const teacher = await Teacher.findById(user.userId);
           if (teacher) {
@@ -140,14 +428,20 @@ const getAllUserManagements = async (req, res) => {
         };
       }
 
+      const firstName = additionalData.firstName || user.profile?.firstName || '';
+      const lastName = additionalData.lastName || user.profile?.lastName || '';
+      
       return {
         _id: user._id,
-        firstName: additionalData.firstName || user.profile?.firstName || '',
-        lastName: additionalData.lastName || user.profile?.lastName || '',
+        firstName,
+        lastName,
+        fullName: firstName && lastName ? `${firstName} ${lastName}` : '',
         email: user.email,
+        emailAddress: user.email,
         phone: additionalData.phone || '',
         userType: user.userType,
         status: user.isActive ? 'active' : 'inactive',
+        isActive: user.isActive,
         lastLogin: user.lastLogin,
         createdAt: user.createdAt,
         department: additionalData.department || user.profile?.department || '',
@@ -364,11 +658,43 @@ const createUserManagement = async (req, res) => {
         });
       } else {
         // User exists and is not pending registration
-        return res.status(400).json({
-          success: false,
-          message: 'User with this email already exists and has completed registration'
-        });
+        // Check if they want to create a different user type
+        const existingUserType = existingUser.userType;
+        const requestedRole = role;
+        
+        if (existingUserType !== requestedRole) {
+          return res.status(400).json({
+            success: false,
+            message: `User with this email already exists as a ${existingUserType}. Cannot create a ${requestedRole} account with the same email.`,
+            data: {
+              existingUserType,
+              requestedRole,
+              suggestion: `Try using a different email or update the existing ${existingUserType} account.`
+            }
+          });
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: `A ${existingUserType} account with this email already exists and has completed registration.`,
+            data: {
+              existingUserType,
+              suggestion: 'Try using a different email or update the existing account.'
+            }
+          });
+        }
       }
+    }
+
+    // Check if userTypeEmail already exists (for the specific user type)
+    const existingUserTypeEmail = await User.findOne({
+      userTypeEmail: `${email.toLowerCase()}_${role}`
+    });
+
+    if (existingUserTypeEmail) {
+      return res.status(400).json({
+        success: false,
+        message: `A ${role} account with this email already exists`
+      });
     }
 
     // Generate temporary credentials
@@ -385,22 +711,29 @@ const createUserManagement = async (req, res) => {
     if (role === 'teacher') {
       // Create Teacher record
       const teacherData = {
+        firstName,
+        lastName,
         fullName: `${firstName} ${lastName}`,
+        email: email.toLowerCase(),
+        emailAddress: email.toLowerCase(),
         phoneNumber: phone || '0000000000',
         countryCode,
-        emailAddress: email.toLowerCase(),
+        employeeId: `EMP${Date.now()}${Math.random().toString(36).substr(2, 5).toUpperCase()}`, // Generate unique employee ID
         country: 'India', // Default, can be made configurable
         city: 'Unknown', // Default, can be made configurable
         pincode: '000000', // Default, can be made configurable
         subjects: subjects || [],
+        teacherRole: teacherRole,
         role: teacherRole,
         affiliationType,
         experienceLevel: experienceLevel || 'beginner',
         currentInstitution: currentInstitution || 'Unknown',
         yearsOfExperience: yearsOfExperience || 0,
         organizationId,
+        organization: organizationId, // Required field for Teacher model
         organizationCode: orgCode,
-        status: status === 'active' ? 'active' : 'inactive'
+        status: status === 'active' ? 'active' : 'inactive',
+        createdBy: req.user.id // Required field for Teacher model
       };
 
       // Set organization validation
@@ -415,7 +748,7 @@ const createUserManagement = async (req, res) => {
       await userRecord.save();
 
       // Create User record for teacher with temporary credentials
-      createdUser = new User({
+      const userData = {
         email: email.toLowerCase(),
         password: hashedTempPassword,
         userType: 'teacher',
@@ -436,30 +769,51 @@ const createUserManagement = async (req, res) => {
           role: 'teacher',
           department
         }
+      };
+      
+      console.log('🔧 Creating User record for teacher:', {
+        email: userData.email,
+        userType: userData.userType,
+        userId: userData.userId,
+        userTypeEmail: userData.userTypeEmail,
+        organizationId: userData.organizationId
       });
+
+      // Validate organizationId is set
+      if (!userData.organizationId) {
+        throw new Error('organizationId is required for teacher user creation');
+      }
+      
+      createdUser = new User(userData);
 
     } else if (role === 'student') {
       // Student fields will use defaults if not provided
 
       // Create Student record
       const studentData = {
+        firstName,
+        lastName,
         fullName: `${firstName} ${lastName}`,
+        email: email.toLowerCase(),
+        emailAddress: email.toLowerCase(),
         phoneNumber: phone || '0000000000',
         countryCode,
-        emailAddress: email.toLowerCase(),
+        studentId: `STU${Date.now()}${Math.random().toString(36).substr(2, 5).toUpperCase()}`, // Generate unique student ID
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : new Date('1990-01-01'),
         gender: gender || 'other',
         country: 'India', // Default, can be made configurable
         city: 'Unknown', // Default, can be made configurable
         pincode: '000000', // Default, can be made configurable
         organizationId,
+        organization: organizationId, // Required field for Student model
         organizationCode: orgCode,
         academicYear: academicYear || '2024-25',
         grade: grade || '1',
         section: section || 'A',
         rollNumber: rollNumber || '001',
         subjects: studentSubjects || [],
-        status: status === 'active' ? 'active' : 'inactive'
+        status: status === 'active' ? 'active' : 'inactive',
+        createdBy: req.user.id // Required field for Student model
       };
 
       // Set organization validation
@@ -470,7 +824,7 @@ const createUserManagement = async (req, res) => {
       await userRecord.save();
 
       // Create User record for student with temporary credentials
-      createdUser = new User({
+      const userData = {
         email: email.toLowerCase(),
         password: hashedTempPassword,
         userType: 'student',
@@ -491,7 +845,22 @@ const createUserManagement = async (req, res) => {
           role: 'student',
           department
         }
+      };
+      
+      console.log('🔧 Creating User record for student:', {
+        email: userData.email,
+        userType: userData.userType,
+        userId: userData.userId,
+        userTypeEmail: userData.userTypeEmail,
+        organizationId: userData.organizationId
       });
+
+      // Validate organizationId is set
+      if (!userData.organizationId) {
+        throw new Error('organizationId is required for student user creation');
+      }
+      
+      createdUser = new User(userData);
     } else {
       return res.status(400).json({
         success: false,
@@ -499,7 +868,26 @@ const createUserManagement = async (req, res) => {
       });
     }
 
-    await createdUser.save();
+    // Save the User record with error handling
+    try {
+      await createdUser.save();
+      console.log(`✅ User record created successfully: ${createdUser._id}`);
+      
+      // Final validation - ensure organizationId is set
+      if (!createdUser.organizationId) {
+        throw new Error('CRITICAL: User was saved without organizationId!');
+      }
+      
+      console.log(`✅ User organizationId validated: ${createdUser.organizationId}`);
+    } catch (userSaveError) {
+      console.error('❌ Failed to save User record:', userSaveError);
+      // If User record fails, we should clean up the Teacher/Student record
+      if (userRecord) {
+        await userRecord.deleteOne();
+        console.log('🧹 Cleaned up Teacher/Student record due to User creation failure');
+      }
+      throw userSaveError;
+    }
 
     // Send temporary credentials email
     const emailResult = await sendTemporaryCredentialsEmail(
@@ -1187,7 +1575,7 @@ const acceptInvitation = async (req, res) => {
         userType: newUser.userType,
         iat: Math.floor(Date.now() / 1000)
       },
-      process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production',
+      process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
       { expiresIn: '7d' }
     );
 
@@ -1220,13 +1608,82 @@ const getUserManagementStats = async (req, res) => {
   try {
     const { organizationId } = req.params;
 
-    // Get all users for this organization
-    const organizationUsers = await User.find({
+    // Get all users for this organization - use the same logic as getAllUserManagements
+    let organizationUsers = await User.find({
       $or: [
-        { userType: 'organization_admin', userId: organizationId },
-        { userType: 'teacher', userId: { $in: await Teacher.find({ organizationId }).select('_id') } },
-        { userType: 'student', userId: { $in: await Student.find({ organizationId }).select('_id') } }
+        { organizationId: organizationId }, // Regular users (teachers, students)
+        { userType: 'organization_admin', userId: organizationId } // Organization admin users
       ]
+    });
+
+    // Also fetch teachers and students from their respective models (same logic as getAllUserManagements)
+    const allTeachers = await Teacher.find({
+      organization: organizationId
+    }).select('firstName lastName email phoneNumber subjects role organizationName yearsOfExperience status departments organization createdAt');
+
+    const allStudents = await Student.find({
+      organization: organizationId
+    }).select('firstName lastName email phoneNumber academicYear grade section rollNumber studentCode status department organization createdAt');
+
+    // Convert teachers to User-like format
+    const teacherUsers = allTeachers.map(teacher => ({
+      _id: teacher._id,
+      email: teacher.email,
+      userType: 'teacher',
+      userId: teacher._id,
+      isActive: teacher.status === 'active',
+      organizationId: teacher.organization,
+      profile: {
+        firstName: teacher.firstName,
+        lastName: teacher.lastName,
+        phone: teacher.phoneNumber,
+        department: teacher.departments
+      },
+      createdAt: teacher.createdAt,
+      teacherData: {
+        subjects: teacher.subjects,
+        yearsOfExperience: teacher.yearsOfExperience,
+        role: teacher.role,
+        organizationName: teacher.organizationName
+      }
+    }));
+
+    // Convert students to User-like format
+    const studentUsers = allStudents.map(student => ({
+      _id: student._id,
+      email: student.email,
+      userType: 'student',
+      userId: student._id,
+      isActive: student.status === 'active',
+      organizationId: student.organization,
+      profile: {
+        firstName: student.firstName,
+        lastName: student.lastName,
+        phone: student.phoneNumber,
+        department: student.department
+      },
+      createdAt: student.createdAt,
+      studentData: {
+        academicYear: student.academicYear,
+        grade: student.grade,
+        section: student.section,
+        rollNumber: student.rollNumber,
+        studentCode: student.studentCode
+      }
+    }));
+
+    // Combine all users
+    organizationUsers = [...organizationUsers, ...teacherUsers, ...studentUsers];
+
+    console.log('📊 User Management Stats - Found users:', {
+      totalUsers: organizationUsers.length,
+      users: organizationUsers.map(u => ({
+        id: u._id,
+        email: u.email,
+        userType: u.userType,
+        isActive: u.isActive,
+        organizationId: u.organizationId
+      }))
     });
 
     // Calculate stats
@@ -1242,6 +1699,8 @@ const getUserManagementStats = async (req, res) => {
       emailVerified: organizationUsers.filter(u => u.isEmailVerified).length,
       phoneVerified: 0 // No phone verification in current User model
     };
+
+    console.log('📊 User Management Stats - Calculated stats:', stats);
 
     res.status(200).json({
       success: true,
@@ -1263,14 +1722,72 @@ const getRoleDistribution = async (req, res) => {
   try {
     const { organizationId } = req.params;
 
-    // Get all users for this organization
-    const organizationUsers = await User.find({
+    // Get all users for this organization - use the same logic as getAllUserManagements
+    let organizationUsers = await User.find({
       $or: [
-        { userType: 'organization_admin', userId: organizationId },
-        { userType: 'teacher', userId: { $in: await Teacher.find({ organizationId }).select('_id') } },
-        { userType: 'student', userId: { $in: await Student.find({ organizationId }).select('_id') } }
+        { organizationId: organizationId }, // Regular users (teachers, students)
+        { userType: 'organization_admin', userId: organizationId } // Organization admin users
       ]
     });
+
+    // Also fetch teachers and students from their respective models (same logic as getAllUserManagements)
+    const allTeachers = await Teacher.find({
+      organization: organizationId
+    }).select('firstName lastName email phoneNumber subjects role organizationName yearsOfExperience status departments organization createdAt');
+
+    const allStudents = await Student.find({
+      organization: organizationId
+    }).select('firstName lastName email phoneNumber academicYear grade section rollNumber studentCode status department organization createdAt');
+
+    // Convert teachers to User-like format
+    const teacherUsers = allTeachers.map(teacher => ({
+      _id: teacher._id,
+      email: teacher.email,
+      userType: 'teacher',
+      userId: teacher._id,
+      isActive: teacher.status === 'active',
+      organizationId: teacher.organization,
+      profile: {
+        firstName: teacher.firstName,
+        lastName: teacher.lastName,
+        phone: teacher.phoneNumber,
+        department: teacher.departments
+      },
+      createdAt: teacher.createdAt,
+      teacherData: {
+        subjects: teacher.subjects,
+        yearsOfExperience: teacher.yearsOfExperience,
+        role: teacher.role,
+        organizationName: teacher.organizationName
+      }
+    }));
+
+    // Convert students to User-like format
+    const studentUsers = allStudents.map(student => ({
+      _id: student._id,
+      email: student.email,
+      userType: 'student',
+      userId: student._id,
+      isActive: student.status === 'active',
+      organizationId: student.organization,
+      profile: {
+        firstName: student.firstName,
+        lastName: student.lastName,
+        phone: student.phoneNumber,
+        department: student.department
+      },
+      createdAt: student.createdAt,
+      studentData: {
+        academicYear: student.academicYear,
+        grade: student.grade,
+        section: student.section,
+        rollNumber: student.rollNumber,
+        studentCode: student.studentCode
+      }
+    }));
+
+    // Combine all users
+    organizationUsers = [...organizationUsers, ...teacherUsers, ...studentUsers];
 
     // Group by userType
     const roleDistribution = organizationUsers.reduce((acc, user) => {
@@ -1308,12 +1825,11 @@ const getRecentActivity = async (req, res) => {
     const { organizationId } = req.params;
     const { limit = 10 } = req.query;
 
-    // Get all users for this organization
+    // Get all users for this organization - use the same logic as getAllUserManagements
     const organizationUsers = await User.find({
       $or: [
-        { userType: 'organization_admin', userId: organizationId },
-        { userType: 'teacher', userId: { $in: await Teacher.find({ organizationId }).select('_id') } },
-        { userType: 'student', userId: { $in: await Student.find({ organizationId }).select('_id') } }
+        { organizationId: organizationId }, // Regular users (teachers, students)
+        { userType: 'organization_admin', userId: organizationId } // Organization admin users
       ]
     })
       .select('email userType lastLogin profile createdAt')
@@ -1816,7 +2332,7 @@ const completeRegistration = async (req, res) => {
         userType: user.userType,
         iat: Math.floor(Date.now() / 1000)
       },
-      process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production',
+      process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
       { expiresIn: '7d' }
     );
 
@@ -2018,6 +2534,64 @@ const bulkToggleUserManagementStatus = async (req, res) => {
   }
 };
 
+// Remove user from department
+const removeUserFromDepartment = async (req, res) => {
+  try {
+    const { departmentId, userId } = req.params;
+    const organizationId = req.user.organizationId;
+
+    // Verify department exists and belongs to organization
+    const department = await Department.findOne({
+      _id: departmentId,
+      organizationId
+    });
+
+    if (!department) {
+      return res.status(404).json({
+        success: false,
+        message: 'Department not found'
+      });
+    }
+
+    // Get user and verify they belong to organization
+    const user = await User.findOne({
+      _id: userId,
+      organizationId
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Remove user from department based on user type
+    if (user.userType === 'teacher') {
+      await Teacher.findByIdAndUpdate(user.userId, {
+        $unset: { departmentId: 1 }
+      });
+    } else if (user.userType === 'student') {
+      await Student.findByIdAndUpdate(user.userId, {
+        $unset: { departmentId: 1 }
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'User removed from department successfully'
+    });
+
+  } catch (error) {
+    console.error('Remove user from department error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove user from department',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllUserManagements,
   getUserManagementById,
@@ -2044,5 +2618,6 @@ module.exports = {
   completeRegistration,
   validateOrganizationCode,
   bulkDeleteUserManagements,
-  bulkToggleUserManagementStatus
+  bulkToggleUserManagementStatus,
+  removeUserFromDepartment
 };

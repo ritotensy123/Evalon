@@ -1,168 +1,132 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
 
 const teacherSchema = new mongoose.Schema({
-  // Basic Details (Step 1)
-  fullName: {
+  // Basic Information
+  firstName: {
     type: String,
     required: true,
     trim: true
   },
-  phoneNumber: {
+  lastName: {
     type: String,
     required: true,
     trim: true
   },
-  countryCode: {
+  email: {
     type: String,
     required: true,
-    default: '+91'
-  },
-  emailAddress: {
-    type: String,
-    required: true,
+    unique: true,
     lowercase: true,
     trim: true
   },
-  country: {
+  phone: {
     type: String,
-    required: true,
     trim: true
   },
-  city: {
-    type: String,
-    required: true,
-    trim: true
+  dateOfBirth: {
+    type: Date
   },
-  pincode: {
+  gender: {
     type: String,
-    required: true,
-    trim: true
+    enum: ['male', 'female', 'other']
   },
   
-  // Professional Details (Step 2)
+  // Professional Information
+  employeeId: {
+    type: String,
+    unique: true,
+    required: true
+  },
+  teacherRole: {
+    type: String,
+    enum: ['teacher', 'head_teacher', 'coordinator', 'principal'],
+    default: 'teacher'
+  },
   subjects: [{
-    type: String,
-    trim: true
-  }],
-  role: {
-    type: String,
-    enum: ['teacher', 'hod', 'coordinator'],
-    required: true
-  },
-  affiliationType: {
-    type: String,
-    enum: ['organization', 'freelance'],
-    required: true
-  },
-  experienceLevel: {
-    type: String,
-    enum: ['beginner', 'intermediate', 'experienced', 'expert'],
-    required: function() {
-      return this.affiliationType === 'freelance';
-    }
-  },
-  currentInstitution: {
-    type: String,
-    trim: true
-  },
-  yearsOfExperience: {
-    type: String,
-    trim: true
-  },
-  
-  // Organization Link (Step 3)
-  organizationCode: {
-    type: String,
-    trim: true,
-    required: function() {
-      return this.affiliationType === 'organization';
-    }
-  },
-  organizationName: {
-    type: String,
-    trim: true
-  },
-  organizationId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Organization',
-    required: function() {
-      return this.affiliationType === 'organization';
-    }
-  },
-  isOrganizationValid: {
-    type: Boolean,
-    default: false
-  },
-  associationStatus: {
+    ref: 'Subject'
+  }],
+  departments: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department'
+  }],
+  
+  // Experience and Qualifications
+  experience: {
     type: String,
-    enum: ['verified', 'pending', 'not_found', 'freelance'],
-    default: 'pending'
+    enum: ['0-2 years', '3-5 years', '6-10 years', '11-15 years', '16+ years'],
+    default: '0-2 years'
+  },
+  qualifications: [{
+    degree: String,
+    institution: String,
+    year: Number
+  }],
+  
+  // Schedule Information
+  workingHours: {
+    type: Number,
+    default: 40
+  },
+  schedule: [{
+    day: {
+      type: String,
+      enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+    },
+    startTime: String,
+    endTime: String,
+    subject: String,
+    class: String
+  }],
+  
+  // Performance Metrics
+  workload: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+  performanceRating: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 5
   },
   
-  // Security Verification (Step 4)
-  emailVerified: {
-    type: Boolean,
-    default: false
-  },
-  phoneVerified: {
-    type: Boolean,
-    default: false
-  },
-  
-  // Additional fields for compatibility
+  // Status and Dates
   status: {
     type: String,
-    enum: ['active', 'inactive', 'pending'],
-    default: 'pending'
+    enum: ['active', 'inactive', 'on_leave', 'terminated'],
+    default: 'active'
+  },
+  hireDate: {
+    type: Date,
+    default: Date.now
+  },
+  terminationDate: {
+    type: Date
   },
   
-  // Verification data
-  emailOTP: {
-    code: String,
-    expiresAt: Date
+  // System Information
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   },
-  phoneOTP: {
-    code: String,
-    expiresAt: Date
+  organization: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    required: true
   }
 }, {
   timestamps: true
 });
 
-// Index for better query performance
-teacherSchema.index({ emailAddress: 1 }, { unique: true });
-teacherSchema.index({ organizationId: 1 });
-teacherSchema.index({ organizationCode: 1 });
+// Indexes for better performance
+teacherSchema.index({ email: 1 });
+teacherSchema.index({ employeeId: 1 });
+teacherSchema.index({ organization: 1 });
+teacherSchema.index({ subjects: 1 });
 teacherSchema.index({ status: 1 });
-teacherSchema.index({ affiliationType: 1 });
-
-
-// Method to generate teacher code
-teacherSchema.methods.generateTeacherCode = function() {
-  const prefix = 'TCH';
-  const randomNum = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-  return `${prefix}${randomNum}`;
-};
-
-// Ensure virtual fields are serialized
-teacherSchema.set('toJSON', { 
-  virtuals: true,
-  transform: function(doc, ret) {
-    delete ret.emailOTP;
-    delete ret.phoneOTP;
-    return ret;
-  }
-});
-teacherSchema.set('toObject', { 
-  virtuals: true,
-  transform: function(doc, ret) {
-    delete ret.emailOTP;
-    delete ret.phoneOTP;
-    return ret;
-  }
-});
 
 module.exports = mongoose.model('Teacher', teacherSchema);
-
-

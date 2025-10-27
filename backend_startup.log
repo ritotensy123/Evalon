@@ -1,0 +1,1347 @@
+
+> evalon-backend@1.0.0 start
+> node src/server.js
+
+📱 Twilio client initialized successfully
+🔗 Connecting to MongoDB with URI: mongodb+srv://ritotensy:redriders@evalon.u8jqfbo.mongodb.net/?retryWrites=true&w=majority&appName=Evalon
+📁 Database name: evalon
+(node:73135) [MONGOOSE] Warning: Duplicate schema index on {"email":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:73135) [MONGOOSE] Warning: Duplicate schema index on {"googleId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:73135) [MONGOOSE] Warning: Duplicate schema index on {"userTypeEmail":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:73135) [MONGOOSE] Warning: Duplicate schema index on {"email":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:73135) [MONGOOSE] Warning: Duplicate schema index on {"employeeId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:73135) [MONGOOSE] Warning: Duplicate schema index on {"email":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:73135) [MONGOOSE] Warning: Duplicate schema index on {"studentId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:73135) [MONGOOSE] Warning: Duplicate schema index on {"email":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:73135) [MONGOOSE] Warning: Duplicate schema index on {"orgCode":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:73135) [MONGOOSE] Warning: Duplicate schema index on {"token":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+MongoDB Connected: ac-dvzp3jm-shard-00-02.u8jqfbo.mongodb.net
+📁 Connected to database: evalon
+🔍 Validating database connection...
+✅ Database name validation passed
+🔍 Database Health Check - Connected to: evalon
+📧 Email transporter ready to send emails
+📧 Email transporter ready to send emails
+✅ Database health check completed: {
+  timestamp: '2025-10-26T14:59:21.235Z',
+  status: 'healthy',
+  issues: [],
+  warnings: [
+    'Teacher undefined has no corresponding User record',
+    'Teacher undefined has no corresponding User record',
+    'Teacher undefined has no corresponding User record',
+    'Teacher undefined has no corresponding User record',
+    'Teacher undefined has no corresponding User record',
+    'Teacher undefined has no corresponding User record',
+    'User maryloid936@gmail.com missing organizationId (should be 68cc27babb2edd5c5b3d04dc)',
+    'Student undefined has no corresponding User record'
+  ],
+  stats: {
+    users: 10,
+    teachers: 7,
+    students: 2,
+    organizations: 4,
+    subjects: 1,
+    departments: 4
+  }
+}
+⚠️ Database health warnings: [
+  'Teacher undefined has no corresponding User record',
+  'Teacher undefined has no corresponding User record',
+  'Teacher undefined has no corresponding User record',
+  'Teacher undefined has no corresponding User record',
+  'Teacher undefined has no corresponding User record',
+  'Teacher undefined has no corresponding User record',
+  'User maryloid936@gmail.com missing organizationId (should be 68cc27babb2edd5c5b3d04dc)',
+  'Student undefined has no corresponding User record'
+]
+🔧 Attempting to auto-fix data issues...
+🔧 Auto-fixes applied: [
+  'Fixed organizationId for user maryloid936@gmail.com',
+  'Fixed organizationId for user lespanol79@gmail.com'
+]
+✅ Auto-fixes applied: [
+  'Fixed organizationId for user maryloid936@gmail.com',
+  'Fixed organizationId for user lespanol79@gmail.com'
+]
+✅ Database connection validation completed successfully
+📊 Database stats: {
+  users: 10,
+  teachers: 7,
+  students: 2,
+  organizations: 4,
+  subjects: 1,
+  departments: 4
+}
+🔥 Firebase Admin SDK initialized successfully
+🚀 Evalon Backend Server running on port 5001
+📊 Environment: development
+🔗 Health check: http://localhost:5001/health
+📚 API Base URL: http://localhost:5001/api
+Auth middleware - req.user: {
+  id: new ObjectId('68cc27babb2edd5c5b3d04e0'),
+  userType: 'organization_admin',
+  organizationId: {
+    settings: {
+      allowStudentRegistration: true,
+      allowTeacherRegistration: true,
+      requireEmailVerification: true,
+      requirePhoneVerification: true
+    },
+    securitySettings: {
+      twoFactorAuth: false,
+      sessionTimeout: 30,
+      passwordPolicy: 'medium',
+      loginAttempts: 5,
+      ipWhitelist: false,
+      auditLogging: true
+    },
+    notificationSettings: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      systemAlerts: true,
+      weeklyReports: true,
+      monthlyReports: true
+    },
+    stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+    _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+    name: 'Amal Jyothi College Of Engineering',
+    email: 'ritotensy@gmail.com',
+    phone: '+918075059538',
+    address: 'Kottayam, KL, IN - 686105',
+    website: '',
+    description: '',
+    foundedYear: 2025,
+    orgCode: 'IN-AMA-2025-JT3',
+    institutionStructure: 'multi',
+    timeZone: 'UTC-11:00',
+    departments: [ 'Computer Applications', 'Computer Science' ],
+    addSubAdmins: true,
+    twoFactorAuth: true,
+    logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+    country: 'IN',
+    state: 'KL',
+    city: 'Kottayam',
+    pincode: '686105',
+    studentStrength: 4998,
+    isGovernmentRecognized: true,
+    emailVerified: false,
+    phoneVerified: false,
+    status: 'active',
+    adminName: 'Rito Tensy',
+    adminEmail: 'ritotensy@gmail.com',
+    adminPhone: '+918075059538',
+    setupCompleted: false,
+    setupSkipped: false,
+    adminPermissions: Map(0) {},
+    subAdmins: [],
+    createdAt: 2025-09-18T15:39:38.761Z,
+    updatedAt: 2025-09-18T15:56:53.665Z,
+    __v: 0,
+    setupCompletedAt: 2025-09-18T15:54:19.445Z
+  },
+  userOrganizationId: undefined
+}
+Auth middleware - req.user: {
+  id: new ObjectId('68cc27babb2edd5c5b3d04e0'),
+  userType: 'organization_admin',
+  organizationId: {
+    settings: {
+      allowStudentRegistration: true,
+      allowTeacherRegistration: true,
+      requireEmailVerification: true,
+      requirePhoneVerification: true
+    },
+    securitySettings: {
+      twoFactorAuth: false,
+      sessionTimeout: 30,
+      passwordPolicy: 'medium',
+      loginAttempts: 5,
+      ipWhitelist: false,
+      auditLogging: true
+    },
+    notificationSettings: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      systemAlerts: true,
+      weeklyReports: true,
+      monthlyReports: true
+    },
+    stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+    _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+    name: 'Amal Jyothi College Of Engineering',
+    email: 'ritotensy@gmail.com',
+    phone: '+918075059538',
+    address: 'Kottayam, KL, IN - 686105',
+    website: '',
+    description: '',
+    foundedYear: 2025,
+    orgCode: 'IN-AMA-2025-JT3',
+    institutionStructure: 'multi',
+    timeZone: 'UTC-11:00',
+    departments: [ 'Computer Applications', 'Computer Science' ],
+    addSubAdmins: true,
+    twoFactorAuth: true,
+    logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+    country: 'IN',
+    state: 'KL',
+    city: 'Kottayam',
+    pincode: '686105',
+    studentStrength: 4998,
+    isGovernmentRecognized: true,
+    emailVerified: false,
+    phoneVerified: false,
+    status: 'active',
+    adminName: 'Rito Tensy',
+    adminEmail: 'ritotensy@gmail.com',
+    adminPhone: '+918075059538',
+    setupCompleted: false,
+    setupSkipped: false,
+    adminPermissions: Map(0) {},
+    subAdmins: [],
+    createdAt: 2025-09-18T15:39:38.761Z,
+    updatedAt: 2025-09-18T15:56:53.665Z,
+    __v: 0,
+    setupCompletedAt: 2025-09-18T15:54:19.445Z
+  },
+  userOrganizationId: undefined
+}
+🔍 Teacher exam data with populated creator info:
+Exam 1: {
+  title: 'Series 1',
+  department: undefined,
+  createdBy: {
+    name: 'Rejith  Raj',
+    email: 'maryloid936@gmail.com',
+    userType: 'teacher',
+    userModel: 'Teacher',
+    userId: new ObjectId('68fc909cee489af8cff4ee6e'),
+    teacherDepartments: [ [Object] ]
+  }
+}
+🔍 Teacher exam data with populated creator info:
+Exam 1: {
+  title: 'Series 1',
+  department: undefined,
+  createdBy: {
+    name: 'Rejith  Raj',
+    email: 'maryloid936@gmail.com',
+    userType: 'teacher',
+    userModel: 'Teacher',
+    userId: new ObjectId('68fc909cee489af8cff4ee6e'),
+    teacherDepartments: [ [Object] ]
+  }
+}
+[0mGET /api/exams/teacher?status=scheduled&_t=1761490820698 [32m200[0m 321.183 ms - -[0m
+[0mGET /api/exams/teacher?status=scheduled&_t=1761490820697 [32m200[0m 337.802 ms - -[0m
+Auth middleware - req.user: {
+  id: new ObjectId('68cc27babb2edd5c5b3d04e0'),
+  userType: 'organization_admin',
+  organizationId: {
+    settings: {
+      allowStudentRegistration: true,
+      allowTeacherRegistration: true,
+      requireEmailVerification: true,
+      requirePhoneVerification: true
+    },
+    securitySettings: {
+      twoFactorAuth: false,
+      sessionTimeout: 30,
+      passwordPolicy: 'medium',
+      loginAttempts: 5,
+      ipWhitelist: false,
+      auditLogging: true
+    },
+    notificationSettings: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      systemAlerts: true,
+      weeklyReports: true,
+      monthlyReports: true
+    },
+    stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+    _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+    name: 'Amal Jyothi College Of Engineering',
+    email: 'ritotensy@gmail.com',
+    phone: '+918075059538',
+    address: 'Kottayam, KL, IN - 686105',
+    website: '',
+    description: '',
+    foundedYear: 2025,
+    orgCode: 'IN-AMA-2025-JT3',
+    institutionStructure: 'multi',
+    timeZone: 'UTC-11:00',
+    departments: [ 'Computer Applications', 'Computer Science' ],
+    addSubAdmins: true,
+    twoFactorAuth: true,
+    logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+    country: 'IN',
+    state: 'KL',
+    city: 'Kottayam',
+    pincode: '686105',
+    studentStrength: 4998,
+    isGovernmentRecognized: true,
+    emailVerified: false,
+    phoneVerified: false,
+    status: 'active',
+    adminName: 'Rito Tensy',
+    adminEmail: 'ritotensy@gmail.com',
+    adminPhone: '+918075059538',
+    setupCompleted: false,
+    setupSkipped: false,
+    adminPermissions: Map(0) {},
+    subAdmins: [],
+    createdAt: 2025-09-18T15:39:38.761Z,
+    updatedAt: 2025-09-18T15:56:53.665Z,
+    __v: 0,
+    setupCompletedAt: 2025-09-18T15:54:19.445Z
+  },
+  userOrganizationId: undefined
+}
+Auth middleware - req.user: {
+  id: new ObjectId('68cc27babb2edd5c5b3d04e0'),
+  userType: 'organization_admin',
+  organizationId: {
+    settings: {
+      allowStudentRegistration: true,
+      allowTeacherRegistration: true,
+      requireEmailVerification: true,
+      requirePhoneVerification: true
+    },
+    securitySettings: {
+      twoFactorAuth: false,
+      sessionTimeout: 30,
+      passwordPolicy: 'medium',
+      loginAttempts: 5,
+      ipWhitelist: false,
+      auditLogging: true
+    },
+    notificationSettings: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      systemAlerts: true,
+      weeklyReports: true,
+      monthlyReports: true
+    },
+    stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+    _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+    name: 'Amal Jyothi College Of Engineering',
+    email: 'ritotensy@gmail.com',
+    phone: '+918075059538',
+    address: 'Kottayam, KL, IN - 686105',
+    website: '',
+    description: '',
+    foundedYear: 2025,
+    orgCode: 'IN-AMA-2025-JT3',
+    institutionStructure: 'multi',
+    timeZone: 'UTC-11:00',
+    departments: [ 'Computer Applications', 'Computer Science' ],
+    addSubAdmins: true,
+    twoFactorAuth: true,
+    logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+    country: 'IN',
+    state: 'KL',
+    city: 'Kottayam',
+    pincode: '686105',
+    studentStrength: 4998,
+    isGovernmentRecognized: true,
+    emailVerified: false,
+    phoneVerified: false,
+    status: 'active',
+    adminName: 'Rito Tensy',
+    adminEmail: 'ritotensy@gmail.com',
+    adminPhone: '+918075059538',
+    setupCompleted: false,
+    setupSkipped: false,
+    adminPermissions: Map(0) {},
+    subAdmins: [],
+    createdAt: 2025-09-18T15:39:38.761Z,
+    updatedAt: 2025-09-18T15:56:53.665Z,
+    __v: 0,
+    setupCompletedAt: 2025-09-18T15:54:19.445Z
+  },
+  userOrganizationId: undefined
+}
+Auth middleware - req.user: {
+  id: new ObjectId('68cc27babb2edd5c5b3d04e0'),
+  userType: 'organization_admin',
+  organizationId: {
+    settings: {
+      allowStudentRegistration: true,
+      allowTeacherRegistration: true,
+      requireEmailVerification: true,
+      requirePhoneVerification: true
+    },
+    securitySettings: {
+      twoFactorAuth: false,
+      sessionTimeout: 30,
+      passwordPolicy: 'medium',
+      loginAttempts: 5,
+      ipWhitelist: false,
+      auditLogging: true
+    },
+    notificationSettings: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      systemAlerts: true,
+      weeklyReports: true,
+      monthlyReports: true
+    },
+    stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+    _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+    name: 'Amal Jyothi College Of Engineering',
+    email: 'ritotensy@gmail.com',
+    phone: '+918075059538',
+    address: 'Kottayam, KL, IN - 686105',
+    website: '',
+    description: '',
+    foundedYear: 2025,
+    orgCode: 'IN-AMA-2025-JT3',
+    institutionStructure: 'multi',
+    timeZone: 'UTC-11:00',
+    departments: [ 'Computer Applications', 'Computer Science' ],
+    addSubAdmins: true,
+    twoFactorAuth: true,
+    logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+    country: 'IN',
+    state: 'KL',
+    city: 'Kottayam',
+    pincode: '686105',
+    studentStrength: 4998,
+    isGovernmentRecognized: true,
+    emailVerified: false,
+    phoneVerified: false,
+    status: 'active',
+    adminName: 'Rito Tensy',
+    adminEmail: 'ritotensy@gmail.com',
+    adminPhone: '+918075059538',
+    setupCompleted: false,
+    setupSkipped: false,
+    adminPermissions: Map(0) {},
+    subAdmins: [],
+    createdAt: 2025-09-18T15:39:38.761Z,
+    updatedAt: 2025-09-18T15:56:53.665Z,
+    __v: 0,
+    setupCompletedAt: 2025-09-18T15:54:19.445Z
+  },
+  userOrganizationId: undefined
+}
+Auth middleware - req.user: {
+  id: new ObjectId('68cc27babb2edd5c5b3d04e0'),
+  userType: 'organization_admin',
+  organizationId: {
+    settings: {
+      allowStudentRegistration: true,
+      allowTeacherRegistration: true,
+      requireEmailVerification: true,
+      requirePhoneVerification: true
+    },
+    securitySettings: {
+      twoFactorAuth: false,
+      sessionTimeout: 30,
+      passwordPolicy: 'medium',
+      loginAttempts: 5,
+      ipWhitelist: false,
+      auditLogging: true
+    },
+    notificationSettings: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      systemAlerts: true,
+      weeklyReports: true,
+      monthlyReports: true
+    },
+    stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+    _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+    name: 'Amal Jyothi College Of Engineering',
+    email: 'ritotensy@gmail.com',
+    phone: '+918075059538',
+    address: 'Kottayam, KL, IN - 686105',
+    website: '',
+    description: '',
+    foundedYear: 2025,
+    orgCode: 'IN-AMA-2025-JT3',
+    institutionStructure: 'multi',
+    timeZone: 'UTC-11:00',
+    departments: [ 'Computer Applications', 'Computer Science' ],
+    addSubAdmins: true,
+    twoFactorAuth: true,
+    logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+    country: 'IN',
+    state: 'KL',
+    city: 'Kottayam',
+    pincode: '686105',
+    studentStrength: 4998,
+    isGovernmentRecognized: true,
+    emailVerified: false,
+    phoneVerified: false,
+    status: 'active',
+    adminName: 'Rito Tensy',
+    adminEmail: 'ritotensy@gmail.com',
+    adminPhone: '+918075059538',
+    setupCompleted: false,
+    setupSkipped: false,
+    adminPermissions: Map(0) {},
+    subAdmins: [],
+    createdAt: 2025-09-18T15:39:38.761Z,
+    updatedAt: 2025-09-18T15:56:53.665Z,
+    __v: 0,
+    setupCompletedAt: 2025-09-18T15:54:19.445Z
+  },
+  userOrganizationId: undefined
+}
+Auth middleware - req.user: {
+  id: new ObjectId('68cc27babb2edd5c5b3d04e0'),
+  userType: 'organization_admin',
+  organizationId: {
+    settings: {
+      allowStudentRegistration: true,
+      allowTeacherRegistration: true,
+      requireEmailVerification: true,
+      requirePhoneVerification: true
+    },
+    securitySettings: {
+      twoFactorAuth: false,
+      sessionTimeout: 30,
+      passwordPolicy: 'medium',
+      loginAttempts: 5,
+      ipWhitelist: false,
+      auditLogging: true
+    },
+    notificationSettings: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      systemAlerts: true,
+      weeklyReports: true,
+      monthlyReports: true
+    },
+    stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+    _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+    name: 'Amal Jyothi College Of Engineering',
+    email: 'ritotensy@gmail.com',
+    phone: '+918075059538',
+    address: 'Kottayam, KL, IN - 686105',
+    website: '',
+    description: '',
+    foundedYear: 2025,
+    orgCode: 'IN-AMA-2025-JT3',
+    institutionStructure: 'multi',
+    timeZone: 'UTC-11:00',
+    departments: [ 'Computer Applications', 'Computer Science' ],
+    addSubAdmins: true,
+    twoFactorAuth: true,
+    logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+    country: 'IN',
+    state: 'KL',
+    city: 'Kottayam',
+    pincode: '686105',
+    studentStrength: 4998,
+    isGovernmentRecognized: true,
+    emailVerified: false,
+    phoneVerified: false,
+    status: 'active',
+    adminName: 'Rito Tensy',
+    adminEmail: 'ritotensy@gmail.com',
+    adminPhone: '+918075059538',
+    setupCompleted: false,
+    setupSkipped: false,
+    adminPermissions: Map(0) {},
+    subAdmins: [],
+    createdAt: 2025-09-18T15:39:38.761Z,
+    updatedAt: 2025-09-18T15:56:53.665Z,
+    __v: 0,
+    setupCompletedAt: 2025-09-18T15:54:19.445Z
+  },
+  userOrganizationId: undefined
+}
+🔍 Subject query: {
+  "organizationId": {
+    "settings": {
+      "allowStudentRegistration": true,
+      "allowTeacherRegistration": true,
+      "requireEmailVerification": true,
+      "requirePhoneVerification": true
+    },
+    "securitySettings": {
+      "twoFactorAuth": false,
+      "sessionTimeout": 30,
+      "passwordPolicy": "medium",
+      "loginAttempts": 5,
+      "ipWhitelist": false,
+      "auditLogging": true
+    },
+    "notificationSettings": {
+      "emailNotifications": true,
+      "smsNotifications": false,
+      "pushNotifications": true,
+      "systemAlerts": true,
+      "weeklyReports": true,
+      "monthlyReports": true
+    },
+    "stats": {
+      "totalStudents": 0,
+      "totalTeachers": 0,
+      "totalSubAdmins": 0
+    },
+    "_id": "68cc27babb2edd5c5b3d04dc",
+    "name": "Amal Jyothi College Of Engineering",
+    "email": "ritotensy@gmail.com",
+    "phone": "+918075059538",
+    "address": "Kottayam, KL, IN - 686105",
+    "website": "",
+    "description": "",
+    "foundedYear": 2025,
+    "orgCode": "IN-AMA-2025-JT3",
+    "institutionStructure": "multi",
+    "timeZone": "UTC-11:00",
+    "departments": [
+      "Computer Applications",
+      "Computer Science"
+    ],
+    "addSubAdmins": true,
+    "twoFactorAuth": true,
+    "logo": "uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg",
+    "country": "IN",
+    "state": "KL",
+    "city": "Kottayam",
+    "pincode": "686105",
+    "studentStrength": 4998,
+    "isGovernmentRecognized": true,
+    "emailVerified": false,
+    "phoneVerified": false,
+    "status": "active",
+    "adminName": "Rito Tensy",
+    "adminEmail": "ritotensy@gmail.com",
+    "adminPhone": "+918075059538",
+    "setupCompleted": false,
+    "setupSkipped": false,
+    "adminPermissions": {},
+    "subAdmins": [],
+    "createdAt": "2025-09-18T15:39:38.761Z",
+    "updatedAt": "2025-09-18T15:56:53.665Z",
+    "__v": 0,
+    "setupCompletedAt": "2025-09-18T15:54:19.445Z"
+  },
+  "status": "active"
+}
+📚 Found subjects: 1 [
+  {
+    id: new ObjectId('68fd000c096ecda7e6561524'),
+    name: 'Data Science and Machine Learning',
+    department: 'Computer Application'
+  }
+]
+[0mGET /api/subjects/ [36m304[0m 189.500 ms - -[0m
+🔍 Teacher found: {
+  teacherId: new ObjectId('68fc909cee489af8cff4ee6e'),
+  teacher: {
+    id: new ObjectId('68fc909cee489af8cff4ee6e'),
+    firstName: 'Rejith',
+    lastName: 'Raj',
+    departments: [ [Object] ]
+  }
+}
+✅ Teacher departments populated: [
+  {
+    _id: new ObjectId('68d765752d486a37e6a84418'),
+    name: 'Computer Application'
+  }
+]
+🔍 Teacher found: {
+  teacherId: new ObjectId('68fc909cee489af8cff4ee6e'),
+  teacher: {
+    id: new ObjectId('68fc909cee489af8cff4ee6e'),
+    firstName: 'Rejith',
+    lastName: 'Raj',
+    departments: [ [Object] ]
+  }
+}
+✅ Teacher departments populated: [
+  {
+    _id: new ObjectId('68d765752d486a37e6a84418'),
+    name: 'Computer Application'
+  }
+]
+🔍 Teacher found: {
+  teacherId: new ObjectId('68fc909cee489af8cff4ee6e'),
+  teacher: {
+    id: new ObjectId('68fc909cee489af8cff4ee6e'),
+    firstName: 'Rejith',
+    lastName: 'Raj',
+    departments: [ [Object] ]
+  }
+}
+✅ Teacher departments populated: [
+  {
+    _id: new ObjectId('68d765752d486a37e6a84418'),
+    name: 'Computer Application'
+  }
+]
+🔍 Teacher found: {
+  teacherId: new ObjectId('68fc909cee489af8cff4ee6e'),
+  teacher: {
+    id: new ObjectId('68fc909cee489af8cff4ee6e'),
+    firstName: 'Rejith',
+    lastName: 'Raj',
+    departments: [ [Object] ]
+  }
+}
+✅ Teacher departments populated: [
+  {
+    _id: new ObjectId('68d765752d486a37e6a84418'),
+    name: 'Computer Application'
+  }
+]
+Auth middleware - req.user: {
+  id: new ObjectId('68cc27babb2edd5c5b3d04e0'),
+  userType: 'organization_admin',
+  organizationId: {
+    settings: {
+      allowStudentRegistration: true,
+      allowTeacherRegistration: true,
+      requireEmailVerification: true,
+      requirePhoneVerification: true
+    },
+    securitySettings: {
+      twoFactorAuth: false,
+      sessionTimeout: 30,
+      passwordPolicy: 'medium',
+      loginAttempts: 5,
+      ipWhitelist: false,
+      auditLogging: true
+    },
+    notificationSettings: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      systemAlerts: true,
+      weeklyReports: true,
+      monthlyReports: true
+    },
+    stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+    _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+    name: 'Amal Jyothi College Of Engineering',
+    email: 'ritotensy@gmail.com',
+    phone: '+918075059538',
+    address: 'Kottayam, KL, IN - 686105',
+    website: '',
+    description: '',
+    foundedYear: 2025,
+    orgCode: 'IN-AMA-2025-JT3',
+    institutionStructure: 'multi',
+    timeZone: 'UTC-11:00',
+    departments: [ 'Computer Applications', 'Computer Science' ],
+    addSubAdmins: true,
+    twoFactorAuth: true,
+    logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+    country: 'IN',
+    state: 'KL',
+    city: 'Kottayam',
+    pincode: '686105',
+    studentStrength: 4998,
+    isGovernmentRecognized: true,
+    emailVerified: false,
+    phoneVerified: false,
+    status: 'active',
+    adminName: 'Rito Tensy',
+    adminEmail: 'ritotensy@gmail.com',
+    adminPhone: '+918075059538',
+    setupCompleted: false,
+    setupSkipped: false,
+    adminPermissions: Map(0) {},
+    subAdmins: [],
+    createdAt: 2025-09-18T15:39:38.761Z,
+    updatedAt: 2025-09-18T15:56:53.665Z,
+    __v: 0,
+    setupCompletedAt: 2025-09-18T15:54:19.445Z
+  },
+  userOrganizationId: undefined
+}
+🔍 Subject query: {
+  "organizationId": {
+    "settings": {
+      "allowStudentRegistration": true,
+      "allowTeacherRegistration": true,
+      "requireEmailVerification": true,
+      "requirePhoneVerification": true
+    },
+    "securitySettings": {
+      "twoFactorAuth": false,
+      "sessionTimeout": 30,
+      "passwordPolicy": "medium",
+      "loginAttempts": 5,
+      "ipWhitelist": false,
+      "auditLogging": true
+    },
+    "notificationSettings": {
+      "emailNotifications": true,
+      "smsNotifications": false,
+      "pushNotifications": true,
+      "systemAlerts": true,
+      "weeklyReports": true,
+      "monthlyReports": true
+    },
+    "stats": {
+      "totalStudents": 0,
+      "totalTeachers": 0,
+      "totalSubAdmins": 0
+    },
+    "_id": "68cc27babb2edd5c5b3d04dc",
+    "name": "Amal Jyothi College Of Engineering",
+    "email": "ritotensy@gmail.com",
+    "phone": "+918075059538",
+    "address": "Kottayam, KL, IN - 686105",
+    "website": "",
+    "description": "",
+    "foundedYear": 2025,
+    "orgCode": "IN-AMA-2025-JT3",
+    "institutionStructure": "multi",
+    "timeZone": "UTC-11:00",
+    "departments": [
+      "Computer Applications",
+      "Computer Science"
+    ],
+    "addSubAdmins": true,
+    "twoFactorAuth": true,
+    "logo": "uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg",
+    "country": "IN",
+    "state": "KL",
+    "city": "Kottayam",
+    "pincode": "686105",
+    "studentStrength": 4998,
+    "isGovernmentRecognized": true,
+    "emailVerified": false,
+    "phoneVerified": false,
+    "status": "active",
+    "adminName": "Rito Tensy",
+    "adminEmail": "ritotensy@gmail.com",
+    "adminPhone": "+918075059538",
+    "setupCompleted": false,
+    "setupSkipped": false,
+    "adminPermissions": {},
+    "subAdmins": [],
+    "createdAt": "2025-09-18T15:39:38.761Z",
+    "updatedAt": "2025-09-18T15:56:53.665Z",
+    "__v": 0,
+    "setupCompletedAt": "2025-09-18T15:54:19.445Z"
+  },
+  "status": "active"
+}
+🔍 Exam data with populated creator info:
+Exam 1: {
+  title: 'Series 1',
+  department: undefined,
+  createdBy: {
+    name: 'Rejith  Raj',
+    email: 'maryloid936@gmail.com',
+    userType: 'teacher',
+    userModel: 'Teacher',
+    userId: new ObjectId('68fc909cee489af8cff4ee6e'),
+    teacherDepartments: [ [Object] ]
+  }
+}
+📤 API Response data structure:
+Exams count: 1
+First exam createdBy structure: {
+  "profile": {
+    "firstName": "Rejith ",
+    "lastName": "Raj"
+  },
+  "_id": "68fc909cee489af8cff4ee70",
+  "email": "maryloid936@gmail.com",
+  "userType": "teacher",
+  "userId": "68fc909cee489af8cff4ee6e",
+  "userModel": "Teacher",
+  "fullName": "Rejith  Raj",
+  "id": "68fc909cee489af8cff4ee70"
+}
+🔍 Exam data with populated creator info:
+Exam 1: {
+  title: 'Series 1',
+  department: undefined,
+  createdBy: {
+    name: 'Rejith  Raj',
+    email: 'maryloid936@gmail.com',
+    userType: 'teacher',
+    userModel: 'Teacher',
+    userId: new ObjectId('68fc909cee489af8cff4ee6e'),
+    teacherDepartments: [ [Object] ]
+  }
+}
+📤 API Response data structure:
+Exams count: 1
+First exam createdBy structure: {
+  "profile": {
+    "firstName": "Rejith ",
+    "lastName": "Raj"
+  },
+  "_id": "68fc909cee489af8cff4ee70",
+  "email": "maryloid936@gmail.com",
+  "userType": "teacher",
+  "userId": "68fc909cee489af8cff4ee6e",
+  "userModel": "Teacher",
+  "fullName": "Rejith  Raj",
+  "id": "68fc909cee489af8cff4ee70"
+}
+[0mGET /api/exams/?_t=1761490823017 [32m200[0m 301.866 ms - -[0m
+[0mGET /api/exams/?limit=1000&_t=1761490823017 [32m200[0m 295.323 ms - -[0m
+🔍 Exam data with populated creator info:
+Exam 1: {
+  title: 'Series 1',
+  department: undefined,
+  createdBy: {
+    name: 'Rejith  Raj',
+    email: 'maryloid936@gmail.com',
+    userType: 'teacher',
+    userModel: 'Teacher',
+    userId: new ObjectId('68fc909cee489af8cff4ee6e'),
+    teacherDepartments: [ [Object] ]
+  }
+}
+📤 API Response data structure:
+Exams count: 1
+First exam createdBy structure: {
+  "profile": {
+    "firstName": "Rejith ",
+    "lastName": "Raj"
+  },
+  "_id": "68fc909cee489af8cff4ee70",
+  "email": "maryloid936@gmail.com",
+  "userType": "teacher",
+  "userId": "68fc909cee489af8cff4ee6e",
+  "userModel": "Teacher",
+  "fullName": "Rejith  Raj",
+  "id": "68fc909cee489af8cff4ee70"
+}
+[0mGET /api/exams/?limit=1000&_t=1761490823019 [32m200[0m 298.447 ms - -[0m
+🔍 Exam data with populated creator info:
+Exam 1: {
+  title: 'Series 1',
+  department: undefined,
+  createdBy: {
+    name: 'Rejith  Raj',
+    email: 'maryloid936@gmail.com',
+    userType: 'teacher',
+    userModel: 'Teacher',
+    userId: new ObjectId('68fc909cee489af8cff4ee6e'),
+    teacherDepartments: [ [Object] ]
+  }
+}
+📤 API Response data structure:
+Exams count: 1
+First exam createdBy structure: {
+  "profile": {
+    "firstName": "Rejith ",
+    "lastName": "Raj"
+  },
+  "_id": "68fc909cee489af8cff4ee70",
+  "email": "maryloid936@gmail.com",
+  "userType": "teacher",
+  "userId": "68fc909cee489af8cff4ee6e",
+  "userModel": "Teacher",
+  "fullName": "Rejith  Raj",
+  "id": "68fc909cee489af8cff4ee70"
+}
+[0mGET /api/exams/?_t=1761490823018 [32m200[0m 314.762 ms - -[0m
+📚 Found subjects: 1 [
+  {
+    id: new ObjectId('68fd000c096ecda7e6561524'),
+    name: 'Data Science and Machine Learning',
+    department: 'Computer Application'
+  }
+]
+[0mGET /api/subjects/ [36m304[0m 170.731 ms - -[0m
+Auth middleware - req.user: {
+  id: new ObjectId('68cc27babb2edd5c5b3d04e0'),
+  userType: 'organization_admin',
+  organizationId: {
+    settings: {
+      allowStudentRegistration: true,
+      allowTeacherRegistration: true,
+      requireEmailVerification: true,
+      requirePhoneVerification: true
+    },
+    securitySettings: {
+      twoFactorAuth: false,
+      sessionTimeout: 30,
+      passwordPolicy: 'medium',
+      loginAttempts: 5,
+      ipWhitelist: false,
+      auditLogging: true
+    },
+    notificationSettings: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      systemAlerts: true,
+      weeklyReports: true,
+      monthlyReports: true
+    },
+    stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+    _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+    name: 'Amal Jyothi College Of Engineering',
+    email: 'ritotensy@gmail.com',
+    phone: '+918075059538',
+    address: 'Kottayam, KL, IN - 686105',
+    website: '',
+    description: '',
+    foundedYear: 2025,
+    orgCode: 'IN-AMA-2025-JT3',
+    institutionStructure: 'multi',
+    timeZone: 'UTC-11:00',
+    departments: [ 'Computer Applications', 'Computer Science' ],
+    addSubAdmins: true,
+    twoFactorAuth: true,
+    logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+    country: 'IN',
+    state: 'KL',
+    city: 'Kottayam',
+    pincode: '686105',
+    studentStrength: 4998,
+    isGovernmentRecognized: true,
+    emailVerified: false,
+    phoneVerified: false,
+    status: 'active',
+    adminName: 'Rito Tensy',
+    adminEmail: 'ritotensy@gmail.com',
+    adminPhone: '+918075059538',
+    setupCompleted: false,
+    setupSkipped: false,
+    adminPermissions: Map(0) {},
+    subAdmins: [],
+    createdAt: 2025-09-18T15:39:38.761Z,
+    updatedAt: 2025-09-18T15:56:53.665Z,
+    __v: 0,
+    setupCompletedAt: 2025-09-18T15:54:19.445Z
+  },
+  userOrganizationId: undefined
+}
+🔍 Question Bank Query - req.user: {
+  id: new ObjectId('68cc27babb2edd5c5b3d04e0'),
+  email: 'ritotensy@gmail.com',
+  userType: 'organization_admin',
+  userModel: 'Organization',
+  userId: {
+    settings: {
+      allowStudentRegistration: true,
+      allowTeacherRegistration: true,
+      requireEmailVerification: true,
+      requirePhoneVerification: true
+    },
+    securitySettings: {
+      twoFactorAuth: false,
+      sessionTimeout: 30,
+      passwordPolicy: 'medium',
+      loginAttempts: 5,
+      ipWhitelist: false,
+      auditLogging: true
+    },
+    notificationSettings: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      systemAlerts: true,
+      weeklyReports: true,
+      monthlyReports: true
+    },
+    stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+    _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+    name: 'Amal Jyothi College Of Engineering',
+    email: 'ritotensy@gmail.com',
+    phone: '+918075059538',
+    address: 'Kottayam, KL, IN - 686105',
+    website: '',
+    description: '',
+    foundedYear: 2025,
+    orgCode: 'IN-AMA-2025-JT3',
+    institutionStructure: 'multi',
+    timeZone: 'UTC-11:00',
+    departments: [ 'Computer Applications', 'Computer Science' ],
+    addSubAdmins: true,
+    twoFactorAuth: true,
+    logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+    country: 'IN',
+    state: 'KL',
+    city: 'Kottayam',
+    pincode: '686105',
+    studentStrength: 4998,
+    isGovernmentRecognized: true,
+    emailVerified: false,
+    phoneVerified: false,
+    status: 'active',
+    adminName: 'Rito Tensy',
+    adminEmail: 'ritotensy@gmail.com',
+    adminPhone: '+918075059538',
+    setupCompleted: false,
+    setupSkipped: false,
+    adminPermissions: Map(0) {},
+    subAdmins: [],
+    createdAt: 2025-09-18T15:39:38.761Z,
+    updatedAt: 2025-09-18T15:56:53.665Z,
+    __v: 0,
+    setupCompletedAt: 2025-09-18T15:54:19.445Z
+  },
+  userDetails: {
+    settings: {
+      allowStudentRegistration: true,
+      allowTeacherRegistration: true,
+      requireEmailVerification: true,
+      requirePhoneVerification: true
+    },
+    securitySettings: {
+      twoFactorAuth: false,
+      sessionTimeout: 30,
+      passwordPolicy: 'medium',
+      loginAttempts: 5,
+      ipWhitelist: false,
+      auditLogging: true
+    },
+    notificationSettings: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      systemAlerts: true,
+      weeklyReports: true,
+      monthlyReports: true
+    },
+    stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+    _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+    name: 'Amal Jyothi College Of Engineering',
+    email: 'ritotensy@gmail.com',
+    phone: '+918075059538',
+    address: 'Kottayam, KL, IN - 686105',
+    website: '',
+    description: '',
+    foundedYear: 2025,
+    orgCode: 'IN-AMA-2025-JT3',
+    institutionStructure: 'multi',
+    timeZone: 'UTC-11:00',
+    departments: [ 'Computer Applications', 'Computer Science' ],
+    addSubAdmins: true,
+    twoFactorAuth: true,
+    logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+    country: 'IN',
+    state: 'KL',
+    city: 'Kottayam',
+    pincode: '686105',
+    studentStrength: 4998,
+    isGovernmentRecognized: true,
+    emailVerified: false,
+    phoneVerified: false,
+    status: 'active',
+    adminName: 'Rito Tensy',
+    adminEmail: 'ritotensy@gmail.com',
+    adminPhone: '+918075059538',
+    setupCompleted: false,
+    setupSkipped: false,
+    adminPermissions: Map(0) {},
+    subAdmins: [],
+    createdAt: 2025-09-18T15:39:38.761Z,
+    updatedAt: 2025-09-18T15:56:53.665Z,
+    __v: 0,
+    setupCompletedAt: 2025-09-18T15:54:19.445Z
+  },
+  authProvider: 'local',
+  organizationId: {
+    settings: {
+      allowStudentRegistration: true,
+      allowTeacherRegistration: true,
+      requireEmailVerification: true,
+      requirePhoneVerification: true
+    },
+    securitySettings: {
+      twoFactorAuth: false,
+      sessionTimeout: 30,
+      passwordPolicy: 'medium',
+      loginAttempts: 5,
+      ipWhitelist: false,
+      auditLogging: true
+    },
+    notificationSettings: {
+      emailNotifications: true,
+      smsNotifications: false,
+      pushNotifications: true,
+      systemAlerts: true,
+      weeklyReports: true,
+      monthlyReports: true
+    },
+    stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+    _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+    name: 'Amal Jyothi College Of Engineering',
+    email: 'ritotensy@gmail.com',
+    phone: '+918075059538',
+    address: 'Kottayam, KL, IN - 686105',
+    website: '',
+    description: '',
+    foundedYear: 2025,
+    orgCode: 'IN-AMA-2025-JT3',
+    institutionStructure: 'multi',
+    timeZone: 'UTC-11:00',
+    departments: [ 'Computer Applications', 'Computer Science' ],
+    addSubAdmins: true,
+    twoFactorAuth: true,
+    logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+    country: 'IN',
+    state: 'KL',
+    city: 'Kottayam',
+    pincode: '686105',
+    studentStrength: 4998,
+    isGovernmentRecognized: true,
+    emailVerified: false,
+    phoneVerified: false,
+    status: 'active',
+    adminName: 'Rito Tensy',
+    adminEmail: 'ritotensy@gmail.com',
+    adminPhone: '+918075059538',
+    setupCompleted: false,
+    setupSkipped: false,
+    adminPermissions: Map(0) {},
+    subAdmins: [],
+    createdAt: 2025-09-18T15:39:38.761Z,
+    updatedAt: 2025-09-18T15:56:53.665Z,
+    __v: 0,
+    setupCompletedAt: 2025-09-18T15:54:19.445Z
+  }
+}
+🔍 Question Bank Query - organizationId: {
+  settings: {
+    allowStudentRegistration: true,
+    allowTeacherRegistration: true,
+    requireEmailVerification: true,
+    requirePhoneVerification: true
+  },
+  securitySettings: {
+    twoFactorAuth: false,
+    sessionTimeout: 30,
+    passwordPolicy: 'medium',
+    loginAttempts: 5,
+    ipWhitelist: false,
+    auditLogging: true
+  },
+  notificationSettings: {
+    emailNotifications: true,
+    smsNotifications: false,
+    pushNotifications: true,
+    systemAlerts: true,
+    weeklyReports: true,
+    monthlyReports: true
+  },
+  stats: { totalStudents: 0, totalTeachers: 0, totalSubAdmins: 0 },
+  _id: new ObjectId('68cc27babb2edd5c5b3d04dc'),
+  name: 'Amal Jyothi College Of Engineering',
+  email: 'ritotensy@gmail.com',
+  phone: '+918075059538',
+  address: 'Kottayam, KL, IN - 686105',
+  website: '',
+  description: '',
+  foundedYear: 2025,
+  orgCode: 'IN-AMA-2025-JT3',
+  institutionStructure: 'multi',
+  timeZone: 'UTC-11:00',
+  departments: [ 'Computer Applications', 'Computer Science' ],
+  addSubAdmins: true,
+  twoFactorAuth: true,
+  logo: 'uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg',
+  country: 'IN',
+  state: 'KL',
+  city: 'Kottayam',
+  pincode: '686105',
+  studentStrength: 4998,
+  isGovernmentRecognized: true,
+  emailVerified: false,
+  phoneVerified: false,
+  status: 'active',
+  adminName: 'Rito Tensy',
+  adminEmail: 'ritotensy@gmail.com',
+  adminPhone: '+918075059538',
+  setupCompleted: false,
+  setupSkipped: false,
+  adminPermissions: Map(0) {},
+  subAdmins: [],
+  createdAt: 2025-09-18T15:39:38.761Z,
+  updatedAt: 2025-09-18T15:56:53.665Z,
+  __v: 0,
+  setupCompletedAt: 2025-09-18T15:54:19.445Z
+}
+🔍 Question Bank Filter: {
+  "organizationId": {
+    "settings": {
+      "allowStudentRegistration": true,
+      "allowTeacherRegistration": true,
+      "requireEmailVerification": true,
+      "requirePhoneVerification": true
+    },
+    "securitySettings": {
+      "twoFactorAuth": false,
+      "sessionTimeout": 30,
+      "passwordPolicy": "medium",
+      "loginAttempts": 5,
+      "ipWhitelist": false,
+      "auditLogging": true
+    },
+    "notificationSettings": {
+      "emailNotifications": true,
+      "smsNotifications": false,
+      "pushNotifications": true,
+      "systemAlerts": true,
+      "weeklyReports": true,
+      "monthlyReports": true
+    },
+    "stats": {
+      "totalStudents": 0,
+      "totalTeachers": 0,
+      "totalSubAdmins": 0
+    },
+    "_id": "68cc27babb2edd5c5b3d04dc",
+    "name": "Amal Jyothi College Of Engineering",
+    "email": "ritotensy@gmail.com",
+    "phone": "+918075059538",
+    "address": "Kottayam, KL, IN - 686105",
+    "website": "",
+    "description": "",
+    "foundedYear": 2025,
+    "orgCode": "IN-AMA-2025-JT3",
+    "institutionStructure": "multi",
+    "timeZone": "UTC-11:00",
+    "departments": [
+      "Computer Applications",
+      "Computer Science"
+    ],
+    "addSubAdmins": true,
+    "twoFactorAuth": true,
+    "logo": "uploads/logo_IN-AMA-2025-JT3_AmalJyothiCollegeOfEngineering_1758209978657_770434557.jpeg",
+    "country": "IN",
+    "state": "KL",
+    "city": "Kottayam",
+    "pincode": "686105",
+    "studentStrength": 4998,
+    "isGovernmentRecognized": true,
+    "emailVerified": false,
+    "phoneVerified": false,
+    "status": "active",
+    "adminName": "Rito Tensy",
+    "adminEmail": "ritotensy@gmail.com",
+    "adminPhone": "+918075059538",
+    "setupCompleted": false,
+    "setupSkipped": false,
+    "adminPermissions": {},
+    "subAdmins": [],
+    "createdAt": "2025-09-18T15:39:38.761Z",
+    "updatedAt": "2025-09-18T15:56:53.665Z",
+    "__v": 0,
+    "setupCompletedAt": "2025-09-18T15:54:19.445Z"
+  },
+  "status": "active"
+}
+✅ Found question banks: 0
+✅ Total count: 0
+[0mGET /api/question-banks/?status=active&limit=1000 [36m304[0m 193.087 ms - -[0m
+SIGTERM received. Shutting down gracefully...

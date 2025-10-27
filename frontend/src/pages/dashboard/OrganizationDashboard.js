@@ -28,6 +28,8 @@ import {
   Download,
   Eye,
   Calendar as CalendarIcon,
+  Edit,
+  XCircle,
 } from 'lucide-react';
 import {
   LineChart,
@@ -42,23 +44,94 @@ import {
 } from 'recharts';
 import { useAuth } from '../../contexts/AuthContext';
 import { clearAuthData } from '../../utils/clearAuth';
+import { examAPI } from '../../services/api';
 import UserManagement from './UserManagement';
+import StudentManagement from './StudentManagement';
+import TeacherManagement from './TeacherManagement';
 import ExamManagement from './ExamManagement';
 import QuestionBankManagement from './QuestionBankManagement';
 import QuestionBank from './QuestionBank';
 import DepartmentManagement from './DepartmentManagement';
 import SubjectManagement from './SubjectManagement';
+import ScheduleManagement from './ScheduleManagement';
 import '../../styles/dashboard/organization.css';
 
-const OrganizationDashboard = () => {
+const OrganizationDashboard = ({ onNavigateToDepartmentDetail }) => {
   const { user, dashboardData, logout } = useAuth();
   const [isLoaded, setIsLoaded] = useState(false);
   const [activeModule, setActiveModule] = useState('dashboard');
   const [selectedPeriod, setSelectedPeriod] = useState('12 Months');
+  const [allExams, setAllExams] = useState([]);
+  const [examsLoading, setExamsLoading] = useState(false);
+  
+  // Edit exam state
+  const [showEditExam, setShowEditExam] = useState(false);
+  const [editingExam, setEditingExam] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    title: '',
+    subject: '',
+    class: '',
+    department: '',
+    examType: 'mcq',
+    totalQuestions: 0,
+    marksPerQuestion: 0,
+    totalMarks: 0,
+    scheduledDate: '',
+    startTime: '',
+    duration: 0
+  });
 
   useEffect(() => {
     setTimeout(() => setIsLoaded(true), 500);
+    fetchAllExams();
   }, []);
+
+  const fetchAllExams = async () => {
+    try {
+      setExamsLoading(true);
+      // Use getExamsByTeacher which now supports org admin view
+      const response = await examAPI.getExamsByTeacher({ status: 'scheduled' });
+      if (response.success) {
+        setAllExams(response.data.exams || []);
+      }
+    } catch (error) {
+      console.error('Error fetching exams:', error);
+    } finally {
+      setExamsLoading(false);
+    }
+  };
+
+  const handleEditExam = (exam) => {
+    setEditingExam(exam);
+    setEditFormData({
+      title: exam.title || '',
+      subject: exam.subject || '',
+      class: exam.class || '',
+      department: exam.department || '',
+      examType: exam.examType || 'mcq',
+      totalQuestions: exam.totalQuestions || 0,
+      marksPerQuestion: exam.marksPerQuestion || 0,
+      totalMarks: exam.totalMarks || 0,
+      scheduledDate: exam.scheduledDate ? exam.scheduledDate.split('T')[0] : '',
+      startTime: exam.startTime || '',
+      duration: exam.duration || 0
+    });
+    setShowEditExam(true);
+  };
+
+  const handleUpdateExam = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await examAPI.updateExam(editingExam.id, editFormData);
+      if (response.success) {
+        setShowEditExam(false);
+        setEditingExam(null);
+        fetchAllExams();
+      }
+    } catch (error) {
+      console.error('Error updating exam:', error);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -121,14 +194,13 @@ const OrganizationDashboard = () => {
   const coreModules = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" />, active: true },
     { id: 'user-management', label: 'User Management', icon: <Users className="w-5 h-5" />, count: '1,295' },
-    { id: 'students', label: 'Students', icon: <Users className="w-5 h-5" />, count: '1,250' },
-    { id: 'teachers', label: 'Teachers', icon: <User className="w-5 h-5" />, count: '45' },
     { id: 'departments', label: 'Departments', icon: <GraduationCap className="w-5 h-5" />, count: '8' },
     { id: 'subjects', label: 'Subjects', icon: <BookOpen className="w-5 h-5" />, count: '24' },
   ];
 
   const academicModules = [
-    { id: 'exams', label: 'Exams', icon: <ClipboardList className="w-5 h-5" />, count: '24' },
+    { id: 'exams', label: 'Exams', icon: <ClipboardList className="w-5 h-5" />, count: allExams.length.toString() },
+    { id: 'schedule', label: 'Schedule', icon: <Calendar className="w-5 h-5" />, count: '12' },
     { id: 'questionbank', label: 'Question Bank', icon: <MessageSquare className="w-5 h-5" />, badge: 'NEW' },
     { id: 'assessments', label: 'Assessments', icon: <BookOpen className="w-5 h-5" />, count: '8' },
     { id: 'courses', label: 'Courses', icon: <BookOpen className="w-5 h-5" />, count: '15' },
@@ -318,12 +390,18 @@ const OrganizationDashboard = () => {
         <main className="flex-1 p-4 bg-gray-50">
           {activeModule === 'user-management' ? (
             <UserManagement />
+          ) : activeModule === 'students' ? (
+            <StudentManagement />
+          ) : activeModule === 'teachers' ? (
+            <TeacherManagement />
           ) : activeModule === 'departments' ? (
-            <DepartmentManagement />
+            <DepartmentManagement onNavigateToDepartmentDetail={onNavigateToDepartmentDetail} />
           ) : activeModule === 'subjects' ? (
             <SubjectManagement />
           ) : activeModule === 'exams' ? (
             <ExamManagement />
+          ) : activeModule === 'schedule' ? (
+            <ScheduleManagement />
           ) : activeModule === 'questionbank' ? (
             <QuestionBankManagement />
           ) : (
@@ -485,32 +563,58 @@ const OrganizationDashboard = () => {
             {/* Recent Exams */}
             <div className="lg:col-span-2 bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-bold text-gray-900">Recent Exams</h2>
-                <span className="text-sm text-purple-600 font-medium cursor-pointer hover:underline">See All Exams →</span>
+                <h2 className="text-lg font-bold text-gray-900">Upcoming Exams</h2>
+                <span 
+                  onClick={() => setActiveModule('exams')} 
+                  className="text-sm text-purple-600 font-medium cursor-pointer hover:underline"
+                >
+                  See All Exams →
+                </span>
               </div>
-              <p className="text-sm text-gray-600 mb-4">Latest exam submissions and grading status.</p>
+              <p className="text-sm text-gray-600 mb-4">Scheduled examinations in your organization.</p>
               <div className="space-y-3">
-                {recentExams.map((exam) => (
-                  <div key={exam.id} className="flex items-center py-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 rounded-lg px-2 transition-colors">
-                    <StatusDot status={exam.status} />
-                    <div className="flex-1 ml-3">
-                      <h3 className="text-sm font-semibold text-gray-900 mb-1">{exam.type}</h3>
-                      <p className="text-xs text-gray-600">{exam.subject} • {exam.students} students</p>
-                    </div>
-                    <div className="text-right mr-3">
-                      <p className="text-sm font-semibold text-gray-900 mb-1">{exam.score}</p>
-                      <p className="text-xs text-gray-600">{exam.date}</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button className="p-1 rounded-md hover:bg-gray-100 transition-colors">
-                        <Eye className="w-4 h-4 text-gray-400" />
-                      </button>
-                      <button className="p-1 rounded-md hover:bg-gray-100 transition-colors">
-                        <MoreVertical className="w-4 h-4 text-gray-400" />
-                      </button>
-                    </div>
+                {examsLoading ? (
+                  <div className="text-center py-8">
+                    <RefreshCw className="w-5 h-5 animate-spin mx-auto text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-500">Loading exams...</p>
                   </div>
-                ))}
+                ) : allExams.length > 0 ? (
+                  allExams.slice(0, 5).map((exam) => (
+                    <div key={exam._id} className="flex items-center py-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 rounded-lg px-2 transition-colors">
+                      <div className={`w-2 h-2 rounded-full mr-3 ${
+                        exam.status === 'scheduled' ? 'bg-blue-500' :
+                        exam.status === 'active' ? 'bg-green-500' :
+                        'bg-gray-400'
+                      }`} />
+                      <div className="flex-1">
+                        <h3 className="text-sm font-semibold text-gray-900 mb-1">{exam.title}</h3>
+                        <p className="text-xs text-gray-600">{exam.subject} • {exam.class}</p>
+                      </div>
+                      <div className="text-right mr-3">
+                        <p className="text-sm font-semibold text-gray-900 mb-1">
+                          {new Date(exam.scheduledDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </p>
+                        <p className="text-xs text-gray-600">{exam.startTime}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button 
+                          onClick={() => handleEditExam(exam)}
+                          className="p-1 rounded-md hover:bg-blue-100 transition-colors"
+                          title="Edit exam"
+                        >
+                          <Edit className="w-4 h-4 text-blue-600" />
+                        </button>
+                        <button className="p-1 rounded-md hover:bg-gray-100 transition-colors">
+                          <Eye className="w-4 h-4 text-gray-400" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    No upcoming exams scheduled
+                  </div>
+                )}
               </div>
             </div>
             
@@ -576,6 +680,171 @@ const OrganizationDashboard = () => {
           )}
         </main>
       </div>
+
+      {/* Edit Exam Modal */}
+      {showEditExam && editingExam && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6 border-b border-gray-200 pb-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Edit Exam</h2>
+                  <p className="text-sm text-gray-600 mt-1">Update the exam details</p>
+                </div>
+                <button
+                  onClick={() => setShowEditExam(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateExam} className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Exam Title</label>
+                  <input
+                    type="text"
+                    value={editFormData.title}
+                    onChange={(e) => setEditFormData({...editFormData, title: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="e.g., Mathematics Mid-term Exam"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Subject *</label>
+                  <input
+                    type="text"
+                    value={editFormData.subject}
+                    onChange={(e) => setEditFormData({...editFormData, subject: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Class/Group *</label>
+                  <input
+                    type="text"
+                    value={editFormData.class}
+                    onChange={(e) => setEditFormData({...editFormData, class: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+                  <input
+                    type="text"
+                    value={editFormData.department}
+                    onChange={(e) => setEditFormData({...editFormData, department: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    placeholder="e.g., Computer Science"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Exam Type</label>
+                  <select
+                    value={editFormData.examType}
+                    onChange={(e) => setEditFormData({...editFormData, examType: e.target.value})}
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                  >
+                    <option value="mcq">Multiple Choice Questions (MCQ)</option>
+                    <option value="subjective">Subjective Questions</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Total Questions</label>
+                    <input
+                      type="number"
+                      value={editFormData.totalQuestions}
+                      onChange={(e) => setEditFormData({...editFormData, totalQuestions: parseInt(e.target.value) || 0})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      min="1"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Marks per Question</label>
+                    <input
+                      type="number"
+                      value={editFormData.marksPerQuestion}
+                      onChange={(e) => setEditFormData({...editFormData, marksPerQuestion: parseInt(e.target.value) || 0})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      min="1"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Total Marks</label>
+                    <input
+                      type="number"
+                      value={editFormData.totalMarks}
+                      onChange={(e) => setEditFormData({...editFormData, totalMarks: parseInt(e.target.value) || 0})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      min="1"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Scheduled Date *</label>
+                    <input
+                      type="date"
+                      value={editFormData.scheduledDate}
+                      onChange={(e) => setEditFormData({...editFormData, scheduledDate: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Start Time *</label>
+                    <input
+                      type="time"
+                      value={editFormData.startTime}
+                      onChange={(e) => setEditFormData({...editFormData, startTime: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Duration (minutes) *</label>
+                  <input
+                    type="number"
+                    value={editFormData.duration}
+                    onChange={(e) => setEditFormData({...editFormData, duration: parseInt(e.target.value) || 0})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    min="1"
+                    required
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditExam(false)}
+                    className="px-6 py-2.5 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium shadow-md hover:shadow-lg"
+                  >
+                    Update Exam
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

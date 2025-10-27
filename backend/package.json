@@ -5,7 +5,22 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "start:all": "node start-all-servers.js",
+    "start:main": "node src/server.js",
+    "start:realtime": "node src/realtimeServer.js",
+    "validate": "node scripts/validate-startup.js",
+    "start:safe": "npm run validate && npm start",
+    "dev:safe": "npm run validate && npm run dev",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "test:auth": "playwright test auth",
+    "test:departments": "playwright test departments",
+    "test:users": "playwright test user-management",
+    "test:report": "playwright show-report",
+    "test:report-open": "open playwright-report/index.html"
   },
   "keywords": [
     "evalon",
@@ -35,10 +50,19 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.7",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
     "twilio": "^5.9.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "@playwright/test": "^1.56.1",
+    "@types/jest": "^30.0.0",
+    "cross-env": "^10.1.0",
+    "dotenv-cli": "^10.0.0",
+    "jest": "^29.7.0",
+    "jest-html-reporter": "^4.3.0",
+    "nodemon": "^3.0.2",
+    "supertest": "^7.1.4"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -1,5 +1,29 @@
 import axios from 'axios';
 
+// Flag to prevent multiple redirects
+let isRedirecting = false;
+
+// Utility function to handle token expiration
+const handleTokenExpiration = (apiName) => {
+  if (isRedirecting) {
+    console.log(`Already redirecting due to token expiration, skipping ${apiName}`);
+    return;
+  }
+  
+  console.log(`Token expired or invalid for ${apiName}, clearing auth data`);
+  isRedirecting = true;
+  
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('userData');
+  localStorage.removeItem('dashboardData');
+  localStorage.removeItem('organizationData');
+  
+  // Use setTimeout to allow other API calls to complete
+  setTimeout(() => {
+    window.location.href = '/login';
+  }, 100);
+};
+
 // Create axios instance with base configuration
 const api = axios.create({
   baseURL: 'http://localhost:5001/api/organizations',
@@ -27,12 +51,33 @@ examApiInstance.interceptors.request.use(
     const token = localStorage.getItem('authToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('🔑 Exam API: Authorization header set');
+    } else {
+      console.warn('⚠️ Exam API: No auth token found in localStorage');
     }
     
     return config;
   },
   (error) => {
     console.error('❌ Exam API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor for exam API
+examApiInstance.interceptors.response.use(
+  (response) => {
+    console.log(`✅ Exam API Response: ${response.status} ${response.config.url}`);
+    return response;
+  },
+  (error) => {
+    console.error('❌ Exam API Response Error:', error.response?.data || error.message);
+    
+    // Handle token expiration
+    if (error.response?.status === 401) {
+      handleTokenExpiration('exam API');
+    }
+    
     return Promise.reject(error);
   }
 );
@@ -79,14 +124,31 @@ questionBankApiInstance.interceptors.request.use(
     
     // Add token to requests if available
     const token = localStorage.getItem('authToken');
+    console.log('🔑 Auth token available:', !!token);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('🔑 Authorization header set');
+    } else {
+      console.warn('⚠️ No auth token found in localStorage');
     }
     
     return config;
   },
   (error) => {
     console.error('❌ Question Bank API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor for question bank API
+questionBankApiInstance.interceptors.response.use(
+  (response) => {
+    console.log(`✅ Question Bank API Response: ${response.status} ${response.config.url}`);
+    console.log('📚 Question Bank Response data:', response.data);
+    return response;
+  },
+  (error) => {
+    console.error('❌ Question Bank API Response Error:', error.response?.data || error.message);
     return Promise.reject(error);
   }
 );
@@ -111,6 +173,12 @@ api.interceptors.response.use(
   },
   (error) => {
     console.error('❌ API Response Error:', error.response?.data || error.message);
+    
+    // Handle token expiration
+    if (error.response?.status === 401) {
+      handleTokenExpiration('main API');
+    }
+    
     return Promise.reject(error);
   }
 );
@@ -772,10 +840,9 @@ userManagementApi.interceptors.response.use(
   (error) => {
     console.error('❌ User Management API Response Error:', error.response?.data || error.message);
     
-    // Handle token expiration - let AuthContext handle logout
+    // Handle token expiration
     if (error.response?.status === 401) {
-      // Don't automatically redirect, let the AuthContext handle it
-      console.log('Token expired or invalid, AuthContext will handle logout');
+      handleTokenExpiration('user management API');
     }
     
     return Promise.reject(error);
@@ -810,6 +877,69 @@ export const userManagementAPI = {
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to create user' };
+    }
+  },
+
+  // Get users with filters (for department management)
+  getUsers: async (params = {}) => {
+    try {
+      // Get organization ID from user context or params
+      const organizationId = params.organizationId || localStorage.getItem('organizationId');
+      if (!organizationId) {
+        throw new Error('Organization ID is required');
+      }
+      
+      const response = await userManagementApi.get(`/organization/${organizationId}/users`, { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch users' };
+    }
+  },
+
+  // Import users from CSV
+  importUsers: async (formData) => {
+    try {
+      const response = await userManagementApi.post('/users/import', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to import users' };
+    }
+  },
+
+  // Export users to CSV
+  exportUsers: async (params = {}) => {
+    try {
+      const response = await userManagementApi.get('/users/export', { 
+        params,
+        responseType: 'blob'
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to export users' };
+    }
+  },
+
+  // Remove user from department
+  removeUserFromDepartment: async (departmentId, userId) => {
+    try {
+      const response = await userManagementApi.delete(`/departments/${departmentId}/users/${userId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to remove user from department' };
+    }
+  },
+
+  // Bulk actions on users
+  bulkAction: async (actionData) => {
+    try {
+      const response = await userManagementApi.post('/users/bulk-action', actionData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to perform bulk action' };
     }
   },
 
@@ -973,6 +1103,18 @@ export const userManagementAPI = {
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to fetch recent activity' };
+    }
+  },
+
+  // Get online users
+  getOnlineUsers: async (organizationId, limit = 100) => {
+    try {
+      const response = await userManagementApi.get(`/organization/${organizationId}/online-users`, {
+        params: { limit }
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch online users' };
     }
   },
 
@@ -1196,6 +1338,14 @@ export const questionBankAPI = {
       throw error.response?.data || { message: 'Failed to remove question from bank' };
     }
   },
+  updateQuestion: async (questionId, questionData) => {
+    try {
+      const response = await questionApiInstance.put(`/${questionId}`, questionData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update question' };
+    }
+  },
   getQuestionBankStatistics: async (questionBankId) => {
     try {
       const response = await questionBankApiInstance.get(`/${questionBankId}/statistics`);
@@ -1226,7 +1376,11 @@ export const examAPI = {
   },
   getExams: async (params = {}) => {
     try {
-      const response = await examApiInstance.get('/', { params });
+      // Add cache-busting parameter to ensure fresh data
+      const cacheBust = Date.now();
+      const response = await examApiInstance.get('/', { 
+        params: { ...params, _t: cacheBust }
+      });
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to fetch exams' };
@@ -1262,6 +1416,14 @@ export const examAPI = {
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to update exam status' };
+    }
+  },
+  getExamCountdown: async (examId) => {
+    try {
+      const response = await examApiInstance.get(`/${examId}/countdown`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to get exam countdown' };
     }
   },
   assignQuestionBankToExam: async (examId, questionBankId) => {
@@ -1318,6 +1480,151 @@ export const examAPI = {
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to fetch exam results' };
+    }
+  },
+  getExamsByTeacher: async (params = {}) => {
+    try {
+      // Add cache-busting parameter to ensure fresh data
+      const cacheBust = Date.now();
+      const response = await examApiInstance.get('/teacher', { 
+        params: { ...params, _t: cacheBust }
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch teacher exams' };
+    }
+  },
+  getExamsByStudent: async (params = {}) => {
+    try {
+      const response = await examApiInstance.get('/student', { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch student exams' };
+    }
+  },
+  assignTeachersToExam: async (examId, teacherIds) => {
+    try {
+      const response = await examApiInstance.post(`/${examId}/assign-teachers`, { teacherIds });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to assign teachers to exam' };
+    }
+  },
+  updateExam: async (examId, examData) => {
+    try {
+      const response = await examApiInstance.put(`/${examId}`, examData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update exam' };
+    }
+  }
+};
+
+const teacherClassApiInstance = axios.create({
+  baseURL: 'http://localhost:5001/api/teacher-classes',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,
+});
+
+// Add authentication interceptor for teacher class API
+teacherClassApiInstance.interceptors.request.use(
+  (config) => {
+    console.log(`🎓 Teacher Class API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    
+    // Add token to requests if available
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    
+    return config;
+  },
+  (error) => {
+    console.error('❌ Teacher Class API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+export const teacherClassAPI = {
+  // Get all classes for a teacher
+  getAll: async (params = {}) => {
+    try {
+      const response = await teacherClassApiInstance.get('/', { params });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch teacher classes' };
+    }
+  },
+
+  // Get single class by ID
+  getById: async (classId) => {
+    try {
+      const response = await teacherClassApiInstance.get(`/${classId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch teacher class' };
+    }
+  },
+
+  // Create new class
+  create: async (classData) => {
+    try {
+      const response = await teacherClassApiInstance.post('/', classData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to create teacher class' };
+    }
+  },
+
+  // Update class
+  update: async (classId, classData) => {
+    try {
+      const response = await teacherClassApiInstance.put(`/${classId}`, classData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update teacher class' };
+    }
+  },
+
+  // Delete class
+  delete: async (classId) => {
+    try {
+      const response = await teacherClassApiInstance.delete(`/${classId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to delete teacher class' };
+    }
+  },
+
+  // Get available students for a department
+  getAvailableStudents: async (departmentId) => {
+    try {
+      const response = await teacherClassApiInstance.get(`/department/${departmentId}/students`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch available students' };
+    }
+  },
+
+  // Add students to class
+  addStudents: async (classId, studentIds) => {
+    try {
+      const response = await teacherClassApiInstance.post(`/${classId}/students`, { studentIds });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to add students to class' };
+    }
+  },
+
+  // Remove student from class
+  removeStudent: async (classId, studentId) => {
+    try {
+      const response = await teacherClassApiInstance.delete(`/${classId}/students/${studentId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to remove student from class' };
     }
   }
 };
@@ -1392,15 +1699,16 @@ export const departmentAPI = {
     }
   },
 
-  // Get department by ID
-  getById: async (departmentId) => {
+  // Get single department by ID
+  getById: async (id) => {
     try {
-      const response = await departmentApi.get(`/${departmentId}`);
+      const response = await departmentApi.get(`/${id}`);
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Failed to fetch department' };
     }
   },
+
 
   // Update department
   update: async (departmentId, departmentData) => {
@@ -1478,6 +1786,12 @@ subjectApi.interceptors.response.use(
   },
   (error) => {
     console.error('❌ Subject API Response Error:', error.response?.data || error.message);
+    
+    // Handle token expiration
+    if (error.response?.status === 401) {
+      handleTokenExpiration('subject API');
+    }
+    
     return Promise.reject(error);
   }
 );

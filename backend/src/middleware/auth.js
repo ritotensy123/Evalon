@@ -68,6 +68,22 @@ const authenticate = async (req, res, next) => {
       });
     }
     
+    // Get organizationId based on user type
+    let organizationId = null;
+    if (user.userType === 'organization_admin') {
+      organizationId = user.userId; // For org admin, userId is the organization ID
+    } else if (user.userType === 'teacher' && user.userId) {
+      // For teachers, get organizationId from the Teacher model
+      const Teacher = require('../models/Teacher');
+      const teacher = await Teacher.findById(user.userId);
+      organizationId = teacher?.organization;
+    } else if (user.userType === 'student' && user.userId) {
+      // For students, get organizationId from the Student model
+      const Student = require('../models/Student');
+      const student = await Student.findById(user.userId);
+      organizationId = student?.organization;
+    }
+
     // Add user info to request
     req.user = {
       id: user._id,
@@ -77,9 +93,15 @@ const authenticate = async (req, res, next) => {
       userId: user.userId,
       userDetails: user.userId,
       authProvider: user.authProvider,
-      // For organization admins, userId is the organizationId
-      organizationId: user.userType === 'organization_admin' ? user.userId : null
+      organizationId: organizationId
     };
+    
+    console.log('Auth middleware - req.user:', { 
+      id: req.user.id, 
+      userType: req.user.userType,
+      organizationId: req.user.organizationId,
+      userOrganizationId: user.organizationId
+    });
     
     next();
   } catch (error) {

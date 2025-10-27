@@ -11,22 +11,28 @@ import {
   Loader2,
   ChevronDown,
   Info,
+  TreePine,
 } from 'lucide-react';
 import { teacherAPI } from '../../services/api';
+import { DEPARTMENT_TYPES, INSTITUTION_TYPES, ACADEMIC_TYPES, CLASS_LEVELS } from '../../utils/departmentUtils';
 
-const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
+const DepartmentForm = ({ department, departments, parentDepartment, onSubmit, onClose, isClassForm = false, isSubDepartmentForm = false }) => {
   const [formData, setFormData] = useState({
     name: '',
     code: '',
     description: '',
     parentDepartment: '',
     institutionType: 'college',
+    departmentType: 'department',
     isClass: false,
     classLevel: '',
     standard: '',
     section: '',
-    departmentType: 'academic',
+    academicType: 'academic',
     specialization: '',
+    academicYear: '',
+    semester: '',
+    batch: '',
     headOfDepartment: '',
     coordinator: '',
     settings: {
@@ -50,12 +56,16 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
         description: department.description || '',
         parentDepartment: department.parentDepartment?._id || '',
         institutionType: department.institutionType || 'college',
+        departmentType: department.departmentType || 'department',
         isClass: department.isClass || false,
         classLevel: department.classLevel || '',
         standard: department.standard || '',
         section: department.section || '',
-        departmentType: department.departmentType || 'academic',
+        academicType: department.academicType || 'academic',
         specialization: department.specialization || '',
+        academicYear: department.academicYear || '',
+        semester: department.semester || '',
+        batch: department.batch || '',
         headOfDepartment: department.headOfDepartment?._id || '',
         coordinator: department.coordinator?._id || '',
         settings: {
@@ -66,9 +76,38 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
           maxTeachers: department.settings?.maxTeachers || ''
         }
       });
+    } else if (parentDepartment) {
+      // Pre-fill parent department when creating a child
+      setFormData(prev => ({
+        ...prev,
+        parentDepartment: parentDepartment._id || parentDepartment,
+        institutionType: parentDepartment.institutionType || 'college'
+      }));
+    }
+    
+    // If this is a class form, pre-configure for class creation
+    if (isClassForm) {
+      setFormData(prev => ({
+        ...prev,
+        departmentType: DEPARTMENT_TYPES.CLASS,
+        isClass: true,
+        parentDepartment: parentDepartment?._id || parentDepartment || '',
+        institutionType: parentDepartment?.institutionType || INSTITUTION_TYPES.COLLEGE
+      }));
+    }
+    
+    // If this is a sub-department form, pre-configure for sub-department creation
+    if (isSubDepartmentForm) {
+      setFormData(prev => ({
+        ...prev,
+        departmentType: DEPARTMENT_TYPES.SUB_DEPARTMENT,
+        isClass: false,
+        parentDepartment: parentDepartment?._id || parentDepartment || '',
+        institutionType: parentDepartment?.institutionType || INSTITUTION_TYPES.COLLEGE
+      }));
     }
     fetchTeachers();
-  }, [department]);
+  }, [department, parentDepartment, isSubDepartmentForm, isClassForm]);
 
   const fetchTeachers = async () => {
     try {
@@ -118,6 +157,7 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
   const validateForm = () => {
     const newErrors = {};
 
+    // Basic required fields
     if (!formData.name.trim()) {
       newErrors.name = 'Department name is required';
     }
@@ -128,18 +168,15 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
       newErrors.code = 'Code must contain only uppercase letters and numbers';
     }
 
-    if (formData.isClass) {
-      if (!formData.classLevel) {
-        newErrors.classLevel = 'Class level is required for classes';
-      }
-      if (!formData.standard) {
-        newErrors.standard = 'Standard is required for classes';
-      }
+    // Department type specific validation
+    // Note: Class Level and Standard are now optional for classes
+
+    // College specific validation
+    if (formData.institutionType === INSTITUTION_TYPES.COLLEGE && formData.departmentType === DEPARTMENT_TYPES.DEPARTMENT && !formData.academicType) {
+      newErrors.academicType = 'Academic type is required for college departments';
     }
 
-    if (formData.institutionType === 'college' && !formData.departmentType) {
-      newErrors.departmentType = 'Department type is required for colleges';
-    }
+    // Section validation - now optional
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -152,9 +189,33 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
       return;
     }
 
+    console.log('DepartmentForm: Submitting form with formData:', formData);
+    console.log('DepartmentForm: isSubDepartmentForm:', isSubDepartmentForm);
+    console.log('DepartmentForm: isClassForm:', isClassForm);
+
     setLoading(true);
     try {
-      await onSubmit(formData);
+      // Clean up the form data before sending
+      const cleanedData = {
+        ...formData,
+        // Remove empty strings and convert to null
+        parentDepartment: formData.parentDepartment || null,
+        headOfDepartment: formData.headOfDepartment || null,
+        coordinator: formData.coordinator || null,
+        classLevel: formData.classLevel || null,
+        standard: formData.standard || null,
+        section: formData.section || null,
+        specialization: formData.specialization || null,
+        academicYear: formData.academicYear || null,
+        semester: formData.semester || null,
+        batch: formData.batch || null,
+        // Set isClass based on departmentType
+        isClass: formData.departmentType === DEPARTMENT_TYPES.CLASS
+      };
+      
+      console.log('DepartmentForm: Cleaned data to submit:', cleanedData);
+      
+      await onSubmit(cleanedData);
     } catch (error) {
       console.error('Error submitting form:', error);
     } finally {
@@ -172,15 +233,21 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-              <Building className="w-5 h-5 text-purple-600" />
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+              isClassForm ? 'bg-green-100' : 
+              isSubDepartmentForm ? 'bg-purple-100' : 
+              'bg-blue-100'
+            }`}>
+              {isClassForm ? <GraduationCap className="w-5 h-5 text-green-600" /> : 
+               isSubDepartmentForm ? <TreePine className="w-5 h-5 text-purple-600" /> :
+               <Building className="w-5 h-5 text-blue-600" />}
             </div>
             <div>
               <h3 className="text-lg font-semibold text-gray-900">
-                {department ? 'Edit Department' : 'Create New Department'}
+                {isClassForm ? 'Create New Class' : isSubDepartmentForm ? 'Create New Sub-Department' : department ? 'Edit Department' : 'Create New Department'}
               </h3>
               <p className="text-sm text-gray-500">
-                {department ? 'Update department information' : 'Add a new department to your organization'}
+                {isClassForm ? 'Add a new class to this department' : isSubDepartmentForm ? 'Add a new sub-department under this department' : department ? 'Update department information' : 'Add a new department to your organization'}
               </p>
             </div>
           </div>
@@ -195,17 +262,25 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
         {/* Form Content */}
         <div className="p-6">
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Basic Information */}
+            {/* Basic Information - Clean and Minimal */}
             <div className="space-y-4">
-              <div className="flex items-center space-x-2 mb-4">
-                <GraduationCap className="w-5 h-5 text-purple-600" />
-                <h4 className="text-md font-semibold text-gray-900">Basic Information</h4>
+              <div className="flex items-center space-x-2 mb-4 pb-3 border-b border-gray-200">
+                {isClassForm ? <GraduationCap className="w-5 h-5 text-green-600" /> : 
+                 isSubDepartmentForm ? <TreePine className="w-5 h-5 text-purple-600" /> :
+                 <Building className="w-5 h-5 text-gray-600" />}
+                <h4 className="text-md font-semibold text-gray-900">
+                  {isClassForm ? 'Class Information' : 
+                   isSubDepartmentForm ? 'Sub-Department Information' : 
+                   'Department Information'}
+                </h4>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Department Name *
+                    {isClassForm ? 'Class Name' : 
+                     isSubDepartmentForm ? 'Sub-Department Name' : 
+                     'Department Name'} *
                   </label>
                   <input
                     type="text"
@@ -215,7 +290,11 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
                     className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
                       errors.name ? 'border-red-500' : 'border-gray-300'
                     }`}
-                    placeholder="Enter department name"
+                    placeholder={
+                      isClassForm ? 'e.g., First Year A, Class 5B, Semester 1' : 
+                      isSubDepartmentForm ? 'e.g., Artificial Intelligence, Data Science' : 
+                      'e.g., Computer Science, Mathematics'
+                    }
                   />
                   {errors.name && (
                     <div className="flex items-center mt-1 text-red-600 text-xs">
@@ -227,7 +306,9 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Department Code *
+                    {isClassForm ? 'Class Code' : 
+                     isSubDepartmentForm ? 'Sub-Department Code' : 
+                     'Department Code'} *
                   </label>
                   <input
                     type="text"
@@ -237,7 +318,11 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
                     className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
                       errors.code ? 'border-red-500' : 'border-gray-300'
                     }`}
-                    placeholder="e.g., CS, MATH, ENG"
+                    placeholder={
+                      isClassForm ? 'e.g., FY-A, C5B, SEM1' : 
+                      isSubDepartmentForm ? 'e.g., CS-AI, CS-DS' : 
+                      'e.g., CS, MATH, ENG'
+                    }
                   />
                   {errors.code && (
                     <div className="flex items-center mt-1 text-red-600 text-xs">
@@ -251,167 +336,343 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Description
+                  <span className="text-xs text-gray-500 font-normal ml-1">(Optional)</span>
                 </label>
-              <textarea
-                name="description"
-                value={formData.description}
-                onChange={handleChange}
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter department description"
-              />
+                <textarea
+                  name="description"
+                  value={formData.description}
+                  onChange={handleChange}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder={
+                    isClassForm ? 'Brief description of this class...' : 
+                    isSubDepartmentForm ? 'Brief description of this sub-department...' : 
+                    'Brief description of this department...'
+                  }
+                />
+                <p className="text-xs text-gray-500 mt-1.5">
+                  {isClassForm ? 'Add any specific information about this class' : 
+                   isSubDepartmentForm ? 'Describe the focus area or specialization' : 
+                   'Provide a brief overview of the department'}
+                </p>
               </div>
             </div>
 
-            {/* Institution Type */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Institution Type
-              </label>
-              <select
-                name="institutionType"
-                value={formData.institutionType}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="school">School</option>
-                <option value="college">College</option>
-                <option value="university">University</option>
-                <option value="institute">Institute</option>
-              </select>
-            </div>
+            {/* Institution Type - Hide for class/sub-department forms since auto-set */}
+            {!isClassForm && !isSubDepartmentForm && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Institution Type
+                </label>
+                <select
+                  name="institutionType"
+                  value={formData.institutionType}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value={INSTITUTION_TYPES.SCHOOL}>School</option>
+                  <option value={INSTITUTION_TYPES.COLLEGE}>College</option>
+                  <option value={INSTITUTION_TYPES.UNIVERSITY}>University</option>
+                  <option value={INSTITUTION_TYPES.INSTITUTE}>Institute</option>
+                </select>
+              </div>
+            )}
+
+            {/* Department Type - Hide for class/sub-department forms since auto-set */}
+            {!isClassForm && !isSubDepartmentForm && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Department Type
+                </label>
+                <select
+                  name="departmentType"
+                  value={formData.departmentType}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value={DEPARTMENT_TYPES.DEPARTMENT}>Department</option>
+                  <option value={DEPARTMENT_TYPES.SUB_DEPARTMENT}>Sub-Department</option>
+                  <option value={DEPARTMENT_TYPES.CLASS}>Class</option>
+                  <option value={DEPARTMENT_TYPES.SECTION}>Section</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  * Only Name and Code are required. All other fields are optional.
+                </p>
+              </div>
+            )}
 
             {/* Parent Department */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Parent Department
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Parent {isClassForm ? 'Department/Sub-Department' : 'Department'}
+                {isSubDepartmentForm && (
+                  <span className="text-xs text-purple-600 font-semibold ml-2">(Auto-set)</span>
+                )}
+                {isClassForm && (
+                  <span className="text-xs text-green-600 font-semibold ml-2">(Auto-set)</span>
+                )}
               </label>
-              <select
-                name="parentDepartment"
-                value={formData.parentDepartment}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">No Parent (Root Level)</option>
-                {filteredDepartments.map(dept => (
-                  <option key={dept._id} value={dept._id}>
-                    {dept.name} ({dept.code})
-                  </option>
-                ))}
-              </select>
+              {(isSubDepartmentForm || isClassForm) ? (
+                <div className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50">
+                  <div className="flex items-center gap-2">
+                    {parentDepartment?.departmentType === DEPARTMENT_TYPES.DEPARTMENT ? 
+                      <Building className="w-4 h-4 text-gray-600" /> : 
+                      <TreePine className="w-4 h-4 text-gray-600" />}
+                    <span className="font-medium text-gray-900">
+                      {parentDepartment ? `${parentDepartment.name} (${parentDepartment.code})` : 'No Parent Department'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-2 ml-6">
+                    {isClassForm 
+                      ? `Will be created under this ${parentDepartment?.departmentType === DEPARTMENT_TYPES.SUB_DEPARTMENT ? 'sub-department' : 'department'}`
+                      : 'Will be created under this department'}
+                  </p>
+                </div>
+              ) : (
+                <select
+                  name="parentDepartment"
+                  value={formData.parentDepartment}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">No Parent (Root Level)</option>
+                  {filteredDepartments.map(dept => (
+                    <option key={dept._id} value={dept._id}>
+                      {dept.name} ({dept.code})
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
-            {/* Class Configuration */}
-            <div className="border-t pt-4">
-              <div className="flex items-center mb-4">
-                <input
-                  type="checkbox"
-                  name="isClass"
-                  checked={formData.isClass}
-                  onChange={handleChange}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label className="ml-2 text-sm font-medium text-gray-700">
-                  This is a Class (for Schools)
-                </label>
-              </div>
-
-              {formData.isClass && (
+            {/* Class Configuration - Clean */}
+            {formData.departmentType === DEPARTMENT_TYPES.CLASS && (
+              <div className="border-t pt-4">
+                <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+                  <GraduationCap className="w-5 h-5 text-gray-600" />
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900">Class Configuration</h4>
+                    <p className="text-xs text-gray-500">Configure class-specific details (all fields optional)</p>
+                  </div>
+                </div>
+                
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Class Level *
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Class Level
+                      <span className="text-xs text-gray-500 font-normal ml-1">(Optional)</span>
                     </label>
                     <select
                       name="classLevel"
                       value={formData.classLevel}
                       onChange={handleChange}
-                      className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      className={`w-full px-3 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all ${
                         errors.classLevel ? 'border-red-500' : 'border-gray-300'
                       }`}
                     >
-                      <option value="">Select Level</option>
-                      <option value="pre-primary">Pre-Primary</option>
-                      <option value="primary">Primary</option>
-                      <option value="middle">Middle</option>
-                      <option value="secondary">Secondary</option>
-                      <option value="senior-secondary">Senior Secondary</option>
+                      <option value="">-- Select Level --</option>
+                      <option value={CLASS_LEVELS.PRE_PRIMARY}>🎨 Pre-Primary (Nursery, KG)</option>
+                      <option value={CLASS_LEVELS.PRIMARY}>📚 Primary (Class 1-5)</option>
+                      <option value={CLASS_LEVELS.MIDDLE}>🎓 Middle (Class 6-8)</option>
+                      <option value={CLASS_LEVELS.SECONDARY}>🏫 Secondary (Class 9-10)</option>
+                      <option value={CLASS_LEVELS.SENIOR_SECONDARY}>🎯 Senior Secondary (Class 11-12)</option>
                     </select>
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Select the educational level for this class
+                    </p>
                     {errors.classLevel && <p className="text-red-500 text-xs mt-1">{errors.classLevel}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Standard *
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Standard/Grade
+                      <span className="text-xs text-gray-500 font-normal ml-1">(Optional)</span>
                     </label>
                     <input
                       type="text"
                       name="standard"
                       value={formData.standard}
                       onChange={handleChange}
-                      className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      className={`w-full px-3 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all ${
                         errors.standard ? 'border-red-500' : 'border-gray-300'
                       }`}
-                      placeholder="e.g., 1st, 2nd, 10th"
+                      placeholder="e.g., 1st, 5th, 10th, 12th"
                     />
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Enter the class/grade number
+                    </p>
                     {errors.standard && <p className="text-red-500 text-xs mt-1">{errors.standard}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       Section
+                      <span className="text-xs text-gray-500 font-normal ml-1">(Optional)</span>
                     </label>
                     <input
                       type="text"
                       name="section"
                       value={formData.section}
                       onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="e.g., A, B, C"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                      placeholder="e.g., A, B, C, D"
                     />
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Section division within the class
+                    </p>
                   </div>
                 </div>
-              )}
-            </div>
 
-            {/* College Configuration */}
-            {formData.institutionType === 'college' && !formData.isClass && (
+                {/* Helpful Examples */}
+                <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <Info className="w-4 h-4 text-gray-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-xs text-gray-700">
+                      <strong>Examples:</strong>
+                      <ul className="mt-1 space-y-0.5 list-disc list-inside text-gray-600">
+                        <li>Schools: Name: "Class 5A", Code: "C5A", Level: Primary, Standard: 5th, Section: A</li>
+                        <li>Simple: Just Name and Code (e.g., "First Year" / "FY")</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Section Configuration */}
+            {formData.departmentType === 'section' && (
               <div className="border-t pt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Department Type *
+                      Section Name
                     </label>
-                    <select
-                      name="departmentType"
-                      value={formData.departmentType}
+                    <input
+                      type="text"
+                      name="section"
+                      value={formData.section}
                       onChange={handleChange}
                       className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        errors.departmentType ? 'border-red-500' : 'border-gray-300'
+                        errors.section ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      placeholder="e.g., A, B, C"
+                    />
+                    {errors.section && (
+                      <p className="text-red-500 text-xs mt-1">{errors.section}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* College Configuration - Hide for class forms */}
+            {!isClassForm && formData.institutionType === INSTITUTION_TYPES.COLLEGE && (formData.departmentType === DEPARTMENT_TYPES.DEPARTMENT || formData.departmentType === DEPARTMENT_TYPES.SUB_DEPARTMENT) && (
+              <div className="border-t pt-4">
+                <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
+                  <Building className="w-5 h-5 text-gray-600" />
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900">College/University Configuration</h4>
+                    <p className="text-xs text-gray-500">Department-specific settings for higher education</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Academic Type {formData.institutionType === INSTITUTION_TYPES.COLLEGE && formData.departmentType === DEPARTMENT_TYPES.DEPARTMENT && '*'}
+                    </label>
+                    <select
+                      name="academicType"
+                      value={formData.academicType}
+                      onChange={handleChange}
+                      className={`w-full px-3 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all ${
+                        errors.academicType ? 'border-red-500' : 'border-gray-300'
                       }`}
                     >
-                      <option value="academic">Academic</option>
-                      <option value="administrative">Administrative</option>
-                      <option value="support">Support</option>
-                      <option value="research">Research</option>
+                      <option value={ACADEMIC_TYPES.ACADEMIC}>🎓 Academic</option>
+                      <option value={ACADEMIC_TYPES.ADMINISTRATIVE}>📋 Administrative</option>
+                      <option value={ACADEMIC_TYPES.SUPPORT}>🤝 Support</option>
+                      <option value={ACADEMIC_TYPES.RESEARCH}>🔬 Research</option>
                     </select>
-                    {errors.departmentType && <p className="text-red-500 text-xs mt-1">{errors.departmentType}</p>}
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Primary function of this department
+                    </p>
+                    {errors.academicType && <p className="text-red-500 text-xs mt-1">{errors.academicType}</p>}
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       Specialization
+                      <span className="text-xs text-gray-500 font-normal ml-1">(Optional)</span>
                     </label>
                     <input
                       type="text"
                       name="specialization"
                       value={formData.specialization}
                       onChange={handleChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="e.g., Computer Science, Mathematics"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                      placeholder="e.g., AI & Machine Learning, Data Science"
                     />
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Area of focus or expertise
+                    </p>
                   </div>
                 </div>
+
+                {/* Academic Year and Semester for College Classes */}
+                {formData.departmentType === 'class' && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Academic Year
+                      </label>
+                      <input
+                        type="text"
+                        name="academicYear"
+                        value={formData.academicYear}
+                        onChange={handleChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="e.g., 2024-25"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Semester
+                      </label>
+                      <select
+                        name="semester"
+                        value={formData.semester}
+                        onChange={handleChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select Semester</option>
+                        <option value="1st">1st Semester</option>
+                        <option value="2nd">2nd Semester</option>
+                        <option value="3rd">3rd Semester</option>
+                        <option value="4th">4th Semester</option>
+                        <option value="5th">5th Semester</option>
+                        <option value="6th">6th Semester</option>
+                        <option value="7th">7th Semester</option>
+                        <option value="8th">8th Semester</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Batch
+                      </label>
+                      <input
+                        type="text"
+                        name="batch"
+                        value={formData.batch}
+                        onChange={handleChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="e.g., 2024"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -438,24 +699,30 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Coordinator
-                  </label>
-                  <select
-                    name="coordinator"
-                    value={formData.coordinator}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select Teacher</option>
-                    {Array.isArray(teachers) && teachers.map(teacher => (
-                      <option key={teacher._id} value={teacher._id}>
-                        {teacher.fullName} ({teacher.emailAddress})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {/* Coordinator field only for classes */}
+                {isClassForm && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Class Coordinator *
+                    </label>
+                    <select
+                      name="coordinator"
+                      value={formData.coordinator}
+                      onChange={handleChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select Teacher</option>
+                      {Array.isArray(teachers) && teachers.map(teacher => (
+                        <option key={teacher._id} value={teacher._id}>
+                          {teacher.fullName} ({teacher.emailAddress})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Assign a coordinator for this class who will help manage class activities
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -546,7 +813,7 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-500 border border-transparent rounded-lg hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 transition-colors"
+                className="flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 border border-transparent rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 transition-colors"
               >
                 {loading ? (
                   <>
@@ -556,7 +823,7 @@ const DepartmentForm = ({ department, departments, onSubmit, onClose }) => {
                 ) : (
                   <>
                     <Save className="w-4 h-4 mr-2" />
-                    {department ? 'Update Department' : 'Create Department'}
+                    {isClassForm ? 'Create Class' : isSubDepartmentForm ? 'Create Sub-Department' : department ? 'Update Department' : 'Create Department'}
                   </>
                 )}
               </button>

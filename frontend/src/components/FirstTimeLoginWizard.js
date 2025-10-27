@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI, authService } from '../services/authService';
+import { locationAPI } from '../services/api';
 import {
   Box,
   Container,
@@ -39,12 +40,16 @@ const FirstTimeLoginWizard = () => {
   const [otpCode, setOtpCode] = useState('');
   const [otpExpiresIn, setOtpExpiresIn] = useState(0);
   
+  // Country management
+  const [countries, setCountries] = useState([]);
+  const [loadingCountries, setLoadingCountries] = useState(false);
+  const [errorCountries, setErrorCountries] = useState(null);
+  
   
   // Initialize profile data only once when user is available
   const [profileData, setProfileData] = useState({
     firstName: '',
     lastName: '',
-    phone: '',
     department: '',
     // Student-specific mandatory fields
     dateOfBirth: '',
@@ -62,7 +67,6 @@ const FirstTimeLoginWizard = () => {
       setProfileData({
         firstName: user.profile.firstName || '',
         lastName: user.profile.lastName || '',
-        phone: user.profile.phone || '',
         department: user.profile.department || '',
         // Student-specific fields
         dateOfBirth: user.profile.dateOfBirth || user.dateOfBirth || '',
@@ -86,6 +90,26 @@ const FirstTimeLoginWizard = () => {
       return () => clearTimeout(timer);
     }
   }, [user?.isEmailVerified, step]);
+  
+  // Load countries on component mount
+  useEffect(() => {
+    const loadCountries = async () => {
+      setLoadingCountries(true);
+      try {
+        const response = await locationAPI.getCountries();
+        if (response.success && response.data && Array.isArray(response.data)) {
+          setCountries(response.data);
+        }
+      } catch (error) {
+        console.error('Failed to load countries:', error);
+        setErrorCountries('Failed to load countries');
+      } finally {
+        setLoadingCountries(false);
+      }
+    };
+
+    loadCountries();
+  }, []);
   
   // Form data
   const [passwordData, setPasswordData] = useState({
@@ -143,10 +167,13 @@ const FirstTimeLoginWizard = () => {
   };
 
   const handleProfileChange = (e) => {
-    setProfileData({
-      ...profileData,
-      [e.target.name]: e.target.value
-    });
+    const fieldName = e.target.name;
+    const fieldValue = e.target.value;
+    
+    setProfileData(prev => ({
+      ...prev,
+      [fieldName]: fieldValue
+    }));
   };
 
   const validatePassword = () => {
@@ -213,6 +240,10 @@ const FirstTimeLoginWizard = () => {
       }
       if (!profileData.academicYear) {
         setError('Academic year is required for students');
+        return false;
+      }
+      if (!profileData.department) {
+        setError('Department is required for students');
         return false;
       }
       if (!profileData.rollNumber) {
@@ -324,7 +355,12 @@ const FirstTimeLoginWizard = () => {
         setError('Please verify your email with OTP before proceeding.');
       }
     } else if (step === 2 && validatePassword()) {
-      setStep(3);
+      if (user?.userType === 'student') {
+        // For students, go directly to completion - no step 3
+        handleComplete();
+      } else {
+        setStep(3);
+      }
     }
   };
 
@@ -332,6 +368,7 @@ const FirstTimeLoginWizard = () => {
     if (step === 2) {
       setStep(1);
     } else if (step === 3) {
+      // Only non-students can reach step 3, so normal navigation
       setStep(2);
     }
     setError('');
@@ -339,14 +376,16 @@ const FirstTimeLoginWizard = () => {
 
   const handleComplete = async () => {
     setError('');
-    if (!validateProfile()) return;
+    
+    // Only validate profile for non-students (students bypass step 3)
+    if (user?.userType !== 'student' && !validateProfile()) return;
     
     setLoading(true);
     try {
       const response = await authAPI.put('/complete-first-login', {
         newPassword: passwordData.newPassword,
         confirmPassword: passwordData.confirmPassword,
-        profileData
+        profileData: user?.userType === 'student' ? {} : profileData
       });
       
       if (response.data.success) {
@@ -586,7 +625,7 @@ const FirstTimeLoginWizard = () => {
                 fontSize: { xs: '0.8rem', sm: '0.875rem' }
               }}
             >
-              Step {step} of 3
+              Step {step} of {user?.userType === 'student' ? 2 : 3}
             </Typography>
             <Box sx={{ 
               display: 'flex', 
@@ -988,8 +1027,8 @@ const FirstTimeLoginWizard = () => {
             </Box>
           )}
 
-          {/* Step 3: Profile Information */}
-          {step === 3 && (
+          {/* Step 3: Profile Information - Not shown to students */}
+          {step === 3 && user?.userType !== 'student' && (
             <Box>
               <Typography 
                 variant="h6" 
@@ -1057,26 +1096,22 @@ const FirstTimeLoginWizard = () => {
                   />
                 </Box>
 
-                <Box sx={{ mb: 2 }}>
-                  <TextField
-                    fullWidth
-                    label="Phone Number"
-                    name="phone"
-                    type="tel"
-                    value={profileData.phone}
-                    onChange={handleProfileChange}
-                    placeholder="Phone number"
-                    variant="outlined"
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        borderRadius: BORDER_RADIUS.MD,
-                      },
-                    }}
-                  />
-                </Box>
 
                 <Box sx={{ mb: 2 }}>
-                  <FormControl fullWidth variant="outlined">
+                  <FormControl fullWidth variant="outlined" required sx={{
+                    '& .MuiOutlinedInput-notchedOutline': {
+                      borderRadius: '9999px !important',
+                    },
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: '9999px !important',
+                    },
+                    '& .MuiSelect-select': {
+                      borderRadius: '9999px !important',
+                    },
+                    '& fieldset': {
+                      borderRadius: '9999px !important',
+                    },
+                  }}>
                     <InputLabel>Department</InputLabel>
                     <Select
                       name="department"
@@ -1084,8 +1119,15 @@ const FirstTimeLoginWizard = () => {
                       onChange={handleProfileChange}
                       label="Department"
                       sx={{
+                        borderRadius: '9999px !important',
+                        '& .MuiOutlinedInput-notchedOutline': {
+                          borderRadius: '9999px !important',
+                        },
                         '& .MuiOutlinedInput-root': {
-                          borderRadius: BORDER_RADIUS.MD,
+                          borderRadius: '9999px !important',
+                        },
+                        '& .MuiSelect-select': {
+                          borderRadius: '9999px !important',
                         },
                       }}
                     >
@@ -1128,16 +1170,46 @@ const FirstTimeLoginWizard = () => {
                         required
                         variant="outlined"
                         InputLabelProps={{ shrink: true }}
+                        helperText="dd/mm/yyyy"
                         inputProps={{
-                          max: new Date(new Date().setFullYear(new Date().getFullYear() - 5)).toISOString().split('T')[0]
+                          max: new Date(new Date().setFullYear(new Date().getFullYear() - 5)).toISOString().split('T')[0],
+                          placeholder: "dd/mm/yyyy"
                         }}
                         sx={{
                           '& .MuiOutlinedInput-root': {
                             borderRadius: BORDER_RADIUS.MD,
                           },
+                          '& .MuiFormHelperText-root': {
+                            color: '#999999 !important',
+                            fontSize: '12px',
+                            marginTop: '4px',
+                            opacity: '0.7',
+                            fontWeight: 400,
+                          },
+                        }}
+                        FormHelperTextProps={{
+                          sx: {
+                            color: '#999999',
+                            opacity: 0.7,
+                            fontSize: '12px',
+                            mt: 0.5,
+                          }
                         }}
                       />
-                      <FormControl fullWidth variant="outlined" required>
+                      <FormControl fullWidth variant="outlined" required sx={{
+                        '& .MuiOutlinedInput-notchedOutline': {
+                          borderRadius: '9999px !important',
+                        },
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '9999px !important',
+                        },
+                        '& .MuiSelect-select': {
+                          borderRadius: '9999px !important',
+                        },
+                        '& fieldset': {
+                          borderRadius: '9999px !important',
+                        },
+                      }}>
                         <InputLabel>Gender</InputLabel>
                         <Select
                           name="gender"
@@ -1145,8 +1217,15 @@ const FirstTimeLoginWizard = () => {
                           onChange={handleProfileChange}
                           label="Gender"
                           sx={{
+                            borderRadius: '9999px !important',
+                            '& .MuiOutlinedInput-notchedOutline': {
+                              borderRadius: '9999px !important',
+                            },
                             '& .MuiOutlinedInput-root': {
-                              borderRadius: BORDER_RADIUS.MD,
+                              borderRadius: '9999px !important',
+                            },
+                            '& .MuiSelect-select': {
+                              borderRadius: '9999px !important',
                             },
                           }}
                         >
@@ -1164,21 +1243,70 @@ const FirstTimeLoginWizard = () => {
                       flexDirection={{ xs: 'column', sm: 'row' }}
                       sx={{ mb: 2 }}
                     >
-                      <TextField
-                        fullWidth
-                        label="Country"
-                        name="country"
-                        value={profileData.country}
-                        onChange={handleProfileChange}
-                        placeholder="Country"
-                        required
-                        variant="outlined"
-                        sx={{
-                          '& .MuiOutlinedInput-root': {
-                            borderRadius: BORDER_RADIUS.MD,
-                          },
-                        }}
-                      />
+                      <FormControl fullWidth variant="outlined" required sx={{
+                        '& .MuiOutlinedInput-notchedOutline': {
+                          borderRadius: '9999px !important',
+                        },
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '9999px !important',
+                        },
+                        '& .MuiSelect-select': {
+                          borderRadius: '9999px !important',
+                        },
+                        '& fieldset': {
+                          borderRadius: '9999px !important',
+                        },
+                      }}>
+                        <InputLabel>Country</InputLabel>
+                        <Select
+                          name="country"
+                          value={profileData.country || ""}
+                          onChange={handleProfileChange}
+                          label="Country"
+                          disabled={loadingCountries}
+                          displayEmpty
+                          sx={{
+                            borderRadius: '9999px !important',
+                            '& .MuiOutlinedInput-notchedOutline': {
+                              borderRadius: '9999px !important',
+                            },
+                            '& .MuiOutlinedInput-root': {
+                              borderRadius: '9999px !important',
+                            },
+                            '& .MuiSelect-select': {
+                              borderRadius: '9999px !important',
+                            },
+                          }}
+                        >
+                          {loadingCountries && (
+                            <MenuItem disabled>
+                              <CircularProgress size={16} sx={{ mr: 2 }} />
+                              Loading countries...
+                            </MenuItem>
+                          )}
+                          
+                          {!loadingCountries && (
+                            <MenuItem value="">
+                              <em>Select Country</em>
+                            </MenuItem>
+                          )}
+                          
+                          {!loadingCountries && countries.map((country, index) => (
+                            <MenuItem 
+                              key={country.code || index} 
+                              value={country.name}
+                            >
+                              {country.name}
+                            </MenuItem>
+                          ))}
+                          
+                          {errorCountries && (
+                            <MenuItem disabled sx={{ color: 'error.main' }}>
+                              {errorCountries}
+                            </MenuItem>
+                          )}
+                        </Select>
+                      </FormControl>
                       <TextField
                         fullWidth
                         label="City"
@@ -1217,7 +1345,20 @@ const FirstTimeLoginWizard = () => {
                       flexDirection={{ xs: 'column', sm: 'row' }}
                       sx={{ mb: 2 }}
                     >
-                      <FormControl fullWidth variant="outlined" required>
+                      <FormControl fullWidth variant="outlined" required sx={{
+                        '& .MuiOutlinedInput-notchedOutline': {
+                          borderRadius: '9999px !important',
+                        },
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: '9999px !important',
+                        },
+                        '& .MuiSelect-select': {
+                          borderRadius: '9999px !important',
+                        },
+                        '& fieldset': {
+                          borderRadius: '9999px !important',
+                        },
+                      }}>
                         <InputLabel>Academic Year</InputLabel>
                         <Select
                           name="academicYear"
@@ -1225,8 +1366,15 @@ const FirstTimeLoginWizard = () => {
                           onChange={handleProfileChange}
                           label="Academic Year"
                           sx={{
+                            borderRadius: '9999px !important',
+                            '& .MuiOutlinedInput-notchedOutline': {
+                              borderRadius: '9999px !important',
+                            },
                             '& .MuiOutlinedInput-root': {
-                              borderRadius: BORDER_RADIUS.MD,
+                              borderRadius: '9999px !important',
+                            },
+                            '& .MuiSelect-select': {
+                              borderRadius: '9999px !important',
                             },
                           }}
                         >
@@ -1289,7 +1437,7 @@ const FirstTimeLoginWizard = () => {
                     variant="contained"
                     size="large"
                   onClick={handleComplete}
-                    disabled={loading || !profileData.firstName || !profileData.lastName}
+                    disabled={loading}
                     sx={{ 
                       flex: 1,
                       borderRadius: BORDER_RADIUS.MD,

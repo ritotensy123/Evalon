@@ -261,22 +261,23 @@ const SubjectManagement = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Category
               </label>
-              <select
+              <input
+                type="text"
                 value={filters.category}
                 onChange={(e) => handleFilterChange('category', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">All Categories</option>
-                <option value="science">Science</option>
-                <option value="mathematics">Mathematics</option>
-                <option value="language">Language</option>
-                <option value="social">Social</option>
-                <option value="arts">Arts</option>
-                <option value="commerce">Commerce</option>
-                <option value="technology">Technology</option>
-                <option value="physical">Physical</option>
-                <option value="other">Other</option>
-              </select>
+                list="filter-category-suggestions"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="Filter by category..."
+              />
+              <datalist id="filter-category-suggestions">
+                <option value="Science" />
+                <option value="Mathematics" />
+                <option value="Language" />
+                <option value="Technology" />
+                <option value="Arts" />
+                <option value="Commerce" />
+                <option value="Engineering" />
+              </datalist>
             </div>
 
             <div>

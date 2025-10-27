@@ -9,6 +9,7 @@ const ROLE_PERMISSIONS = {
     studentManagement: { read: true, write: true, delete: true },
     teacherManagement: { read: true, write: true, delete: true },
     examManagement: { read: true, write: true, delete: true },
+    questionBank: { read: true, write: true, delete: true },
     reports: { read: true, write: true, delete: true },
     systemSettings: { read: true, write: true, delete: true },
     roleManagement: { read: true, write: true, delete: true }
@@ -19,6 +20,7 @@ const ROLE_PERMISSIONS = {
     studentManagement: { read: true, write: true, delete: true },
     teacherManagement: { read: true, write: true, delete: false },
     examManagement: { read: true, write: true, delete: true },
+    questionBank: { read: true, write: true, delete: true },
     reports: { read: true, write: false, delete: false },
     systemSettings: { read: false, write: false, delete: false },
     roleManagement: { read: true, write: false, delete: false }
@@ -29,6 +31,7 @@ const ROLE_PERMISSIONS = {
     studentManagement: { read: true, write: true, delete: false },
     teacherManagement: { read: false, write: false, delete: false },
     examManagement: { read: true, write: true, delete: false },
+    questionBank: { read: true, write: true, delete: true },
     reports: { read: true, write: false, delete: false },
     systemSettings: { read: false, write: false, delete: false },
     roleManagement: { read: false, write: false, delete: false }

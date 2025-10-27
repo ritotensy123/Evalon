@@ -18,8 +18,7 @@ const userManagementSchema = new mongoose.Schema({
     required: true,
     lowercase: true,
     trim: true,
-    unique: true,
-    index: true
+    unique: true
   },
   password: {
     type: String,
@@ -42,8 +41,7 @@ const userManagementSchema = new mongoose.Schema({
   role: {
     type: String,
     enum: ['admin', 'sub_admin', 'teacher', 'student'],
-    required: true,
-    index: true
+    required: true
   },
   department: {
     type: String,
@@ -52,16 +50,14 @@ const userManagementSchema = new mongoose.Schema({
   organizationId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Organization',
-    required: true,
-    index: true
+    required: true
   },
   
   // User status
   status: {
     type: String,
     enum: ['active', 'pending', 'inactive', 'suspended'],
-    default: 'active',
-    index: true
+    default: 'active'
   },
   
   // Authentication

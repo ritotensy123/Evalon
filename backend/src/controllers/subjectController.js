@@ -104,7 +104,7 @@ const createSubject = async (req, res) => {
       organizationId,
       departmentId,
       subjectType: subjectType || 'core',
-      category,
+      category: category || undefined, // Allow empty category
       credits: credits || 1,
       hoursPerWeek: hoursPerWeek || 1,
       duration: duration || 'semester',
@@ -112,8 +112,8 @@ const createSubject = async (req, res) => {
       applicableStandards,
       applicableSemesters,
       applicableYears,
-      prerequisites,
-      coordinator,
+      prerequisites: prerequisites && prerequisites.length > 0 ? prerequisites : undefined,
+      coordinator: coordinator && coordinator !== '' ? coordinator : undefined,
       assessment: assessment || {
         hasTheory: true,
         hasPractical: false,
@@ -128,6 +128,9 @@ const createSubject = async (req, res) => {
     });
 
     await subject.save();
+
+    // Update department statistics
+    await updateDepartmentStats(organizationId);
 
     // Populate references
     await subject.populate([
@@ -156,6 +159,8 @@ const createSubject = async (req, res) => {
 const getSubjects = async (req, res) => {
   try {
     const organizationId = req.user.organizationId;
+    const userId = req.user.id;
+    const userType = req.user.userType;
     const { 
       status = 'active', 
       departmentId, 
@@ -170,7 +175,59 @@ const getSubjects = async (req, res) => {
       query.status = status;
     }
 
-    if (departmentId) {
+    // If user is a teacher, filter subjects based on their assigned departments (including parent departments)
+    if (userType === 'teacher') {
+      // Get teacher to find their assigned departments
+      const Teacher = require('../models/Teacher');
+      const teacher = await Teacher.findOne({ _id: req.user.userId });
+      
+      if (teacher && teacher.departments && teacher.departments.length > 0) {
+        // Get all departments assigned to the teacher, including hierarchy
+        const allDepartmentIds = new Set();
+        
+        for (const deptId of teacher.departments) {
+          const Department = require('../models/Department');
+          const currentDepartment = await Department.findById(deptId);
+          if (currentDepartment) {
+            const hierarchyPath = await currentDepartment.getHierarchyPath();
+            hierarchyPath.forEach(dept => allDepartmentIds.add(dept.id.toString()));
+          }
+        }
+        
+        // If a specific departmentId is provided, filter subjects only from that department's hierarchy
+        if (departmentId) {
+          const Department = require('../models/Department');
+          const specificDepartment = await Department.findById(departmentId);
+          if (specificDepartment) {
+            const specificHierarchyPath = await specificDepartment.getHierarchyPath();
+            const specificDepartmentIds = new Set(specificHierarchyPath.map(dept => dept.id.toString()));
+            // Intersect with teacher's departments to ensure teacher is authorized
+            const authorizedDepartmentIds = new Set([...allDepartmentIds].filter(id => specificDepartmentIds.has(id)));
+            allDepartmentIds.clear();
+            authorizedDepartmentIds.forEach(id => allDepartmentIds.add(id));
+          } else {
+            // If specific department not found, no subjects can be returned
+            allDepartmentIds.clear();
+          }
+        }
+        
+        // Filter subjects by department IDs
+        query.departmentId = { $in: Array.from(allDepartmentIds) };
+        
+        console.log('🎓 Teacher subject filtering:', {
+          teacherId: teacher._id,
+          departments: teacher.departments,
+          effectiveDepartmentIds: Array.from(allDepartmentIds),
+          requestedDepartmentId: departmentId
+        });
+      } else {
+        // If teacher has no assigned departments, show all subjects in the organization
+        // This allows teachers to see subjects even if they haven't been assigned to departments yet
+        console.log('⚠️ Teacher has no assigned departments, showing all organization subjects');
+        // Don't add departmentId filter, so all subjects in the organization are returned
+      }
+    } else if (departmentId) {
+      // For non-teachers, just filter by the specified department
       query.departmentId = departmentId;
     }
 
@@ -182,15 +239,45 @@ const getSubjects = async (req, res) => {
       query.subjectType = subjectType;
     }
 
+    console.log('🔍 Subject query:', JSON.stringify(query, null, 2));
+    
+    // Validate organizationId exists
+    if (!organizationId) {
+      console.error('❌ No organizationId found for user:', { userId, userType });
+      return res.status(400).json({
+        success: false,
+        message: 'User organization not found. Please contact administrator.',
+        debug: { userId, userType, organizationId }
+      });
+    }
+    
     const subjects = await Subject.find(query)
       .populate('departmentId', 'name code')
       .populate('coordinator', 'fullName emailAddress')
       .populate('prerequisites', 'name code')
       .sort({ name: 1 });
 
+    console.log('📚 Found subjects:', subjects.length, subjects.map(s => ({ id: s._id, name: s.name, department: s.departmentId?.name })));
+
+    // Log warning if no subjects found for teachers
+    if (userType === 'teacher' && subjects.length === 0) {
+      console.warn('⚠️ No subjects found for teacher:', {
+        teacherId: userId,
+        organizationId,
+        departments: query.departmentId ? 'filtered by departments' : 'no department filter',
+        totalSubjectsInOrg: await Subject.countDocuments({ organizationId })
+      });
+    }
+
     res.json({
       success: true,
-      data: subjects
+      data: subjects,
+      meta: {
+        total: subjects.length,
+        organizationId,
+        userType,
+        filteredByDepartments: userType === 'teacher' && query.departmentId
+      }
     });
 
   } catch (error) {
@@ -363,9 +450,20 @@ const updateSubject = async (req, res) => {
       }
     }
 
+    // Convert empty strings to null for ObjectId fields
+    if (updateData.coordinator === '') {
+      updateData.coordinator = null;
+    }
+    if (updateData.departmentId === '') {
+      updateData.departmentId = null;
+    }
+
     // Update subject
     Object.assign(subject, updateData);
     await subject.save();
+
+    // Update department statistics
+    await updateDepartmentStats(organizationId);
 
     // Populate references
     await subject.populate([
@@ -429,6 +527,9 @@ const deleteSubject = async (req, res) => {
     // Soft delete by changing status
     subject.status = 'archived';
     await subject.save();
+
+    // Update department statistics
+    await updateDepartmentStats(organizationId);
 
     res.json({
       success: true,
@@ -611,6 +712,49 @@ const getSubjectsByCategory = async (req, res) => {
       message: 'Internal server error',
       error: error.message
     });
+  }
+};
+
+// Helper function to update department statistics
+const updateDepartmentStats = async (organizationId) => {
+  try {
+    const Department = require('../models/Department');
+    const departments = await Department.find({ organizationId, status: 'active' });
+    
+    for (const department of departments) {
+      // Count subjects in this department
+      const subjectCount = await Subject.countDocuments({
+        departmentId: department._id,
+        status: 'active'
+      });
+
+      // Count teachers assigned to this department
+      const Teacher = require('../models/Teacher');
+      const teacherCount = await Teacher.countDocuments({
+        organizationId,
+        status: 'active',
+        'subjects.departmentId': department._id
+      });
+
+      // Count students in this department (if applicable)
+      const Student = require('../models/Student');
+      const studentCount = await Student.countDocuments({
+        organizationId,
+        department: department._id,
+        status: 'active'
+      });
+
+      // Update department stats
+      department.stats = {
+        totalSubjects: subjectCount,
+        totalTeachers: teacherCount,
+        totalStudents: studentCount
+      };
+
+      await department.save();
+    }
+  } catch (error) {
+    console.error('Error updating department stats:', error);
   }
 };
 

@@ -333,8 +333,28 @@ const changePassword = async (req, res) => {
 // Logout (client-side token removal, but we can track it)
 const logout = async (req, res) => {
   try {
-    // In a more sophisticated system, you might want to blacklist the token
-    // For now, we'll just return success as token removal is handled client-side
+    // Update user's last activity and status when logging out
+    if (req.user && req.user.id) {
+      try {
+        const user = await User.findById(req.user.id);
+        if (user) {
+          // Update last activity to current time (this will make them appear offline)
+          user.lastActivity = new Date();
+          await user.save();
+          
+          // Also update UserManagement if it exists
+          const UserManagement = require('../models/UserManagement');
+          const userManagement = await UserManagement.findOne({ userId: req.user.id });
+          if (userManagement) {
+            userManagement.lastActivity = new Date();
+            await userManagement.save();
+          }
+        }
+      } catch (updateError) {
+        console.error('Error updating user status on logout:', updateError);
+        // Don't fail the logout if status update fails
+      }
+    }
     
     res.status(200).json({
       success: true,
@@ -716,15 +736,48 @@ const completeFirstTimeLogin = async (req, res) => {
     } else if (user.userType === 'student' && user.userId) {
       const student = await Student.findById(user.userId);
       if (student && profileData) {
+        // Update basic information
         if (profileData.firstName && profileData.lastName) {
           student.fullName = `${profileData.firstName} ${profileData.lastName}`;
         }
-        if (profileData.phone) student.phoneNumber = profileData.phone;
-        if (profileData.department) student.department = profileData.department;
+        // Update department
+        if (profileData.department) {
+          student.department = profileData.department;
+          // Try to find and link to Department ID if exists in same organization
+          if (student.organizationId && profileData.department) {
+            const Department = require('../models/Department');
+            const department = await Department.findOne({ 
+              name: profileData.department, 
+              organizationId: student.organizationId,
+              status: 'active'
+            });
+            if (department) {
+              student.departmentId = department._id;
+            }
+          }
+        }
+        // Update academic information
         if (profileData.academicYear) student.academicYear = profileData.academicYear;
         if (profileData.grade) student.grade = profileData.grade;
         if (profileData.section) student.section = profileData.section;
+        // Update additional profile fields
+        if (profileData.dateOfBirth) student.dateOfBirth = profileData.dateOfBirth;
+        if (profileData.gender) student.gender = profileData.gender;
+        if (profileData.country) student.country = profileData.country;
+        if (profileData.city) student.city = profileData.city;
+        if (profileData.pincode) student.pincode = profileData.pincode;
+        if (profileData.rollNumber) student.rollNumber = profileData.rollNumber;
+        
         await student.save();
+        
+        // Update user profile in parent User model as well
+        if (user.profile) {
+          user.profile.firstName = profileData.firstName || user.profile.firstName;
+          user.profile.lastName = profileData.lastName || user.profile.lastName;
+          user.profile.department = profileData.department || user.profile.department;
+          user.profile.academicYear = profileData.academicYear || user.profile.academicYear;
+          await user.save();
+        }
       }
     }
 
