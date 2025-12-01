@@ -192,7 +192,31 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
       }
     } catch (error) {
       console.error('Login error:', error);
-      setError(error.message || 'Login failed. Please try again.');
+      // Extract error message - handle both Error objects and plain error objects
+      let errorMessage = 'Login failed. Please try again.';
+      if (error && typeof error === 'object') {
+        // Check if it's an axios error with response
+        if (error.response?.data?.message) {
+          errorMessage = error.response.data.message;
+        }
+        // Check if it's a plain object with message property (from authService)
+        else if (error.message) {
+          errorMessage = error.message;
+        }
+        // Check if it's an Error object
+        else if (error instanceof Error && error.message) {
+          errorMessage = error.message;
+        }
+      }
+      console.error('Login error details:', {
+        status: error.response?.status,
+        message: errorMessage,
+        data: error.response?.data,
+        errorObject: error,
+        errorType: typeof error,
+        isError: error instanceof Error
+      });
+      setError(errorMessage);
       setIsLoggingIn(false);
     } finally {
       setIsLoading(false);

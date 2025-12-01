@@ -10,8 +10,11 @@ const login = async (req, res) => {
   try {
     const { email, password, userType } = req.body;
     
+    console.log('🔐 Login attempt:', { email, userType: userType || 'not provided', hasPassword: !!password });
+    
     // Validate input
     if (!email || !password) {
+      console.log('❌ Login validation failed: Missing email or password');
       return res.status(400).json({
         success: false,
         message: 'Email and password are required.'
@@ -19,6 +22,7 @@ const login = async (req, res) => {
     }
     
     if (!userType) {
+      console.log('❌ Login validation failed: Missing userType');
       return res.status(400).json({
         success: false,
         message: 'User type is required.'
@@ -26,14 +30,26 @@ const login = async (req, res) => {
     }
     
     // Find user by email and user type
+    console.log('🔍 Searching for user with email:', email.toLowerCase(), 'and userType:', userType);
     const user = await User.findByEmailAndType(email, userType);
     
     if (!user) {
+      console.log('❌ User not found for email:', email, 'and userType:', userType);
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password.'
       });
     }
+    
+    console.log('✅ User found:', {
+      id: user._id,
+      email: user.email,
+      userType: user.userType,
+      isActive: user.isActive,
+      isEmailVerified: user.isEmailVerified,
+      authProvider: user.authProvider,
+      firstLogin: user.firstLogin
+    });
     
     // Ensure userId is populated for dashboard data
     await user.populate('userId');
@@ -49,6 +65,7 @@ const login = async (req, res) => {
     
     // Check if account is active
     if (!user.isActive) {
+      console.log('❌ Login failed: Account is deactivated for user:', user._id);
       return res.status(401).json({
         success: false,
         message: 'Account is deactivated. Please contact support.'
@@ -57,7 +74,7 @@ const login = async (req, res) => {
     
     // Check if email is verified (skip for admin-created users with temporary passwords)
     if (!user.isEmailVerified && user.authProvider !== 'temp_password' && !user.firstLogin) {
-      console.log('Email verification check:', {
+      console.log('❌ Login failed: Email not verified', {
         isEmailVerified: user.isEmailVerified,
         authProvider: user.authProvider,
         firstLogin: user.firstLogin,
@@ -70,14 +87,18 @@ const login = async (req, res) => {
     }
     
     // Compare password
+    console.log('🔐 Comparing password for user:', user._id);
     const isPasswordValid = await user.comparePassword(password);
     
     if (!isPasswordValid) {
+      console.log('❌ Login failed: Invalid password for user:', user._id);
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password.'
       });
     }
+    
+    console.log('✅ Password validated successfully for user:', user._id);
     
     // Update last login (don't change firstLogin here - it should only be changed when setup is completed)
     user.lastLogin = new Date();

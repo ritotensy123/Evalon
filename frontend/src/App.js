@@ -13,6 +13,7 @@ import CompleteRegistration from './pages/CompleteRegistration';
 import FirstTimeLoginWizard from './components/FirstTimeLoginWizard';
 import DepartmentDetailPage from './pages/dashboard/DepartmentDetailPage';
 import MonitoringTest from './pages/dashboard/MonitoringTest';
+import AIModelTestPage from './pages/AIModelTestPage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -33,6 +34,9 @@ const AppContent = () => {
       setManualNavigation(true);
     } else if (path === '/monitoring-test') {
       setCurrentPage('monitoring-test');
+      setManualNavigation(true);
+    } else if (path === '/ai-model-test') {
+      setCurrentPage('ai-model-test');
       setManualNavigation(true);
     } else {
       setCurrentPage('landing');
@@ -236,6 +240,12 @@ const AppContent = () => {
         return (
           <ProtectedRoute>
             <MonitoringTest />
+          </ProtectedRoute>
+        );
+      case 'ai-model-test':
+        return (
+          <ProtectedRoute>
+            <AIModelTestPage />
           </ProtectedRoute>
         );
       default:

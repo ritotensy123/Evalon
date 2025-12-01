@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import realtimeSocketService from '../../services/realtimeSocketService';
 import { examAPI } from '../../services/api';
+import AIProctoringService from '../../services/aiProctoringService';
 
 const StudentExamInterface = ({ exam, onClose, user }) => {
   // Exam flow stages
@@ -61,6 +62,12 @@ const StudentExamInterface = ({ exam, onClose, user }) => {
   const [cameraTest, setCameraTest] = useState({ status: 'pending', stream: null });
   const [microphoneTest, setMicrophoneTest] = useState({ status: 'pending', level: 0 });
   const [deviceTestPassed, setDeviceTestPassed] = useState(false);
+  
+  // AI Face Detection states
+  const [faceDetectionStatus, setFaceDetectionStatus] = useState({ status: 'pending', message: '' });
+  const [aiServiceAvailable, setAiServiceAvailable] = useState(false);
+  const [cameraStream, setCameraStream] = useState(null);
+  const [faceValidationActive, setFaceValidationActive] = useState(false);
   
   // Instructions agreement
   const [instructionsAgreed, setInstructionsAgreed] = useState(false);
@@ -798,29 +805,136 @@ const StudentExamInterface = ({ exam, onClose, user }) => {
     enterFullscreen();
   }, []);
 
-  // Auto-run device tests when entering checks stage
-  useEffect(() => {
-    if (currentStage === 'checks') {
-      // Auto-run tests after a brief delay
-      const timer = setTimeout(() => {
-        runDeviceTests();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [currentStage]);
+  // Auto-run device tests when entering checks stage - REMOVED for manual control
+  // User will click "Test" button to see camera preview
 
-  // Device test functions - Industry standard brief checks
+  // Cleanup camera stream when component unmounts or stage changes
+  useEffect(() => {
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [cameraStream]);
+
+  // Device test functions - Industry standard brief checks with AI face detection
   const testCamera = async () => {
     try {
       setCameraTest({ status: 'testing', stream: null });
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { width: 640, height: 480 } 
       });
+      
+      // Store stream for video preview
+      setCameraStream(stream);
+      setFaceValidationActive(true);
+      
+      // AI Face Detection with continuous monitoring
+      if (aiServiceAvailable) {
+        setFaceDetectionStatus({ status: 'testing', message: 'Detecting face...' });
+        
+        // Set up continuous face detection
+        const startFaceDetection = async () => {
+          const video = document.createElement('video');
+          video.srcObject = stream;
+          video.play();
+          
+          await new Promise(resolve => setTimeout(resolve, 500)); // Wait for video to load
+          
+          let detectionCount = 0;
+          const maxDetections = 5; // Check 5 times
+          
+          const detectFaces = async () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = video.videoWidth;
+              canvas.height = video.videoHeight;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(video, 0, 0);
+              
+              const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+              
+              // Call AI service
+              const result = await AIProctoringService.detectFaces(base64Image);
+              
+              if (result.success && result.status === 'valid') {
+                detectionCount++;
+                setFaceDetectionStatus({ 
+                  status: 'success', 
+                  message: `✓ Face detected (${detectionCount}/${maxDetections})` 
+                });
+              } else if (result.success && result.status === 'multiple') {
+                // FAIL - Multiple faces detected
+                setFaceDetectionStatus({ 
+                  status: 'failed', 
+                  message: '⚠ Multiple faces detected - suspicious activity' 
+                });
+                setCameraTest({ status: 'failed', stream: null });
+                // Stop camera stream immediately
+                setTimeout(() => {
+                  stream.getTracks().forEach(track => track.stop());
+                  setCameraStream(null);
+                  setFaceValidationActive(false);
+                }, 2000);
+                return; // Stop on multiple faces
+              } else {
+                // FAIL - No face detected
+                setFaceDetectionStatus({ 
+                  status: 'failed', 
+                  message: '✗ No face detected - please ensure face is visible' 
+                });
+                setCameraTest({ status: 'failed', stream: null });
+                // Stop camera stream
+                setTimeout(() => {
+                  stream.getTracks().forEach(track => track.stop());
+                  setCameraStream(null);
+                  setFaceValidationActive(false);
+                }, 2000);
+                return;
+              }
+              
+              // Continue detection if not reached max
+              if (detectionCount < maxDetections && result.status === 'valid') {
+                setTimeout(detectFaces, 1000); // Check every second
+              } else if (detectionCount >= maxDetections) {
+                // SUCCESS - Face validation complete
+                setFaceDetectionStatus({ 
+                  status: 'success', 
+                  message: '✓ Face validation complete' 
+                });
+                // Stop camera stream after validation
+                setTimeout(() => {
+                  stream.getTracks().forEach(track => track.stop());
+                  setCameraStream(null);
+                  setFaceValidationActive(false);
+                }, 2000);
+              }
+            } catch (error) {
+              console.error('AI face detection error:', error);
+              setFaceDetectionStatus({ 
+                status: 'failed', 
+                message: '⚠ Face detection error' 
+              });
+              setCameraTest({ status: 'failed', stream: null });
+            }
+          };
+          
+          detectFaces();
+        };
+        
+        startFaceDetection().catch(error => {
+          console.error('Face detection setup error:', error);
+        });
+      } else {
+        // No AI service - just show camera for 3 seconds
+        setTimeout(() => {
+          stream.getTracks().forEach(track => track.stop());
+          setCameraStream(null);
+          setFaceValidationActive(false);
+        }, 3000);
+      }
+      
       setCameraTest({ status: 'success', stream });
-      // Stop stream after brief test
-      setTimeout(() => {
-        stream.getTracks().forEach(track => track.stop());
-      }, 1500);
       return true;
     } catch (error) {
       setCameraTest({ status: 'failed', stream: null });
@@ -847,6 +961,16 @@ const StudentExamInterface = ({ exam, onClose, user }) => {
   };
 
   const runDeviceTests = async () => {
+    // Check AI service availability
+    const aiAvailable = await AIProctoringService.isAvailable();
+    setAiServiceAvailable(aiAvailable);
+    
+    if (aiAvailable) {
+      console.log('✓ AI Face Detection Service is available');
+    } else {
+      console.warn('⚠ AI Face Detection Service is not available, using basic camera test');
+    }
+    
     // Run tests in parallel for faster completion
     const results = await Promise.all([testCamera(), testMicrophone()]);
     setDeviceTestPassed(results.every(result => result === true));
@@ -1565,31 +1689,93 @@ const StudentExamInterface = ({ exam, onClose, user }) => {
 
               <div className="bg-gray-50 rounded-lg p-6 mb-6">
                 <div className="space-y-4">
-                  {/* Camera Check */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center mr-3">
-                        <span className="text-sm">📹</span>
+                  {/* Camera Check with AI Face Detection */}
+                  <div className="border-l-4 border-blue-500 pl-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center">
+                        <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center mr-3">
+                          <span className="text-sm">📹</span>
+                        </div>
+                        <span className="text-sm font-medium text-gray-900">Camera</span>
                       </div>
-                      <span className="text-sm font-medium text-gray-900">Camera</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-medium ${
+                          cameraTest.status === 'success' ? 'text-green-600' :
+                          cameraTest.status === 'failed' ? 'text-red-600' :
+                          'text-gray-500'
+                        }`}>
+                          {cameraTest.status === 'success' ? '✓ Detected' :
+                           cameraTest.status === 'failed' ? '✗ Not found' :
+                           'Checking...'}
+                        </span>
+                        <button
+                          onClick={testCamera}
+                          className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 transition-colors"
+                        >
+                          Test
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-medium ${
-                        cameraTest.status === 'success' ? 'text-green-600' :
-                        cameraTest.status === 'failed' ? 'text-red-600' :
-                        'text-gray-500'
-                      }`}>
-                        {cameraTest.status === 'success' ? '✓ Detected' :
-                         cameraTest.status === 'failed' ? '✗ Not found' :
-                         'Checking...'}
-                      </span>
-                      <button
-                        onClick={testCamera}
-                        className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 transition-colors"
-                      >
-                        Test
-                      </button>
-                    </div>
+                    
+                    {/* AI Face Detection Status */}
+                    {aiServiceAvailable && (
+                      <div className="ml-11 mt-2">
+                        <div className={`text-xs px-2 py-1 rounded ${
+                          faceDetectionStatus.status === 'success' ? 'bg-green-100 text-green-700' :
+                          faceDetectionStatus.status === 'failed' ? 'bg-red-100 text-red-700' :
+                          faceDetectionStatus.status === 'testing' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {faceDetectionStatus.message || 'Pending face detection...'}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {!aiServiceAvailable && (
+                      <div className="ml-11 mt-2">
+                        <div className="text-xs text-gray-500 italic">
+                          AI face detection unavailable
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Camera Video Preview with AI Validation */}
+                    {cameraStream && (
+                      <div className="ml-11 mt-4 mb-4">
+                        <div className="relative">
+                          <video
+                            ref={(video) => {
+                              if (video && cameraStream) {
+                                video.srcObject = cameraStream;
+                                video.play().catch(error => {
+                                  // Ignore play() interruptions - this is normal in React StrictMode
+                                  console.log('Video play interrupted (normal in dev mode)');
+                                });
+                              }
+                            }}
+                            autoPlay
+                            muted
+                            playsInline
+                            className="w-full max-w-md rounded-lg border-2 border-blue-500 shadow-lg"
+                            style={{ maxHeight: '300px' }}
+                          />
+                          {/* AI Validation Overlay */}
+                          {faceValidationActive && (
+                            <div className={`absolute top-2 right-2 px-3 py-1 rounded-full text-xs font-semibold ${
+                              faceDetectionStatus.status === 'success' ? 'bg-green-500 text-white animate-pulse' :
+                              faceDetectionStatus.status === 'failed' ? 'bg-red-500 text-white' :
+                              faceDetectionStatus.status === 'testing' ? 'bg-yellow-500 text-white' :
+                              'bg-gray-500 text-white'
+                            }`}>
+                              {faceDetectionStatus.status === 'success' && '✓ Validated'}
+                              {faceDetectionStatus.status === 'failed' && faceDetectionStatus.message.includes('Multiple') ? '✗ Multiple Faces!' : '✗ No Face!'}
+                              {faceDetectionStatus.status === 'testing' && '🔍 Detecting...'}
+                              {faceDetectionStatus.status === 'pending' && '⏳ Waiting...'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Microphone Check */}

@@ -532,48 +532,6 @@ class RealtimeSocketService {
     }
   }
 
-  onExamEnded(callback) {
-    if (!this.socket) return;
-    this.socket.on('exam_ended', callback);
-    this.addEventListener('exam_ended', callback);
-  }
-
-  // Monitoring Event Listeners
-  onMonitoringJoined(callback) {
-    if (!this.socket) return;
-    this.socket.on('monitoring_joined', callback);
-    this.addEventListener('monitoring_joined', callback);
-  }
-
-  onStudentJoined(callback) {
-    if (!this.socket) return;
-    this.socket.on('student_joined', callback);
-    this.addEventListener('student_joined', callback);
-  }
-
-  onStudentDisconnected(callback) {
-    if (!this.socket) return;
-    this.socket.on('student_disconnected', callback);
-    this.addEventListener('student_disconnected', callback);
-  }
-
-  onProgressUpdate(callback) {
-    if (!this.socket) return;
-    this.socket.on('progress_update', callback);
-    this.addEventListener('progress_update', callback);
-  }
-
-  onTimeUpdate(callback) {
-    if (!this.socket) return;
-    this.socket.on('time_update', callback);
-    this.addEventListener('time_update', callback);
-  }
-
-  onMonitoringError(callback) {
-    if (!this.socket) return;
-    this.socket.on('monitoring_error', callback);
-    this.addEventListener('monitoring_error', callback);
-  }
 
   // Generic event listener management
   addEventListener(event, callback) {
@@ -634,25 +592,6 @@ class RealtimeSocketService {
     this.eventListeners.clear();
   }
 
-  // Start heartbeat
-  startHeartbeat() {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-    }
-    
-    this.heartbeatInterval = setInterval(() => {
-      if (this.socket && this.socket.connected) {
-        this.sendHeartbeat();
-      }
-    }, 10000); // Send heartbeat every 10 seconds for faster response
-  }
-
-  stopHeartbeat() {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
-  }
 }
 
 // Create and export a singleton instance

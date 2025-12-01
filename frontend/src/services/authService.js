@@ -91,7 +91,14 @@ export const authService = {
       throw new Error(response.data.message || 'Login failed');
     } catch (error) {
       console.error('Login error:', error);
-      throw error.response?.data || { message: 'Login failed' };
+      // Ensure we always throw an object with a message property
+      const errorData = error.response?.data || { message: error.message || 'Login failed' };
+      console.error('Login error details:', {
+        status: error.response?.status,
+        data: errorData,
+        message: errorData.message
+      });
+      throw errorData;
     }
   },
 

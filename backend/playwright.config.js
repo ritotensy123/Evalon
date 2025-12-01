@@ -51,9 +51,18 @@ module.exports = defineConfig({
   projects: [
     {
       name: 'api-tests',
-      testMatch: /.*\.spec\.js/,
+      testMatch: /tests\/api\/.*\.spec\.js/,
       use: {
         ...devices['Desktop Chrome'],
+      },
+    },
+    {
+      name: 'frontend-tests',
+      testMatch: /tests\/frontend\/.*\.spec\.js/,
+      use: {
+        ...devices['Desktop Chrome'],
+        // Frontend URL for browser-based tests
+        baseURL: process.env.FRONTEND_URL || 'http://localhost:3001',
       },
     },
   ],
