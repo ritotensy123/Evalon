@@ -1,9 +1,32 @@
+# =============================================================================
+# EVALON AI SERVICE - PYTHON DEPENDENCIES
+# =============================================================================
+# Install with: pip install -r requirements.txt
+# =============================================================================
+
+# Web Framework
 flask==3.0.0
 flask-cors==4.0.0
+werkzeug==3.0.1
+
+# Authentication
+PyJWT==2.8.0
+
+# Environment
+python-dotenv==1.0.0
+
+# Image Processing & Computer Vision
 opencv-python==4.8.1.78
 numpy==1.24.3
 pillow==10.1.0
-requests==2.31.0
-werkzeug==3.0.1
+mediapipe==0.10.8
+
+# Machine Learning
 tensorflow==2.15.0
 scikit-learn==1.3.2
+
+# HTTP Client
+requests==2.31.0
+
+# Production Server (optional - for deployment)
+gunicorn==21.2.0

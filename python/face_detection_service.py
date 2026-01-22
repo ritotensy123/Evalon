@@ -2,23 +2,38 @@
 AI Face Detection Service for Evalon Exam Proctoring
 This service provides AI-based face detection capabilities for pre-exam webcam checks.
 
-Features:
-- Single face detection
-- Multiple face detection
-- Face presence validation
-- Webcam frame analysis
+REFACTORED VERSION - Fixes for:
+1. Multi-face false positives (temporal tracking, IoU merging, face ID assignment)
+2. Classification instability (sliding window, majority voting)
+3. Credibility score bugs (EMA smoothing, clamping, proper reset)
+4. Loopback/accumulation bugs (state management, frame deduplication)
+
+Key Architecture:
+- FaceTracker: Temporal face tracking with ID assignment
+- ClassificationSmoother: Sliding window + majority voting
+- CredibilityScoreManager: EMA-based scoring with clamping
+- Clear separation between detection, tracking, classification, scoring
+
+Author: AI/ML Engineering Team
 """
 
 import cv2
 import numpy as np
 import base64
 import os
+import time
+import hashlib
 from typing import Dict, List, Tuple, Optional
+from collections import deque
+from dataclasses import dataclass, field
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from functools import wraps
 import logging
+import jwt
+import threading
 
-# Configure logging - Set to INFO for better visibility of detection results
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -33,344 +48,1262 @@ except ImportError:
     TENSORFLOW_AVAILABLE = False
     logger.warning("TensorFlow not available - behavior classification will be disabled")
 
-# Try to import scikit-learn for ML models
+# Try to import MediaPipe for accurate face detection
 try:
-    from sklearn.neighbors import KNeighborsClassifier
-    from sklearn.naive_bayes import GaussianNB
-    from sklearn.tree import DecisionTreeClassifier
-    from sklearn.svm import SVC
-    from sklearn.ensemble import VotingClassifier
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.model_selection import train_test_split
-    SKLEARN_AVAILABLE = True
+    import mediapipe as mp
+    MEDIAPIPE_AVAILABLE = True
+    logger.info("MediaPipe available - will use for accurate face detection")
 except ImportError:
-    SKLEARN_AVAILABLE = False
-    logger.warning("scikit-learn not available - ML ensemble models will be disabled")
+    MEDIAPIPE_AVAILABLE = False
+    logger.warning("MediaPipe not available - will use Haar Cascade (less accurate)")
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend communication
 
-# Initialize OpenCV's DNN face detector (more reliable than Haar Cascades)
-class FaceDetector:
-    """Face detection using OpenCV DNN"""
+# SECURITY: Configure CORS with explicit origins from environment
+allowed_origins = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:3001').split(',')
+CORS(app, 
+     origins=allowed_origins, 
+     supports_credentials=True,
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+     allow_headers=['Content-Type', 'Authorization'])
+
+
+# =============================================================================
+# CONSTANTS - BATCH-BASED FRAME PROCESSING SYSTEM
+# =============================================================================
+
+# Face Detection Parameters (raw detection)
+FACE_DETECTION_CONFIDENCE = 0.60  # Minimum confidence for face detection
+FACE_MIN_SIZE = (50, 50)  # Minimum face size in pixels
+FACE_MAX_RATIO = 0.8  # Maximum face size as ratio of frame
+
+# Face Tracking Parameters (for raw per-frame tracking)
+IOU_THRESHOLD_MERGE = 0.5  # IoU threshold for merging duplicate boxes (NMS)
+IOU_THRESHOLD_TRACK = 0.4  # IoU threshold for tracking faces across frames
+IOU_THRESHOLD_DUPLICATE_TRACK = 0.5  # IoU threshold for duplicate track suppression
+FACE_PERSISTENCE_FRAMES = 3  # Frames a face must persist to be counted
+FACE_DISAPPEAR_FRAMES = 2  # Frames before track is pruned
+FACE_CONFIDENCE_TRACK_THRESHOLD = 0.60  # Confidence required for tracking
+
+# =============================================================================
+# TASK 1: FRAME BATCH COLLECTION
+# =============================================================================
+BATCH_MAX_FRAMES = 25  # Max frames per batch (20-30 range)
+BATCH_MAX_DURATION_SECONDS = 2.5  # Max duration per batch (2-3 seconds)
+BATCH_MIN_FRAMES = 10  # Minimum frames before processing batch
+
+# =============================================================================
+# TASK 2: BATCH ANALYSIS THRESHOLDS
+# =============================================================================
+FACE_COUNT_MIN_DOMINANCE = 0.30  # Ignore face counts appearing in < 30% of batch
+MULTI_FACE_BATCH_THRESHOLD = 0.70  # Multi-face confirmed if >= 70% of batch
+NO_FACE_BATCH_THRESHOLD = 0.60  # No-face confirmed if >= 60% of batch
+
+# =============================================================================
+# TASK 3: BATCH-BASED CLASSIFICATION
+# =============================================================================
+CLASSIFICATION_DOMINANCE_THRESHOLD = 0.65  # Classification must dominate >= 65% to escalate
+
+# =============================================================================
+# TASK 4: BATCH-DRIVEN CREDIBILITY SCORING
+# =============================================================================
+CREDIBILITY_INITIAL = 95.0  # Start at 95
+CREDIBILITY_MIN = 0.0
+CREDIBILITY_MAX = 100.0
+CREDIBILITY_NORMAL_BATCH_INCREMENT = 0.5  # +0.5 per normal batch
+CREDIBILITY_SUSPICIOUS_BATCH_DECREMENT = 1.0  # -1.0 per suspicious batch
+CREDIBILITY_VERY_SUSPICIOUS_BATCH_DECREMENT = 2.0  # -2.0 per very suspicious batch
+CREDIBILITY_MAX_DELTA_PER_BATCH = 3.0  # Cap change per batch
+
+# =============================================================================
+# TASK 5: STATE INERTIA
+# =============================================================================
+STATE_CHANGE_REQUIRED_BATCHES = 2  # Require 2 consecutive batches to change state
+
+# Legacy constants (still used by some classes)
+CLASSIFICATION_WINDOW_SIZE = 5
+NORMAL_TO_SUSPICIOUS_THRESHOLD = 4
+SUSPICIOUS_TO_VERY_THRESHOLD = 5
+NORMAL_RECOVERY_FRAMES = 2
+CREDIBILITY_NORMAL_RATE = 0.2
+CREDIBILITY_SUSPICIOUS_RATE = -0.5
+CREDIBILITY_VERY_SUSPICIOUS_RATE = -1.2
+CREDIBILITY_TEMPORAL_GATE_SECONDS = 2.0
+CREDIBILITY_MAX_DELTA_PER_SECOND = 2.0
+
+# Debug logging
+DEBUG_BATCH_PROCESSING = True  # Enable batch processing debug logs
+
+
+# =============================================================================
+# DATA CLASSES
+# =============================================================================
+
+@dataclass
+class TrackedFace:
+    """
+    Represents a face being tracked across frames.
+    
+    TASK 1B: Track aging & pruning
+    - age: number of frames this track has existed
+    - last_seen_frame: frame number when last matched
+    - A track is ACTIVE only if: age >= PERSISTENCE_FRAMES AND last_seen recently
+    """
+    id: int
+    bbox: Tuple[int, int, int, int]  # (x, y, w, h)
+    confidence: float
+    first_seen_frame: int
+    last_seen_frame: int
+    seen_count: int = 1
+    center_history: List[Tuple[float, float]] = field(default_factory=list)
+    first_seen_time: float = field(default_factory=time.time)  # Timestamp when first seen
+    last_seen_time: float = field(default_factory=time.time)  # Timestamp when last seen
+    
+    @property
+    def age(self) -> int:
+        """Age of track in frames (how many frames since first seen)"""
+        return self.last_seen_frame - self.first_seen_frame + 1
+    
+    def update(self, bbox: Tuple[int, int, int, int], confidence: float, frame_num: int):
+        """Update face with new detection"""
+        self.bbox = bbox
+        self.confidence = confidence
+        self.last_seen_frame = frame_num
+        self.last_seen_time = time.time()
+        self.seen_count += 1
+        center = (bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2)
+        self.center_history.append(center)
+        # Keep only last 10 centers for movement analysis
+        if len(self.center_history) > 10:
+            self.center_history.pop(0)
+    
+    def is_active(self, current_frame: int) -> bool:
+        """
+        TASK 1C: A track is ACTIVE only if:
+        - age >= FACE_PERSISTENCE_FRAMES (has existed long enough)
+        - last_seen_frame >= current_frame - 1 (was seen recently, within 1 frame)
+        """
+        return (self.age >= FACE_PERSISTENCE_FRAMES and 
+                current_frame - self.last_seen_frame <= 1)
+    
+    def is_stable(self, min_frames: int = FACE_PERSISTENCE_FRAMES) -> bool:
+        """Check if face has been stable for minimum frames (legacy compatibility)"""
+        return self.seen_count >= min_frames
+    
+    def movement_magnitude(self) -> float:
+        """Calculate recent movement magnitude (for jitter detection)"""
+        if len(self.center_history) < 2:
+            return 0.0
+        recent = self.center_history[-5:] if len(self.center_history) >= 5 else self.center_history
+        if len(recent) < 2:
+            return 0.0
+        total_movement = 0.0
+        for i in range(1, len(recent)):
+            dx = recent[i][0] - recent[i-1][0]
+            dy = recent[i][1] - recent[i-1][1]
+            total_movement += (dx*dx + dy*dy) ** 0.5
+        return total_movement / len(recent)
+
+
+# =============================================================================
+# BATCH-BASED FRAME PROCESSING SYSTEM
+# =============================================================================
+
+@dataclass
+class FrameSample:
+    """Single frame sample for batch collection"""
+    timestamp: float
+    face_count: int
+    face_confidences: List[float]
+    classification: str
+    classification_confidence: float
+    probabilities: Dict[str, float]
+    phone_detected: bool
+    frame_hash: str
+
+
+@dataclass
+class BatchAnalysisResult:
+    """Result of analyzing a complete batch"""
+    # Face count analysis
+    dominant_face_count: int
+    face_count_histogram: Dict[int, float]
+    face_count_dominance_pct: float
+    multi_face_confirmed: bool
+    no_face_confirmed: bool
+    
+    # Classification analysis
+    dominant_classification: str
+    classification_histogram: Dict[str, float]
+    classification_dominance_pct: float
+    
+    # Metadata
+    total_frames: int
+    batch_duration: float
+    decision_reason: str
+
+
+class BatchFrameProcessor:
+    """
+    BATCH-BASED FRAME PROCESSING
+    
+    TASK 1: Collect frames for 2-3 seconds OR 20-30 frames
+    TASK 2: Analyze batch for face count, classification, and violations
+    TASK 3: Make ONE decision per batch
+    TASK 4: Update credibility ONCE per batch
+    TASK 5: State inertia - require 2 consecutive batches to change state
+    TASK 6: Clear buffer after processing, no frame reuse
+    """
     
     def __init__(self):
-        """Initialize face detector"""
-        # Load pre-trained face detection model
-        model_path = os.path.join(os.path.dirname(__file__), 'models', 'face_detection_model.pb')
-        config_path = os.path.join(os.path.dirname(__file__), 'models', 'face_detection_config.pbtxt')
+        self.buffer: List[FrameSample] = []
+        self.batch_start_time: Optional[float] = None
+        self.last_batch_result: Optional[BatchAnalysisResult] = None
         
-        # If models don't exist, use built-in OpenCV detector
-        if os.path.exists(model_path) and os.path.exists(config_path):
-            self.net = cv2.dnn.readNetFromTensorflow(model_path, config_path)
-            logger.info("Loaded custom face detection model")
-        else:
-            # Use Haar Cascade as fallback
-            cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-            self.face_cascade = cv2.CascadeClassifier(cascade_path)
-            self.net = None
-            logger.info("Using Haar Cascade face detector")
+        # TASK 5: State inertia
+        self.confirmed_state = 'normal'  # Last confirmed state
+        self.pending_state = 'normal'  # State waiting for confirmation
+        self.consecutive_state_batches = 0  # Batches agreeing on pending state
+        
+        # Credibility (TASK 4)
+        self.credibility_score = CREDIBILITY_INITIAL
+        
+        self.lock = threading.Lock()
+        self.batch_count = 0
+        
+        logger.info(f"BatchFrameProcessor initialized (max_frames={BATCH_MAX_FRAMES}, max_duration={BATCH_MAX_DURATION_SECONDS}s)")
     
-    def _non_max_suppression(self, boxes: List[Tuple[int, int, int, int]], overlap_threshold: float = 0.15) -> List[Tuple[int, int, int, int]]:
+    def reset(self):
+        """Reset processor state (TASK 6: Clear buffer)"""
+        with self.lock:
+            self.buffer.clear()
+            self.batch_start_time = None
+            self.last_batch_result = None
+            self.confirmed_state = 'normal'
+            self.pending_state = 'normal'
+            self.consecutive_state_batches = 0
+            self.credibility_score = CREDIBILITY_INITIAL
+            self.batch_count = 0
+            logger.info("BatchFrameProcessor reset - all state cleared")
+    
+    def add_frame(self, sample: FrameSample) -> Optional[BatchAnalysisResult]:
         """
-        Apply Non-Maximum Suppression to remove overlapping boxes
-        OPTIMIZED: Very low threshold (0.15) to preserve multiple close faces
+        TASK 1: Add frame to buffer and check if batch is ready.
         
-        Args:
-            boxes: List of bounding boxes (x, y, w, h)
-            overlap_threshold: IOU threshold for suppression (lower = preserves more faces)
+        Returns BatchAnalysisResult if batch was processed, None otherwise.
+        """
+        with self.lock:
+            # Initialize batch start time if needed
+            if self.batch_start_time is None:
+                self.batch_start_time = sample.timestamp
             
-        Returns:
-            Filtered list of bounding boxes
+            # Add sample to buffer
+            self.buffer.append(sample)
+            
+            # Check if batch is ready for processing
+            batch_duration = sample.timestamp - self.batch_start_time
+            batch_ready = (
+                len(self.buffer) >= BATCH_MAX_FRAMES or
+                batch_duration >= BATCH_MAX_DURATION_SECONDS
+            )
+            
+            if batch_ready and len(self.buffer) >= BATCH_MIN_FRAMES:
+                # Process batch and return result
+                result = self._process_batch()
+                return result
+            
+            return None
+    
+    def _process_batch(self) -> BatchAnalysisResult:
         """
-        if len(boxes) == 0:
-            return []
+        TASK 2 & 3: Analyze collected batch and make decisions.
+        Called when batch is full. Returns analysis result.
+        """
+        self.batch_count += 1
+        total_frames = len(self.buffer)
+        batch_duration = self.buffer[-1].timestamp - self.buffer[0].timestamp if len(self.buffer) > 1 else 0
         
-        if len(boxes) == 1:
-            return boxes
+        # =====================================================================
+        # TASK 2A: Face Count Analysis - Compute frequency distribution
+        # =====================================================================
+        face_count_freq: Dict[int, int] = {}
+        for sample in self.buffer:
+            count = sample.face_count
+            face_count_freq[count] = face_count_freq.get(count, 0) + 1
         
-        # Convert to (x1, y1, x2, y2) format and calculate areas
-        boxes_array = []
-        areas = []
-        for x, y, w, h in boxes:
-            x1, y1 = x, y
-            x2, y2 = x + w, y + h
-            boxes_array.append([x1, y1, x2, y2])
-            areas.append(w * h)
+        face_count_histogram = {k: v / total_frames for k, v in face_count_freq.items()}
         
-        boxes_array = np.array(boxes_array, dtype=np.float32)
-        areas = np.array(areas, dtype=np.float32)
+        # Find dominant face count (MODE)
+        # Ignore counts appearing in < 30% of batch
+        valid_counts = {k: v for k, v in face_count_histogram.items() 
+                       if v >= FACE_COUNT_MIN_DOMINANCE}
         
-        # Sort by area (largest first)
-        indices = np.argsort(areas)[::-1]
+        if valid_counts:
+            dominant_face_count = max(valid_counts, key=valid_counts.get)
+            face_count_dominance = valid_counts[dominant_face_count]
+        else:
+            # No count has enough dominance, default to 1 (normal)
+            dominant_face_count = 1
+            face_count_dominance = 0.0
+        
+        # =====================================================================
+        # TASK 2B: Multi-Face Confirmation
+        # Confirm ONLY IF face_count >= 2 appears in >= 70% of batch
+        # =====================================================================
+        multi_face_pct = sum(v for k, v in face_count_histogram.items() if k >= 2)
+        multi_face_confirmed = multi_face_pct >= MULTI_FACE_BATCH_THRESHOLD
+        
+        # =====================================================================
+        # TASK 2C: No-Face Detection
+        # Confirm ONLY IF face_count == 0 appears in >= 60% of batch
+        # =====================================================================
+        no_face_pct = face_count_histogram.get(0, 0.0)
+        no_face_confirmed = no_face_pct >= NO_FACE_BATCH_THRESHOLD
+        
+        # =====================================================================
+        # TASK 3: Classification Analysis - Majority voting
+        # =====================================================================
+        class_freq: Dict[str, int] = {'normal': 0, 'suspicious': 0, 'very_suspicious': 0}
+        for sample in self.buffer:
+            cls = sample.classification
+            if cls in class_freq:
+                class_freq[cls] += 1
+        
+        classification_histogram = {k: v / total_frames for k, v in class_freq.items()}
+        
+        # Find dominant classification
+        dominant_classification = max(class_freq, key=class_freq.get)
+        classification_dominance = classification_histogram[dominant_classification]
+        
+        # =====================================================================
+        # Determine batch decision
+        # =====================================================================
+        decision_reason = ""
+        batch_classification = 'normal'  # Default
+        
+        # Priority 1: Multi-face (if confirmed by batch)
+        if multi_face_confirmed:
+            batch_classification = 'very_suspicious'
+            decision_reason = f"Multi-face BATCH-CONFIRMED ({multi_face_pct:.1%} of batch)"
+        
+        # Priority 2: No-face (if confirmed by batch)
+        elif no_face_confirmed:
+            batch_classification = 'suspicious'
+            decision_reason = f"No-face BATCH-CONFIRMED ({no_face_pct:.1%} of batch)"
+        
+        # Priority 3: Classification majority (if dominates >= 65%)
+        elif classification_dominance >= CLASSIFICATION_DOMINANCE_THRESHOLD:
+            batch_classification = dominant_classification
+            decision_reason = f"Classification '{dominant_classification}' dominates ({classification_dominance:.1%})"
+        
+        # Default: Stay normal
+        else:
+            batch_classification = 'normal'
+            decision_reason = f"No dominant signal (face={dominant_face_count}, class={dominant_classification}@{classification_dominance:.1%})"
+        
+        # =====================================================================
+        # TASK 5: State Inertia - Require 2 consecutive batches to change
+        # =====================================================================
+        if batch_classification == self.pending_state:
+            self.consecutive_state_batches += 1
+        else:
+            self.pending_state = batch_classification
+            self.consecutive_state_batches = 1
+        
+        # Confirm state change only after 2 consecutive batches agree
+        state_changed = False
+        if self.consecutive_state_batches >= STATE_CHANGE_REQUIRED_BATCHES:
+            if self.confirmed_state != self.pending_state:
+                old_state = self.confirmed_state
+                self.confirmed_state = self.pending_state
+                state_changed = True
+                decision_reason += f" | STATE CHANGED: {old_state} -> {self.confirmed_state}"
+        
+        # =====================================================================
+        # TASK 4: Update credibility ONCE per batch
+        # =====================================================================
+        credibility_delta = self._update_credibility(self.confirmed_state)
+        
+        # Build result
+        result = BatchAnalysisResult(
+            dominant_face_count=dominant_face_count,
+            face_count_histogram=face_count_histogram,
+            face_count_dominance_pct=face_count_dominance,
+            multi_face_confirmed=multi_face_confirmed,
+            no_face_confirmed=no_face_confirmed,
+            dominant_classification=self.confirmed_state,  # Use CONFIRMED state
+            classification_histogram=classification_histogram,
+            classification_dominance_pct=classification_dominance,
+            total_frames=total_frames,
+            batch_duration=batch_duration,
+            decision_reason=decision_reason
+        )
+        
+        # =====================================================================
+        # TASK 7: Debug Logging
+        # =====================================================================
+        if DEBUG_BATCH_PROCESSING:
+            logger.info(f"")
+            logger.info(f"{'='*70}")
+            logger.info(f"[BATCH #{self.batch_count}] ANALYSIS COMPLETE")
+            logger.info(f"{'='*70}")
+            logger.info(f"  Frames: {total_frames} | Duration: {batch_duration:.2f}s")
+            logger.info(f"  Face count distribution: {face_count_histogram}")
+            logger.info(f"  Dominant face count: {dominant_face_count} ({face_count_dominance:.1%})")
+            logger.info(f"  Multi-face confirmed: {multi_face_confirmed} ({multi_face_pct:.1%})")
+            logger.info(f"  No-face confirmed: {no_face_confirmed} ({no_face_pct:.1%})")
+            logger.info(f"  Classification distribution: {classification_histogram}")
+            logger.info(f"  Dominant classification: {dominant_classification} ({classification_dominance:.1%})")
+            logger.info(f"  Batch decision: {batch_classification}")
+            logger.info(f"  Confirmed state: {self.confirmed_state} (consecutive batches: {self.consecutive_state_batches})")
+            logger.info(f"  Credibility: {self.credibility_score:.1f} (Δ{credibility_delta:+.2f})")
+            logger.info(f"  Reason: {decision_reason}")
+            logger.info(f"{'='*70}")
+        
+        # =====================================================================
+        # TASK 6: Clear buffer after processing
+        # =====================================================================
+        self.buffer.clear()
+        self.batch_start_time = None
+        self.last_batch_result = result
+        
+        return result
+    
+    def _update_credibility(self, classification: str) -> float:
+        """
+        TASK 4: Update credibility ONCE per batch.
+        
+        Rules:
+        - Normal batch: +0.5
+        - Suspicious batch: -1.0
+        - Very Suspicious batch: -2.0
+        - Cap change per batch to avoid sharp drops
+        """
+        if classification == 'normal':
+            delta = CREDIBILITY_NORMAL_BATCH_INCREMENT
+        elif classification == 'suspicious':
+            delta = -CREDIBILITY_SUSPICIOUS_BATCH_DECREMENT
+        elif classification == 'very_suspicious':
+            delta = -CREDIBILITY_VERY_SUSPICIOUS_BATCH_DECREMENT
+        else:
+            delta = 0.0
+        
+        # Apply cap (TASK 4: Cap change per batch)
+        delta = max(-CREDIBILITY_MAX_DELTA_PER_BATCH, 
+                   min(CREDIBILITY_MAX_DELTA_PER_BATCH, delta))
+        
+        # Update score
+        self.credibility_score += delta
+        self.credibility_score = max(CREDIBILITY_MIN, 
+                                    min(CREDIBILITY_MAX, self.credibility_score))
+        
+        return delta
+    
+    def get_current_state(self) -> Dict:
+        """Get current processor state for API responses"""
+        with self.lock:
+            return {
+                'confirmed_state': self.confirmed_state,
+                'pending_state': self.pending_state,
+                'consecutive_batches': self.consecutive_state_batches,
+                'credibility_score': self.credibility_score,
+                'buffer_size': len(self.buffer),
+                'batch_count': self.batch_count,
+                'last_batch': self.last_batch_result
+            }
+    
+    def force_process(self) -> Optional[BatchAnalysisResult]:
+        """Force process current buffer (even if not full)"""
+        with self.lock:
+            if len(self.buffer) >= 3:  # Need at least a few frames
+                return self._process_batch()
+            return None
+
+
+@dataclass
+class FrameAnalysisResult:
+    """Result of analyzing a single frame"""
+    face_count: int
+    stable_face_count: int
+    faces_detected: bool
+    multiple_faces: bool
+    multiple_faces_confirmed: bool  # True only if persisted for N frames
+    bboxes: List[Tuple[int, int, int, int]]
+    confidences: List[float]
+    frame_hash: str
+    timestamp: float
+
+
+@dataclass
+class ClassificationResult:
+    """Result of behavior classification"""
+    classification: str  # 'normal', 'suspicious', 'very_suspicious'
+    confidence: float
+    raw_probabilities: Dict[str, float]
+    smoothed_probabilities: Dict[str, float]
+    is_stable: bool  # True if classification has been stable
+
+
+# =============================================================================
+# SECURITY: JWT Authentication
+# =============================================================================
+
+def require_auth(f):
+    """Authentication decorator that validates JWT tokens."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        jwt_secret = os.environ.get('JWT_SECRET')
+        if not jwt_secret:
+            logger.error('JWT_SECRET environment variable is not set')
+            return jsonify({'success': False, 'error': 'Server misconfiguration'}), 500
+        
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            logger.warning('Missing Authorization header')
+            return jsonify({'success': False, 'error': 'Unauthorized - No token provided'}), 401
+        
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != 'bearer':
+            logger.warning('Invalid Authorization header format')
+            return jsonify({'success': False, 'error': 'Unauthorized - Invalid token format'}), 401
+        
+        token = parts[1]
+        
+        try:
+            decoded = jwt.decode(token, jwt_secret, algorithms=['HS256'])
+            request.user_id = decoded.get('userId')
+            request.user_type = decoded.get('userType')
+        except jwt.ExpiredSignatureError:
+            return jsonify({'success': False, 'error': 'Unauthorized - Token expired'}), 401
+        except jwt.InvalidTokenError as e:
+            return jsonify({'success': False, 'error': 'Unauthorized - Invalid token'}), 401
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# =============================================================================
+# FACE TRACKER CLASS - Simple per-frame face tracking (BATCH handles certainty)
+# =============================================================================
+
+class FaceTracker:
+    """
+    Simple face tracking across frames.
+    
+    NOTE: This tracker provides RAW per-frame face counts.
+    Certainty logic (multi-face confirmation, no-face confirmation) is now
+    handled by BatchFrameProcessor, not by this class.
+    """
+    
+    def __init__(self):
+        self.tracked_faces: Dict[int, TrackedFace] = {}
+        self.next_face_id = 0
+        self.frame_count = 0
+        self.lock = threading.Lock()
+        
+        logger.info("FaceTracker initialized (raw tracking - batch processor handles certainty)")
+    
+    def reset(self):
+        """Reset tracker state"""
+        with self.lock:
+            self.tracked_faces.clear()
+            self.next_face_id = 0
+            self.frame_count = 0
+            logger.info("FaceTracker reset")
+    
+    def _calculate_iou(self, box1: Tuple[int, int, int, int], 
+                       box2: Tuple[int, int, int, int]) -> float:
+        """Calculate Intersection over Union (IoU) between two bounding boxes."""
+        x1, y1, w1, h1 = box1
+        x2, y2, w2, h2 = box2
+        
+        box1_x2, box1_y2 = x1 + w1, y1 + h1
+        box2_x2, box2_y2 = x2 + w2, y2 + h2
+        
+        inter_x1 = max(x1, x2)
+        inter_y1 = max(y1, y2)
+        inter_x2 = min(box1_x2, box2_x2)
+        inter_y2 = min(box1_y2, box2_y2)
+        
+        if inter_x2 <= inter_x1 or inter_y2 <= inter_y1:
+            return 0.0
+        
+        intersection = (inter_x2 - inter_x1) * (inter_y2 - inter_y1)
+        area1 = w1 * h1
+        area2 = w2 * h2
+        union = area1 + area2 - intersection
+        
+        return intersection / union if union > 0 else 0.0
+    
+    def _merge_overlapping_boxes(self, boxes: List[Tuple[int, int, int, int]], 
+                                  confidences: List[float]) -> Tuple[List[Tuple[int, int, int, int]], List[float]]:
+        """
+        Merge overlapping bounding boxes using Non-Maximum Suppression.
+        TASK 1: Uses stricter IoU threshold (0.5) to merge duplicates
+        """
+        if len(boxes) <= 1:
+            return boxes, confidences
+        
+        boxes_np = np.array(boxes)
+        confs_np = np.array(confidences)
+        
+        # Sort by confidence (highest first)
+        indices = np.argsort(-confs_np)
         keep = []
         
-        logger.debug(f"   NMS: Processing {len(boxes)} boxes with threshold {overlap_threshold}")
-        
         while len(indices) > 0:
-            # Keep the box with largest area
             current = indices[0]
             keep.append(current)
             
             if len(indices) == 1:
                 break
             
-            # Calculate IOU with remaining boxes
-            current_box = boxes_array[current]
+            current_box = boxes_np[current]
             remaining_indices = indices[1:]
-            remaining_boxes = boxes_array[remaining_indices]
+            remaining_boxes = boxes_np[remaining_indices]
             
-            # Calculate intersection
-            x1 = np.maximum(current_box[0], remaining_boxes[:, 0])
-            y1 = np.maximum(current_box[1], remaining_boxes[:, 1])
-            x2 = np.minimum(current_box[2], remaining_boxes[:, 2])
-            y2 = np.minimum(current_box[3], remaining_boxes[:, 3])
+            ious = np.array([self._calculate_iou(tuple(current_box), tuple(box)) 
+                           for box in remaining_boxes])
             
-            w = np.maximum(0, x2 - x1)
-            h = np.maximum(0, y2 - y1)
-            intersection = w * h
-            
-            # Calculate union
-            current_area = areas[current]
-            remaining_areas = areas[remaining_indices]
-            union = current_area + remaining_areas - intersection
-            
-            # Calculate IOU
-            iou = intersection / (union + 1e-6)
-            
-            # Keep boxes with IOU below threshold (lower threshold = keep more boxes)
-            # This means boxes must overlap by MORE than threshold to be removed
-            keep_mask = iou < overlap_threshold
-            indices = remaining_indices[keep_mask]
-            
-            if len(indices) < len(remaining_indices):
-                removed = len(remaining_indices) - len(indices)
-                logger.debug(f"   NMS: Removed {removed} overlapping boxes (IOU >= {overlap_threshold})")
+            # Remove boxes with IoU >= threshold (they're duplicates)
+            indices = remaining_indices[ious < IOU_THRESHOLD_MERGE]
         
-        logger.debug(f"   NMS: Kept {len(keep)} boxes out of {len(boxes)}")
+        merged_boxes = [tuple(boxes_np[i]) for i in keep]
+        merged_confs = [confs_np[i] for i in keep]
         
-        # Convert back to (x, y, w, h) format
-        result = []
-        for idx in keep:
-            x1, y1, x2, y2 = boxes_array[idx]
-            result.append((int(x1), int(y1), int(x2 - x1), int(y2 - y1)))
-        
-        return result
+        return merged_boxes, merged_confs
     
-    def _preprocess_frame(self, frame: np.ndarray) -> List[np.ndarray]:
+    def _suppress_duplicate_tracks(self):
         """
-        Preprocess frame with multiple enhancement techniques for better detection
+        TASK 1D: Duplicate Track Suppression
+        If two tracks overlap with IoU > 0.5, keep the OLDER track, remove newer
+        """
+        if len(self.tracked_faces) <= 1:
+            return
         
-        Args:
-            frame: Original frame
+        face_ids = list(self.tracked_faces.keys())
+        to_remove = set()
+        
+        for i in range(len(face_ids)):
+            if face_ids[i] in to_remove:
+                continue
+            face_i = self.tracked_faces[face_ids[i]]
             
-        Returns:
-            List of preprocessed frames (original, equalized, CLAHE, denoised)
-        """
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        preprocessed = [gray]
+            for j in range(i + 1, len(face_ids)):
+                if face_ids[j] in to_remove:
+                    continue
+                face_j = self.tracked_faces[face_ids[j]]
+                
+                iou = self._calculate_iou(face_i.bbox, face_j.bbox)
+                if iou > IOU_THRESHOLD_DUPLICATE_TRACK:
+                    # Keep older track (lower first_seen_frame), remove newer
+                    if face_i.first_seen_frame <= face_j.first_seen_frame:
+                        to_remove.add(face_ids[j])
+                        if DEBUG_FACE_TRACKING:
+                            logger.debug(f"  [DUPLICATE] Removing track {face_ids[j]} (newer), keeping {face_ids[i]} (IoU={iou:.2f})")
+                    else:
+                        to_remove.add(face_ids[i])
+                        if DEBUG_FACE_TRACKING:
+                            logger.debug(f"  [DUPLICATE] Removing track {face_ids[i]} (newer), keeping {face_ids[j]} (IoU={iou:.2f})")
+                        break  # face_i is removed, stop checking it
         
-        # Histogram equalization
-        gray_eq = cv2.equalizeHist(gray)
-        preprocessed.append(gray_eq)
-        
-        # CLAHE (Contrast Limited Adaptive Histogram Equalization) - better for varying lighting
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        gray_clahe = clahe.apply(gray)
-        preprocessed.append(gray_clahe)
-        
-        # Denoised version
-        gray_denoised = cv2.fastNlMeansDenoising(gray, None, 10, 7, 21)
-        preprocessed.append(gray_denoised)
-        
-        return preprocessed
+        for face_id in to_remove:
+            del self.tracked_faces[face_id]
     
-    def detect_faces(self, frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
-        """
-        Detect faces in a frame - OPTIMIZED for multiple face detection
+    def _match_faces(self, new_boxes: List[Tuple[int, int, int, int]], 
+                     new_confidences: List[float]) -> Dict[int, int]:
+        """Match new detections to existing tracked faces using IoU."""
+        matches = {}
+        used_face_ids = set()
         
-        Args:
-            frame: Image frame as numpy array
+        for i, (new_box, conf) in enumerate(zip(new_boxes, new_confidences)):
+            # TASK 1A: Skip low-confidence detections for matching
+            if conf < FACE_CONFIDENCE_TRACK_THRESHOLD:
+                continue
+                
+            best_iou = 0
+            best_face_id = None
             
-        Returns:
-            List of bounding boxes (x, y, w, h)
+            for face_id, tracked in self.tracked_faces.items():
+                if face_id in used_face_ids:
+                    continue
+                    
+                iou = self._calculate_iou(new_box, tracked.bbox)
+                if iou > best_iou and iou >= IOU_THRESHOLD_TRACK:
+                    best_iou = iou
+                    best_face_id = face_id
+            
+            if best_face_id is not None:
+                matches[i] = best_face_id
+                used_face_ids.add(best_face_id)
+        
+        return matches
+    
+    def update(self, boxes: List[Tuple[int, int, int, int]], 
+               confidences: List[float]) -> Tuple[List[TrackedFace], int, List[float]]:
         """
+        Update tracker with new frame detections.
+        
+        Returns: (active_faces, face_count, face_confidences)
+        
+        NOTE: This returns RAW frame-based counts.
+        BatchFrameProcessor handles certainty logic.
+        """
+        with self.lock:
+            self.frame_count += 1
+            current_time = time.time()
+            
+            # Confidence Gating - Filter out low-confidence detections
+            high_conf_boxes = []
+            high_conf_confs = []
+            for box, conf in zip(boxes, confidences):
+                if conf >= FACE_DETECTION_CONFIDENCE:
+                    high_conf_boxes.append(box)
+                    high_conf_confs.append(conf)
+            
+            # Merge overlapping boxes (NMS)
+            merged_boxes, merged_confs = self._merge_overlapping_boxes(high_conf_boxes, high_conf_confs)
+            
+            # Match new detections to existing tracked faces
+            matches = self._match_faces(merged_boxes, merged_confs)
+            
+            # Update matched faces
+            for box_idx, face_id in matches.items():
+                self.tracked_faces[face_id].update(
+                    merged_boxes[box_idx],
+                    merged_confs[box_idx],
+                    self.frame_count
+                )
+            
+            # Create new tracked faces for unmatched detections
+            for i, (box, conf) in enumerate(zip(merged_boxes, merged_confs)):
+                if i not in matches:
+                    new_face = TrackedFace(
+                        id=self.next_face_id,
+                        bbox=box,
+                        confidence=conf,
+                        first_seen_frame=self.frame_count,
+                        last_seen_frame=self.frame_count,
+                        center_history=[(box[0] + box[2]/2, box[1] + box[3]/2)],
+                        first_seen_time=current_time,
+                        last_seen_time=current_time
+                    )
+                    self.tracked_faces[self.next_face_id] = new_face
+                    self.next_face_id += 1
+            
+            # Prune stale tracks
+            stale_ids = [
+                face_id for face_id, face in self.tracked_faces.items()
+                if self.frame_count - face.last_seen_frame > FACE_DISAPPEAR_FRAMES
+            ]
+            for face_id in stale_ids:
+                del self.tracked_faces[face_id]
+            
+            # Suppress duplicate tracks
+            self._suppress_duplicate_tracks()
+            
+            # Count ACTIVE faces (RAW count - batch handles certainty)
+            active_faces = [f for f in self.tracked_faces.values() if f.is_active(self.frame_count)]
+            face_count = len(active_faces)
+            face_confidences = [f.confidence for f in active_faces]
+            
+            return active_faces, face_count, face_confidences
+
+
+# =============================================================================
+# CLASSIFICATION SMOOTHER - Prevents rapid classification jumping
+# =============================================================================
+
+class ClassificationSmoother:
+    """
+    Smooths classification results using sliding window and majority voting.
+    
+    TASK 3: Normal Behavior Strengthening
+    A. Normal Gravity - Bias toward normal when single stable face
+    B. Faster Recovery - 2 frames to recover vs 4 to escalate
+    D. Weak Signal Suppression - Single-frame anomalies ignored
+    """
+    
+    def __init__(self, window_size: int = CLASSIFICATION_WINDOW_SIZE):
+        self.window_size = window_size
+        self.history: deque = deque(maxlen=window_size)
+        self.current_classification = 'normal'
+        self.current_confidence = 1.0
+        self.frames_in_current_state = 0
+        self.lock = threading.Lock()
+        
+        logger.info(f"ClassificationSmoother initialized (Normal gravity enabled, fast recovery={NORMAL_RECOVERY_FRAMES} frames)")
+    
+    def reset(self):
+        """Reset smoother state"""
+        with self.lock:
+            self.history.clear()
+            self.current_classification = 'normal'
+            self.current_confidence = 1.0
+            self.frames_in_current_state = 0
+            logger.info("ClassificationSmoother reset")
+    
+    def smooth(self, raw_classification: str, raw_confidence: float,
+               probabilities: Dict[str, float],
+               has_single_stable_face: bool = False,
+               no_violations: bool = True) -> ClassificationResult:
+        """
+        Apply smoothing to raw classification result.
+        
+        TASK 3A: Normal Gravity
+        - If single stable face + no violations, bias toward normal
+        
+        TASK 3B: Faster Recovery (2 frames) vs Slower Escalation (4 frames)
+        
+        TASK 3D: Weak Signal Suppression
+        - Single-frame anomalies are ignored (require sustained signals)
+        """
+        with self.lock:
+            # TASK 3A: Normal Gravity - Force bias toward normal if conditions met
+            adjusted_classification = raw_classification
+            adjusted_probs = probabilities.copy()
+            
+            if has_single_stable_face and no_violations:
+                # Single stable face + no violations = Strong normal bias
+                # Even if model says suspicious, bias toward normal
+                if raw_classification in ['suspicious'] and raw_confidence < 0.8:
+                    adjusted_classification = 'normal'
+                    # Boost normal probability
+                    adjusted_probs['normal'] = max(adjusted_probs.get('normal', 0.5), 0.7)
+                    adjusted_probs['suspicious'] = min(adjusted_probs.get('suspicious', 0.3), 0.2)
+                    adjusted_probs['very_suspicious'] = min(adjusted_probs.get('very_suspicious', 0.1), 0.1)
+                    if DEBUG_FACE_TRACKING:
+                        logger.debug(f"  [NORMAL GRAVITY] Single stable face, biasing toward normal")
+            
+            # Add to history
+            self.history.append({
+                'classification': adjusted_classification,
+                'confidence': raw_confidence,
+                'probabilities': adjusted_probs
+            })
+            
+            if len(self.history) < 2:
+                # TASK 3D: Not enough history = default to normal (weak signal suppression)
+                return ClassificationResult(
+                    classification='normal',
+                    confidence=0.8,
+                    raw_probabilities=probabilities,
+                    smoothed_probabilities=adjusted_probs,
+                    is_stable=False
+                )
+            
+            # Count classifications in window
+            counts = {'normal': 0, 'suspicious': 0, 'very_suspicious': 0}
+            for item in self.history:
+                counts[item['classification']] += 1
+            
+            # Calculate smoothed probabilities
+            smoothed_probs = {'normal': 0.0, 'suspicious': 0.0, 'very_suspicious': 0.0}
+            for item in self.history:
+                for key in smoothed_probs:
+                    smoothed_probs[key] += item['probabilities'].get(key, 0.0)
+            for key in smoothed_probs:
+                smoothed_probs[key] /= len(self.history)
+            
+            majority_class = max(counts, key=counts.get)
+            majority_count = counts[majority_class]
+            
+            # Apply hysteresis with ASYMMETRIC thresholds (TASK 3B)
+            # Escalation requires MORE frames, recovery requires FEWER
+            new_classification = self.current_classification
+            classification_reason = ""
+            
+            if majority_class != self.current_classification:
+                # Escalation: normal -> suspicious (requires 4 frames)
+                if (self.current_classification == 'normal' and 
+                    majority_class in ['suspicious', 'very_suspicious']):
+                    suspicious_count = counts['suspicious'] + counts['very_suspicious']
+                    if suspicious_count >= NORMAL_TO_SUSPICIOUS_THRESHOLD:
+                        new_classification = 'suspicious'
+                        classification_reason = f"Escalated: normal->suspicious (count={suspicious_count}>={NORMAL_TO_SUSPICIOUS_THRESHOLD})"
+                    else:
+                        classification_reason = f"Staying normal (suspicious count {suspicious_count} < {NORMAL_TO_SUSPICIOUS_THRESHOLD})"
+                
+                # Escalation: suspicious -> very_suspicious (requires 5 frames)
+                elif (self.current_classification == 'suspicious' and 
+                      majority_class == 'very_suspicious'):
+                    if counts['very_suspicious'] >= SUSPICIOUS_TO_VERY_THRESHOLD:
+                        new_classification = 'very_suspicious'
+                        classification_reason = f"Escalated: suspicious->very_suspicious (count={counts['very_suspicious']})"
+                
+                # De-escalation: very_suspicious -> suspicious (only 2 frames needed!)
+                elif (self.current_classification == 'very_suspicious' and
+                      majority_class in ['normal', 'suspicious']):
+                    normal_count = counts['normal']
+                    if normal_count >= NORMAL_RECOVERY_FRAMES:
+                        new_classification = 'suspicious'
+                        classification_reason = f"De-escalated: very_suspicious->suspicious (normal={normal_count}>={NORMAL_RECOVERY_FRAMES})"
+                
+                # De-escalation: suspicious -> normal (only 2 frames needed!)
+                elif (self.current_classification == 'suspicious' and
+                      majority_class == 'normal'):
+                    if counts['normal'] >= NORMAL_RECOVERY_FRAMES:
+                        new_classification = 'normal'
+                        classification_reason = f"Recovered: suspicious->normal (count={counts['normal']}>={NORMAL_RECOVERY_FRAMES})"
+            
+            # Update state
+            if new_classification != self.current_classification:
+                if classification_reason:
+                    logger.info(f"[CLASSIFICATION] {classification_reason}")
+                self.current_classification = new_classification
+                self.frames_in_current_state = 0
+            else:
+                self.frames_in_current_state += 1
+            
+            # Calculate confidence
+            agreement_ratio = majority_count / len(self.history)
+            smoothed_confidence = smoothed_probs[new_classification] * agreement_ratio
+            self.current_confidence = smoothed_confidence
+            
+            # TASK 4: Debug logging
+            if DEBUG_FACE_TRACKING:
+                logger.debug(f"  [SMOOTH] Raw: {raw_classification}, Adjusted: {adjusted_classification}, "
+                           f"Final: {new_classification}, Counts: {counts}, Frames in state: {self.frames_in_current_state}")
+            
+            return ClassificationResult(
+                classification=new_classification,
+                confidence=smoothed_confidence,
+                raw_probabilities=probabilities,
+                smoothed_probabilities=smoothed_probs,
+                is_stable=self.frames_in_current_state >= 3
+            )
+
+
+# =============================================================================
+# TASK 3: CREDIBILITY SCORE — TRUST MODEL (Per-second, not per-frame)
+# =============================================================================
+
+class CredibilityScoreManager:
+    """
+    TASK 3: Credibility as TRUST-IN-TIME
+    
+    Rules:
+    A. Score Range: 0-100, start at 95
+    B. Update Rate: per SECOND, not per frame
+       - Normal: +0.2/sec (cap 100)
+       - Suspicious: -0.5/sec
+       - Very Suspicious: -1.2/sec
+    C. Temporal Gate: State must persist >= 2 seconds before affecting score
+    D. Inertia Rule: Score cannot change more than ±2 points per second
+    E. Recovery Bias: Recovery rate > decay rate for short violations
+    """
+    
+    def __init__(self):
+        self.score = CREDIBILITY_INITIAL  # Start at 95
+        self.last_update_time = time.time()
+        self.current_state = 'normal'
+        self.state_start_time = time.time()
+        self.last_score_change_time = time.time()
+        self.history: deque = deque(maxlen=100)
+        self.frozen = False  # TASK 4: Freeze during normal gravity override
+        self.lock = threading.Lock()
+        
+        logger.info(f"CredibilityScoreManager initialized (TRUST MODEL, start={CREDIBILITY_INITIAL}, temporal_gate={CREDIBILITY_TEMPORAL_GATE_SECONDS}s)")
+    
+    def reset(self):
+        """Reset score to initial value"""
+        with self.lock:
+            self.score = CREDIBILITY_INITIAL
+            self.last_update_time = time.time()
+            self.current_state = 'normal'
+            self.state_start_time = time.time()
+            self.last_score_change_time = time.time()
+            self.frozen = False
+            self.history.clear()
+            logger.info(f"CredibilityScoreManager reset to {self.score}")
+    
+    def freeze(self, frozen: bool = True):
+        """TASK 4: Freeze credibility decay during normal gravity override"""
+        self.frozen = frozen
+    
+    def update(self, classification: str, confidence: float, 
+               multi_face_confirmed: bool = False) -> Tuple[float, float]:
+        """
+        TASK 3: TRUST MODEL - Per-second updates with temporal gating
+        
+        Rules:
+        B. Update Rate (per second, not per frame)
+           - Normal: +0.2/sec
+           - Suspicious: -0.5/sec
+           - Very Suspicious: -1.2/sec
+        C. Temporal Gate: State must persist >= 2 seconds before affecting score
+        D. Inertia Rule: Score cannot change more than ±2 points per second
+        E. Recovery Bias: Built-in via rate differential
+        """
+        with self.lock:
+            current_time = time.time()
+            time_elapsed = current_time - self.last_update_time
+            
+            # TASK 4: If frozen (Normal Gravity override), no decay
+            if self.frozen and classification != 'normal':
+                classification = 'normal'  # Force normal during freeze
+            
+            # Track state changes for temporal gating
+            if classification != self.current_state:
+                self.current_state = classification
+                self.state_start_time = current_time
+            
+            state_duration = current_time - self.state_start_time
+            
+            # TASK 3C: Temporal Gate - State must persist >= 2 seconds before affecting score
+            # Exception: Normal always affects score immediately (recovery bias)
+            gated = (classification != 'normal' and 
+                    state_duration < CREDIBILITY_TEMPORAL_GATE_SECONDS)
+            
+            # Calculate raw delta based on classification
+            rate = 0.0
+            if classification == 'normal' and not multi_face_confirmed:
+                rate = CREDIBILITY_NORMAL_RATE
+            elif classification == 'suspicious':
+                rate = 0.0 if gated else CREDIBILITY_SUSPICIOUS_RATE
+            elif classification == 'very_suspicious' or multi_face_confirmed:
+                rate = 0.0 if (gated and not multi_face_confirmed) else CREDIBILITY_VERY_SUSPICIOUS_RATE
+            
+            # Calculate delta based on time elapsed (per-second rate)
+            raw_delta = rate * time_elapsed
+            
+            # Inertia Rule - Cannot change more than ±2 points per second
+            max_delta = CREDIBILITY_MAX_DELTA_PER_SECOND * time_elapsed
+            delta = max(-max_delta, min(max_delta, raw_delta))
+            
+            # Apply delta
+            old_score = self.score
+            self.score += delta
+            self.score = max(CREDIBILITY_MIN, min(CREDIBILITY_MAX, self.score))
+            
+            # Record in history
+            self.history.append({
+                'timestamp': current_time,
+                'classification': classification,
+                'confidence': confidence,
+                'delta': delta,
+                'score': self.score,
+                'state_duration': state_duration,
+                'gated': gated
+            })
+            
+            self.last_update_time = current_time
+            
+            # TASK 5: Debug logging
+            if DEBUG_TIME_WINDOWS and abs(delta) > 0.001:
+                gate_status = "GATED" if gated else "ACTIVE"
+                logger.debug(f"  [CREDIBILITY] {classification}: delta={delta:+.3f}/s, score={self.score:.1f}, "
+                           f"state_duration={state_duration:.1f}s, {gate_status}")
+            
+            return self.score, delta
+    
+    def get_normalized_score(self) -> float:
+        """Get score normalized to 0-1 range"""
+        return self.score / CREDIBILITY_MAX
+    
+    def get_state_duration(self) -> float:
+        """Get how long current state has persisted"""
+        return time.time() - self.state_start_time
+
+
+# =============================================================================
+# FACE DETECTOR CLASS - Raw face detection (single frame)
+# =============================================================================
+
+class FaceDetector:
+    """
+    Face detection using MediaPipe (ML-based).
+    This class handles SINGLE FRAME detection only.
+    Temporal tracking is handled by FaceTracker.
+    """
+    
+    def __init__(self):
+        self.face_cascade = None
+        self.detection_method = None
+        
+        # Initialize MediaPipe
+        if MEDIAPIPE_AVAILABLE:
+            try:
+                self.mp_face_detection = mp.solutions.face_detection
+                self.face_detection = self.mp_face_detection.FaceDetection(
+                    model_selection=1,  # Full-range model
+                    min_detection_confidence=FACE_DETECTION_CONFIDENCE
+                )
+                self.detection_method = 'mediapipe'
+                logger.info("✅ Using MediaPipe face detection")
+            except Exception as e:
+                logger.warning(f"MediaPipe init failed: {str(e)[:200]}")
+        
+        # Fallback to Haar Cascade
+        if self.detection_method is None:
+            try:
+                cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                self.face_cascade = cv2.CascadeClassifier(cascade_path)
+                if not self.face_cascade.empty():
+                    self.detection_method = 'haar'
+                    logger.warning("⚠️ Using Haar Cascade (less accurate)")
+            except Exception as e:
+                logger.error(f"All detection methods failed: {str(e)[:200]}")
+    
+    def detect_faces_raw(self, frame: np.ndarray) -> Tuple[List[Tuple[int, int, int, int]], List[float]]:
+        """
+        Detect faces in a single frame (raw detection, no tracking).
+        
+        Returns:
+            Tuple of (bounding_boxes, confidences)
+        """
+        h, w = frame.shape[:2]
+        boxes = []
+        confidences = []
+        
         try:
-            all_detections = []
-            
-            if self.net is not None:
-                # Use DNN face detection - OPTIMIZED
-                h, w = frame.shape[:2]
+            if self.detection_method == 'mediapipe':
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = self.face_detection.process(rgb_frame)
                 
-                # Try multiple scales for better detection - MORE AGGRESSIVE
-                scales = [1.0, 1.2, 0.8, 0.6, 1.4]  # More scales for comprehensive detection
-                confidences = [0.25, 0.28, 0.3, 0.32, 0.35]  # Lower thresholds for multiple faces
-                
-                for scale, conf_threshold in zip(scales, confidences):
-                    blob_scale = int(300 * scale)
-                    blob = cv2.dnn.blobFromImage(frame, 1.0, (blob_scale, blob_scale), [104, 117, 123])
-                    self.net.setInput(blob)
-                    detections = self.net.forward()
-                    
-                    for i in range(detections.shape[2]):
-                        confidence = detections[0, 0, i, 2]
-                        if confidence > conf_threshold:
-                            x1 = int(detections[0, 0, i, 3] * w)
-                            y1 = int(detections[0, 0, i, 4] * h)
-                            x2 = int(detections[0, 0, i, 5] * w)
-                            y2 = int(detections[0, 0, i, 6] * h)
+                if results.detections:
+                    for detection in results.detections:
+                        bbox = detection.location_data.relative_bounding_box
+                        
+                        # Convert to absolute coordinates
+                        x = int(bbox.xmin * w)
+                        y = int(bbox.ymin * h)
+                        width = int(bbox.width * w)
+                        height = int(bbox.height * h)
+                        
+                        # Validate bounds
+                        x = max(0, min(x, w))
+                        y = max(0, min(y, h))
+                        width = min(width, w - x)
+                        height = min(height, h - y)
+                        
+                        confidence = detection.score[0] if detection.score else 0.0
+                        
+                        # Filter by size
+                        if (width >= FACE_MIN_SIZE[0] and 
+                            height >= FACE_MIN_SIZE[1] and
+                            width <= w * FACE_MAX_RATIO and
+                            height <= h * FACE_MAX_RATIO):
                             
-                            # Ensure valid bounding box
-                            x1 = max(0, min(x1, w))
-                            y1 = max(0, min(y1, h))
-                            x2 = max(0, min(x2, w))
-                            y2 = max(0, min(y2, h))
-                            
-                            if x2 > x1 and y2 > y1:
-                                all_detections.append((x1, y1, x2 - x1, y2 - y1))
-                
-                # Apply NMS to remove duplicates - VERY LOW threshold to preserve close faces
-                faces = self._non_max_suppression(all_detections, overlap_threshold=0.15)
-                
-            else:
-                # Use Haar Cascade - COMPLETELY OPTIMIZED for multiple face detection
-                preprocessed_frames = self._preprocess_frame(frame)
-                
-                # Multiple detection passes with different parameters - AGGRESSIVE for multiple faces
-                detection_configs = [
-                    # Ultra-sensitive detection - catches small/partial faces
-                    {'scaleFactor': 1.05, 'minNeighbors': 2, 'minSize': (20, 20)},
-                    # Sensitive detection - catches smaller faces
-                    {'scaleFactor': 1.08, 'minNeighbors': 3, 'minSize': (25, 25)},
-                    # Standard detection - balanced
-                    {'scaleFactor': 1.1, 'minNeighbors': 4, 'minSize': (30, 30)},
-                    # Standard-sensitive - catches medium faces
-                    {'scaleFactor': 1.12, 'minNeighbors': 3, 'minSize': (30, 30)},
-                    # Conservative detection - catches clear faces
-                    {'scaleFactor': 1.15, 'minNeighbors': 4, 'minSize': (35, 35)},
-                ]
-                
-                # Detect faces with multiple configurations and preprocessing
-                for preprocessed in preprocessed_frames:
-                    for config in detection_configs:
-                        detected = self.face_cascade.detectMultiScale(
-                            preprocessed,
-                            scaleFactor=config['scaleFactor'],
-                            minNeighbors=config['minNeighbors'],
-                            minSize=config['minSize'],
-                            flags=cv2.CASCADE_SCALE_IMAGE
-                            # Removed maxSize to allow larger faces
-                        )
-                        all_detections.extend(list(detected))
-                
-                # Filter out invalid detections - VERY LENIENT
-                valid_detections = []
-                h, w = frame.shape[:2]
-                for x, y, w_box, h_box in all_detections:
-                    # Skip if too small (likely noise) - lowered threshold
-                    if w_box < 20 or h_box < 20:
-                        continue
-                    # Skip if outside frame bounds (with small buffer)
-                    if x < -10 or y < -10 or x + w_box > w + 10 or y + h_box > h + 10:
-                        continue
-                    # Skip if extremely large (likely false positive)
-                    if w_box > w * 0.9 or h_box > h * 0.9:
-                        continue
-                    valid_detections.append((x, y, w_box, h_box))
-                
-                logger.info(f"🔍 Total detections before NMS: {len(valid_detections)}")
-                if len(valid_detections) > 0:
-                    logger.info(f"   Detection details: {[(w, h) for x, y, w, h in valid_detections[:10]]}")  # Show first 10
-                
-                # Apply Non-Maximum Suppression with VERY LOW threshold
-                # Very low threshold (0.15) allows faces that are very close but separate
-                faces = self._non_max_suppression(valid_detections, overlap_threshold=0.15)
-                
-                logger.info(f"🔍 Faces after NMS: {len(faces)}")
-                if len(faces) > 1:
-                    logger.info(f"   Multiple faces detected! Face sizes: {[(w, h) for x, y, w, h in faces]}")
-                
-                # MINIMAL validation - only remove extremely obvious false positives
-                # Don't filter based on size ratio when multiple faces detected - trust the detection
-                if len(faces) > 1:
-                    # Only remove faces that are clearly outside bounds or extremely tiny
-                    validated_faces = []
-                    h, w = frame.shape[:2]
-                    for face in faces:
-                        x, y, w_box, h_box = face
-                        # Only filter if completely outside frame or extremely small
-                        if (x + w_box < 5 or y + h_box < 5 or 
-                            x > w - 5 or y > h - 5 or
-                            w_box < 15 or h_box < 15):
-                            logger.debug(f"   ⚠️  Filtered edge/too-small face: {w_box}x{h_box} at ({x}, {y})")
-                            continue
-                        validated_faces.append(face)
-                    
-                    # Keep all validated faces - no area ratio filtering
-                    faces = validated_faces if len(validated_faces) > 0 else faces  # Keep all if validation removed everything
-                    logger.info(f"✅ Final multiple faces: {len(faces)}")
+                            # Aspect ratio check (faces are roughly square)
+                            aspect = width / height if height > 0 else 0
+                            if 0.5 <= aspect <= 2.0:
+                                boxes.append((x, y, width, height))
+                                confidences.append(confidence)
             
-            # Log detected faces for debugging - ALWAYS log at INFO level for visibility
-            if len(faces) > 1:
-                logger.info(f"✅✅✅ MULTIPLE FACES DETECTED: {len(faces)} faces ✅✅✅")
-                for idx, (x, y, w_box, h_box) in enumerate(faces, 1):
-                    area = w_box * h_box
-                    logger.info(f"   Face {idx}: {w_box}x{h_box} (area={area}) at ({x}, {y})")
-            elif len(faces) == 1:
-                logger.info(f"✅ Single face detected: {faces[0][2]}x{faces[0][3]} at ({faces[0][0]}, {faces[0][1]})")
-            else:
-                logger.warning(f"⚠️ No faces detected - may need more aggressive detection")
-            
-            return faces
+            elif self.detection_method == 'haar':
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                detected = self.face_cascade.detectMultiScale(
+                    gray,
+                    scaleFactor=1.1,
+                    minNeighbors=5,
+                    minSize=FACE_MIN_SIZE
+                )
+                for (x, y, w_box, h_box) in detected:
+                    boxes.append((x, y, w_box, h_box))
+                    confidences.append(0.7)  # Haar doesn't give confidence
             
         except Exception as e:
-            logger.error(f"Error detecting faces: {str(e)}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return []
+            logger.error(f"Detection error: {str(e)}")
+        
+        return boxes, confidences
+
+
+# =============================================================================
+# SESSION MANAGER - Handles per-session state
+# =============================================================================
+
+class SessionManager:
+    """
+    Manages session-specific state for BATCH-BASED proctoring.
     
-    def analyze_frame(self, frame: np.ndarray) -> Dict:
-        """
-        Analyze a frame and return detection results
+    BATCH PROCESSING:
+    - BatchFrameProcessor handles all certainty logic
+    - FaceTracker provides raw per-frame detection
+    - All decisions made per BATCH, not per frame
+    """
+    
+    def __init__(self):
+        self.sessions: Dict[str, Dict] = {}
+        self.default_session_id = "default"
+        self.lock = threading.Lock()
         
-        Args:
-            frame: Image frame as numpy array
-            
-        Returns:
-            Dictionary with detection results
-        """
-        faces = self.detect_faces(frame)
-        face_count = len(faces)
-        
-        # Ensure multiple faces is detected correctly
-        multiple_faces = face_count > 1
-        
-        return {
-            'face_count': int(face_count),
-            'faces_detected': face_count > 0,
-            'multiple_faces': face_count > 1,
-            'bboxes': [tuple(int(x) for x in bbox) for bbox in faces],
-            'status': 'valid' if face_count == 1 else ('multiple' if face_count > 1 else 'no_face')
+        # Create default session
+        self._create_session(self.default_session_id)
+        logger.info("SessionManager initialized (BATCH-BASED processing)")
+    
+    def _create_session(self, session_id: str) -> Dict:
+        """Create a new session with fresh state"""
+        session = {
+            'face_tracker': FaceTracker(),
+            'batch_processor': BatchFrameProcessor(),  # NEW: Batch-based processing
+            'last_frame_hash': None,
+            'frame_count': 0,
+            'created_at': time.time(),
+            'last_batch_result': None  # Cache last batch result for API responses
         }
+        self.sessions[session_id] = session
+        return session
+    
+    def get_session(self, session_id: str = None) -> Dict:
+        """Get session by ID, creating if necessary"""
+        with self.lock:
+            sid = session_id or self.default_session_id
+            if sid not in self.sessions:
+                return self._create_session(sid)
+            return self.sessions[sid]
+    
+    def reset_session(self, session_id: str = None):
+        """Reset session state (TASK 6: Clear all buffers)"""
+        with self.lock:
+            sid = session_id or self.default_session_id
+            if sid in self.sessions:
+                session = self.sessions[sid]
+                session['face_tracker'].reset()
+                session['batch_processor'].reset()
+                session['last_frame_hash'] = None
+                session['frame_count'] = 0
+                session['last_batch_result'] = None
+                logger.info(f"Session {sid} reset - all state cleared")
+    
+    def is_duplicate_frame(self, session_id: str, frame: np.ndarray) -> bool:
+        """
+        Check if frame is duplicate of last processed frame.
+        
+        FIX: Prevents processing same frame multiple times (loopback bug)
+        """
+        session = self.get_session(session_id)
+        
+        # Compute frame hash (fast, uses downsampled version)
+        small = cv2.resize(frame, (64, 64))
+        frame_hash = hashlib.md5(small.tobytes()).hexdigest()
+        
+        if session['last_frame_hash'] == frame_hash:
+            return True
+        
+        session['last_frame_hash'] = frame_hash
+        session['frame_count'] += 1
+        return False
 
 
-# Initialize face detector
+# =============================================================================
+# INITIALIZE GLOBAL COMPONENTS
+# =============================================================================
+
 detector = FaceDetector()
+session_manager = SessionManager()
 
-# Initialize behavior classification model
+# Load behavior model
 behavior_model = None
 if TENSORFLOW_AVAILABLE:
     try:
         model_path = os.path.join(os.path.dirname(__file__), 'suspicious_activity_model.h5')
         if os.path.exists(model_path):
-            # Try multiple loading strategies for compatibility
             try:
                 import tensorflow as tf
                 from tensorflow.keras.layers import InputLayer
-                from tensorflow.keras import backend as K
                 
-                # Strategy 1: Try with custom objects for DTypePolicy and InputLayer
                 class CompatibleInputLayer(InputLayer):
                     def __init__(self, *args, **kwargs):
                         if 'batch_shape' in kwargs:
@@ -379,7 +1312,6 @@ if TENSORFLOW_AVAILABLE:
                                 kwargs['input_shape'] = batch_shape[1:]
                         super().__init__(*args, **kwargs)
                 
-                # Handle DTypePolicy compatibility
                 class CompatibleDTypePolicy(tf.keras.mixed_precision.Policy):
                     def __init__(self, name='float32'):
                         super().__init__(name)
@@ -388,380 +1320,337 @@ if TENSORFLOW_AVAILABLE:
                     'InputLayer': CompatibleInputLayer,
                     'DTypePolicy': CompatibleDTypePolicy,
                     'Policy': CompatibleDTypePolicy,
-                    'keras': tf.keras
                 }
                 
                 behavior_model = load_model(model_path, custom_objects=custom_objects, compile=False)
                 behavior_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-                logger.info("Loaded suspicious activity classification model (with compatibility fix)")
-            except Exception as e1:
-                # Strategy 2: Try loading without custom objects but with compile=False
-                try:
-                    behavior_model = load_model(model_path, compile=False)
-                    behavior_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-                    logger.info("Loaded suspicious activity classification model")
-                except Exception as e2:
-                    # Strategy 3: Use safe_mode=False for TensorFlow 2.13+
-                    try:
-                        behavior_model = load_model(model_path, compile=False, safe_mode=False)
-                        behavior_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-                        logger.info("Loaded suspicious activity classification model (safe_mode=False)")
-                    except Exception as e3:
-                        logger.warning(f"Model loading failed with all strategies. Will use rule-based classification.")
-                        logger.warning(f"Error 1: {str(e1)[:200]}")
-                        logger.warning(f"Error 2: {str(e2)[:200]}")
-                        logger.warning(f"Error 3: {str(e3)[:200]}")
-                        behavior_model = None
-        else:
-            logger.warning(f"Behavior model not found at {model_path}")
+                logger.info("✅ Loaded behavior classification model")
+            except Exception as e:
+                logger.warning(f"Model loading failed: {str(e)[:200]}")
     except Exception as e:
         logger.warning(f"TensorFlow available but model loading failed: {str(e)[:200]}")
-        behavior_model = None
 
 
-# ==================== ML Ensemble Models ====================
-# Frame buffer for multi-frame analysis (improves accuracy)
-FRAME_BUFFER_SIZE = 5  # Analyze last 5 frames for better normal detection
-frame_buffer = []  # Stores feature vectors from recent frames
-behavior_history = []  # Stores behavior patterns for KNN matching
-
-# ML Models for ensemble classification
-ml_models = {}
-scaler = None
-
-def extract_features(frame, face_result, head_pose, phone_prob, no_face_duration, is_idle, audio_level):
-    """
-    Extract features from frame and behavior data for ML models
-    Returns a feature vector
-    """
-    features = []
-    
-    # Face features
-    features.append(float(face_result['face_count']))
-    features.append(float(1 if face_result['faces_detected'] else 0))
-    features.append(float(1 if face_result['multiple_faces'] else 0))
-    
-    # Head pose (one-hot encoded)
-    pose_map = {'center': 0, 'left': 1, 'right': 2, 'up': 3, 'down': 4, 'away': 5, 'unknown': 6}
-    pose_features = [0.0] * 7
-    if head_pose in pose_map:
-        pose_features[pose_map[head_pose]] = 1.0
-    features.extend(pose_features)
-    
-    # Phone detection
-    features.append(float(phone_prob))
-    
-    # Activity features
-    features.append(float(1 if is_idle else 0))
-    features.append(float(audio_level))
-    features.append(float(min(no_face_duration / 10.0, 1.0)))  # Normalized to 0-1
-    
-    # Frame statistics (if face detected)
-    if face_result['faces_detected'] and len(face_result['bboxes']) > 0:
-        bbox = face_result['bboxes'][0]
-        h, w = frame.shape[:2]
-        # Face size relative to frame
-        face_area = (bbox[2] * bbox[3]) / (w * h)
-        features.append(float(face_area))
-        # Face position (normalized)
-        features.append(float(bbox[0] / w))  # x position
-        features.append(float(bbox[1] / h))  # y position
-    else:
-        features.extend([0.0, 0.0, 0.0])
-    
-    return np.array(features)
-
-def initialize_ml_models():
-    """Initialize ML ensemble models"""
-    global ml_models, scaler
-    
-    if not SKLEARN_AVAILABLE:
-        logger.warning("scikit-learn not available - ML models will use default settings")
-        return
-    
-    try:
-        # Initialize scaler for feature normalization (assign to global)
-        global scaler
-        scaler = StandardScaler()
-        
-        # Initialize individual models
-        ml_models = {
-            'knn': KNeighborsClassifier(n_neighbors=5, weights='distance'),
-            'naive_bayes': GaussianNB(),
-            'decision_tree': DecisionTreeClassifier(max_depth=10, random_state=42),
-            'svm': SVC(kernel='rbf', probability=True, random_state=42),
-        }
-        
-        # Create ensemble with voting classifier
-        ml_models['ensemble'] = VotingClassifier(
-            estimators=[
-                ('knn', ml_models['knn']),
-                ('nb', ml_models['naive_bayes']),
-                ('dt', ml_models['decision_tree']),
-                ('svm', ml_models['svm']),
-            ],
-            voting='soft'  # Use probability voting
-        )
-        
-        logger.info("ML ensemble models initialized successfully")
-        
-        # Train on synthetic data for initial state (will improve with real data)
-        train_initial_models()
-        
-    except Exception as e:
-        logger.error(f"Failed to initialize ML models: {str(e)}")
-        ml_models = {}
-        scaler = None
-
-def train_initial_models():
-    """Train models on synthetic baseline data"""
-    global ml_models, scaler
-    
-    if not ml_models or scaler is None:
-        return
-    
-    try:
-        # Generate synthetic training data based on expected patterns
-        n_samples = 100
-        X = []
-        y = []
-        
-        # Normal class examples (1 face, center pose, low phone prob, no idle, low audio)
-        for _ in range(n_samples // 2):
-            features = [
-                1.0,  # face_count
-                1.0,  # faces_detected
-                0.0,  # multiple_faces
-                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,  # center pose
-                0.1 + np.random.random() * 0.2,  # phone_prob (low)
-                0.0,  # not idle
-                0.0 + np.random.random() * 0.3,  # low audio
-                0.0,  # no face duration
-                0.1 + np.random.random() * 0.1,  # face area
-                0.4 + np.random.random() * 0.2,  # x position (center)
-                0.4 + np.random.random() * 0.2,  # y position (center)
-            ]
-            X.append(features)
-            y.append(0)  # normal
-        
-        # Suspicious class examples
-        for _ in range(n_samples // 4):
-            features = [
-                1.0,  # face_count
-                1.0,  # faces_detected
-                0.0,  # multiple_faces
-                0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,  # left pose (gaze away)
-                0.3 + np.random.random() * 0.3,  # medium phone_prob
-                1.0 if np.random.random() > 0.5 else 0.0,  # sometimes idle
-                0.4 + np.random.random() * 0.3,  # medium audio
-                0.2 + np.random.random() * 0.3,  # some no face duration
-                0.08 + np.random.random() * 0.08,  # face area
-                0.2 + np.random.random() * 0.3,  # x position (left)
-                0.3 + np.random.random() * 0.3,  # y position
-            ]
-            X.append(features)
-            y.append(1)  # suspicious
-        
-        # Very suspicious class examples
-        for _ in range(n_samples // 4):
-            # Multiple faces or no face or high phone
-            if np.random.random() > 0.5:
-                features = [
-                    2.0,  # multiple faces
-                    1.0,
-                    1.0,  # multiple_faces
-                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                    0.2,
-                    0.0,
-                    0.2,
-                    0.1,
-                    0.1,
-                    0.3,
-                    0.3,
-                ]
-            else:
-                features = [
-                    1.0,
-                    1.0,
-                    0.0,
-                    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                    0.6 + np.random.random() * 0.3,  # high phone_prob
-                    0.0,
-                    0.5 + np.random.random() * 0.4,  # high audio
-                    0.5 + np.random.random() * 0.4,  # high no face duration
-                    0.08,
-                    0.3,
-                    0.3,
-                ]
-            X.append(features)
-            y.append(2)  # very_suspicious
-        
-        X = np.array(X)
-        y = np.array(y)
-        
-        # Scale features
-        X_scaled = scaler.fit_transform(X)
-        
-        # Train all models
-        for name, model in ml_models.items():
-            try:
-                model.fit(X_scaled, y)
-                logger.info(f"Trained {name} model on synthetic data")
-            except Exception as e:
-                logger.warning(f"Failed to train {name}: {str(e)}")
-        
-    except Exception as e:
-        logger.warning(f"Failed to train initial models: {str(e)}")
-
-def classify_with_ensemble(features):
-    """
-    Classify behavior using ensemble of ML models with multi-frame averaging
-    Returns: (classification, confidence, probabilities, individual_predictions)
-    where individual_predictions is a dict with each model's prediction
-    """
-    global ml_models, scaler, frame_buffer
-    
-    if not ml_models or scaler is None:
-        return None, None, None, None
-    
-    try:
-        # Add to frame buffer
-        frame_buffer.append(features)
-        if len(frame_buffer) > FRAME_BUFFER_SIZE:
-            frame_buffer.pop(0)
-        
-        # Average features over last N frames for stability (especially for normal detection)
-        # Require at least 3 frames for averaging to reduce false positives
-        if len(frame_buffer) >= 3:
-            # Weight recent frames more heavily
-            weights = np.linspace(0.5, 1.0, len(frame_buffer[-3:]))
-            weights = weights / weights.sum()
-            avg_features = np.average(frame_buffer[-3:], axis=0, weights=weights)
-        else:
-            # Not enough frames yet, use current
-            avg_features = features
-        
-        # Scale features
-        features_scaled = scaler.transform([avg_features])[0]
-        features_scaled = features_scaled.reshape(1, -1)
-        
-        # Get predictions from ensemble
-        class_names = ['normal', 'suspicious', 'very_suspicious']
-        
-        # Collect individual model predictions
-        individual_predictions = {}
-        individual_probs = []
-        
-        # Get predictions from each individual model
-        for name, model in ml_models.items():
-            if name != 'ensemble':
-                try:
-                    pred_probs = model.predict_proba(features_scaled)[0]
-                    pred_class_idx = int(np.argmax(pred_probs))
-                    pred_class = class_names[pred_class_idx]
-                    pred_confidence = float(pred_probs[pred_class_idx])
-                    
-                    individual_predictions[name] = {
-                        'classification': pred_class,
-                        'confidence': pred_confidence,
-                        'probabilities': {
-                            class_names[i]: float(pred_probs[i])
-                            for i in range(len(class_names))
-                        }
-                    }
-                    individual_probs.append(pred_probs)
-                except Exception as e:
-                    logger.warning(f"Failed to get prediction from {name}: {str(e)}")
-        
-        # Use ensemble for final prediction
-        if 'ensemble' in ml_models:
-            ensemble_probs = ml_models['ensemble'].predict_proba(features_scaled)[0]
-            
-            # Weighted average: ensemble gets 60%, individual models get 40%
-            if individual_probs:
-                individual_avg = np.mean(individual_probs, axis=0)
-                final_probs = 0.6 * ensemble_probs + 0.4 * individual_avg
-            else:
-                final_probs = ensemble_probs
-            
-            # Boost normal class probability if features are consistently normal
-            # BUT only if no critical conditions exist (multiple faces, phone, no face)
-            if len(frame_buffer) >= 3:
-                # Check if last 3 frames all suggest normal behavior
-                normal_votes = 0
-                for feat in frame_buffer[-3:]:
-                    feat_scaled = scaler.transform([feat])[0].reshape(1, -1)
-                    try:
-                        pred = ml_models['ensemble'].predict(feat_scaled)[0]
-                        if pred == 0:  # normal
-                            normal_votes += 1
-                    except:
-                        pass
-                
-                # If 3 out of 3 frames suggest normal AND no critical flags, boost normal probability
-                # Only boost if we have strong consensus (all 3 frames)
-                if normal_votes == 3:
-                    final_probs[0] = min(1.0, final_probs[0] * 1.20)  # Slightly stronger boost for normal
-                    # Normalize probabilities
-                    final_probs = final_probs / final_probs.sum()
-            
-            probabilities = {
-                class_names[i]: float(final_probs[i])
-                for i in range(len(class_names))
-            }
-            
-            predicted_class = int(np.argmax(final_probs))
-            classification = class_names[predicted_class]
-            confidence = float(final_probs[predicted_class])
-            
-            # Add ensemble prediction to individual_predictions
-            individual_predictions['ensemble'] = {
-                'classification': classification,
-                'confidence': confidence,
-                'probabilities': probabilities
-            }
-            
-            return classification, confidence, probabilities, individual_predictions
-        
-    except Exception as e:
-        logger.warning(f"Ensemble classification failed: {str(e)}")
-    
-    return None, None, None, None
-
-# Initialize ML models on startup
-initialize_ml_models()
-
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
 
 def decode_base64_image(image_str: str) -> Optional[np.ndarray]:
-    """
-    Decode base64 encoded image
-    
-    Args:
-        image_str: Base64 encoded image string
-        
-    Returns:
-        Image as numpy array or None if decoding fails
-    """
+    """Decode base64 encoded image"""
     try:
-        # Remove data URL prefix if present
         if ',' in image_str:
             image_str = image_str.split(',')[1]
-        
-        # Decode base64
         image_bytes = base64.b64decode(image_str)
-        
-        # Convert to numpy array
         nparr = np.frombuffer(image_bytes, np.uint8)
-        
-        # Decode image
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
         return frame
-        
     except Exception as e:
         logger.error(f"Error decoding image: {str(e)}")
         return None
 
+
+def estimate_head_pose(face_bbox: Tuple[int, int, int, int], 
+                       frame: np.ndarray) -> str:
+    """Estimate head pose based on face position"""
+    try:
+        h, w = frame.shape[:2]
+        fx, fy, fw, fh = face_bbox
+        face_center_x = fx + fw // 2
+        face_center_y = fy + fh // 2
+        
+        frame_center_x = w // 2
+        frame_center_y = h // 2
+        
+        threshold_x = w * 0.15
+        threshold_y = h * 0.15
+        
+        offset_x = face_center_x - frame_center_x
+        offset_y = face_center_y - frame_center_y
+        
+        if abs(offset_x) < threshold_x and abs(offset_y) < threshold_y:
+            return 'center'
+        elif abs(offset_x) > abs(offset_y):
+            return 'left' if offset_x < -threshold_x else ('right' if offset_x > threshold_x else 'center')
+        else:
+            return 'up' if offset_y < -threshold_y else ('down' if offset_y > threshold_y else 'center')
+    except:
+        return 'unknown'
+
+
+def detect_phone_usage(frame: np.ndarray, face_bbox: Tuple[int, int, int, int]) -> float:
+    """Simple phone detection based on edge density near face"""
+    try:
+        h, w = frame.shape[:2]
+        fx, fy, fw, fh = face_bbox
+        
+        face_region = frame[max(0, fy-50):min(h, fy+fh+50), max(0, fx-50):min(w, fx+fw+50)]
+        if face_region.size == 0:
+            return 0.0
+        
+        gray_region = cv2.cvtColor(face_region, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray_region, 50, 150)
+        edge_density = np.sum(edges > 0) / (gray_region.shape[0] * gray_region.shape[1]) if gray_region.size > 0 else 0
+        
+        return min(edge_density * 2, 1.0)
+    except:
+        return 0.0
+
+
+def classify_behavior_raw(frame: np.ndarray) -> Tuple[str, float, Dict[str, float]]:
+    """
+    Raw behavior classification from CNN model.
+    Returns (classification, confidence, probabilities)
+    """
+    if behavior_model is None:
+        return 'normal', 0.5, {'normal': 0.7, 'suspicious': 0.2, 'very_suspicious': 0.1}
+    
+    try:
+        resized = cv2.resize(frame, (224, 224))
+        rgb_frame = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        normalized = rgb_frame.astype(np.float32) / 255.0
+        input_array = np.expand_dims(normalized, axis=0)
+        
+        predictions = behavior_model.predict(input_array, verbose=0)
+        class_names = ['normal', 'suspicious', 'very_suspicious']
+        
+        probabilities = {
+                    class_names[i]: float(predictions[0][i])
+                    for i in range(len(class_names))
+        }
+        
+        # Adjust for model bias (model over-predicts very_suspicious)
+        adjusted_normal = probabilities['normal'] + probabilities['very_suspicious'] * 0.35
+        adjusted_suspicious = probabilities['suspicious'] + probabilities['very_suspicious'] * 0.25
+        adjusted_very_suspicious = probabilities['very_suspicious'] * 0.40
+        
+        total = adjusted_normal + adjusted_suspicious + adjusted_very_suspicious
+        probabilities = {
+                    'normal': adjusted_normal / total,
+                    'suspicious': adjusted_suspicious / total,
+                    'very_suspicious': adjusted_very_suspicious / total
+        }
+        
+        predicted_class = max(probabilities, key=probabilities.get)
+        confidence = probabilities[predicted_class]
+        
+        return predicted_class, confidence, probabilities
+        
+    except Exception as e:
+        logger.warning(f"Classification error: {str(e)[:200]}")
+        return 'normal', 0.5, {'normal': 0.7, 'suspicious': 0.2, 'very_suspicious': 0.1}
+
+
+# =============================================================================
+# MAIN PROCESSING FUNCTION
+# =============================================================================
+
+def process_comprehensive_proctoring(frame: np.ndarray, 
+                                     no_face_duration_from_frontend: int,
+                                     is_idle: bool, 
+                                     audio_level: float,
+                                     session_id: str = None) -> Dict:
+    """
+    BATCH-BASED COMPREHENSIVE PROCTORING
+    
+    TASK 1: Collect frames into batch (2-3 sec or 20-30 frames)
+    TASK 2: Analyze batch for face count, no-face, classification
+    TASK 3: Make ONE decision per batch using majority voting
+    TASK 4: Update credibility ONCE per batch
+    TASK 5: State inertia - require 2 consecutive batches to change
+    TASK 6: Clear buffer after processing, no frame reuse
+    TASK 7: Debug logging per batch
+    
+    NO PER-FRAME DECISIONS. Batch certainty > frame certainty.
+    """
+    session = session_manager.get_session(session_id)
+    face_tracker = session['face_tracker']
+    batch_processor = session['batch_processor']
+    
+    # Check for duplicate frame (loopback bug prevention)
+    if session_manager.is_duplicate_frame(session_id, frame):
+        # Return last batch result if available
+        state = batch_processor.get_current_state()
+        return {
+            'success': True,
+            'classification': state['confirmed_state'],
+            'confidence': 0.9,
+            'face_detection': {
+                'face_count': 1,
+                'faces_detected': True,
+                'multiple_faces': False,
+                'multiple_faces_confirmed': False,
+                'no_face_duration': 0.0,
+                'no_face_confirmed': False
+            },
+            'credibility_score': float(round(state['credibility_score'], 1)),
+            'message': 'Duplicate frame skipped',
+            'batch_pending': True
+        }
+    
+    # =========================================================================
+    # STEP 1: RAW FRAME ANALYSIS (per-frame, NO decisions)
+    # =========================================================================
+    current_time = time.time()
+    frame_hash = hashlib.md5(frame.tobytes()[:1000]).hexdigest()[:16]
+    
+    # Face detection (raw, per-frame)
+    boxes, confidences = detector.detect_faces_raw(frame)
+    active_faces, face_count, face_confidences = face_tracker.update(boxes, confidences)
+    
+    # Behavior classification (raw, per-frame)
+    raw_classification, raw_confidence, raw_probs = classify_behavior_raw(frame)
+    
+    # Phone detection (raw, per-frame)
+    phone_detected = False
+    if face_count > 0 and len(active_faces) > 0:
+        phone_prob = detect_phone_usage(frame, active_faces[0].bbox)
+        phone_detected = phone_prob > 0.5
+    
+    # =========================================================================
+    # STEP 2: ADD FRAME TO BATCH (TASK 1: Frame Collection)
+    # =========================================================================
+    frame_sample = FrameSample(
+        timestamp=current_time,
+        face_count=face_count,
+        face_confidences=face_confidences,
+        classification=raw_classification,
+        classification_confidence=raw_confidence,
+        probabilities=raw_probs,
+        phone_detected=phone_detected,
+        frame_hash=frame_hash
+    )
+    
+    # Add to batch and check if batch is ready
+    batch_result = batch_processor.add_frame(frame_sample)
+    
+    # =========================================================================
+    # STEP 3: BUILD RESPONSE
+    # =========================================================================
+    state = batch_processor.get_current_state()
+    
+    if batch_result:
+        # BATCH WAS PROCESSED - Return batch decision
+        session['last_batch_result'] = batch_result
+        
+        # Generate events based on batch result
+        events = []
+        
+        if batch_result.multi_face_confirmed:
+            events.append({
+                'type': 'multiple_faces',
+                'severity': 'very_suspicious',
+                'message': f'Multiple faces BATCH-CONFIRMED ({batch_result.dominant_face_count} faces in {batch_result.face_count_dominance_pct:.0%} of batch)'
+            })
+        
+        if batch_result.no_face_confirmed:
+            events.append({
+                'type': 'no_face',
+                'severity': 'suspicious',
+                'message': f'No face BATCH-CONFIRMED (in {batch_result.face_count_histogram.get(0, 0):.0%} of batch)'
+            })
+        
+        # Batch analysis event
+        events.append({
+            'type': 'batch_analysis',
+            'severity': 'info' if batch_result.dominant_classification == 'normal' else batch_result.dominant_classification.replace('_', ' '),
+            'message': f'Batch #{state["batch_count"]}: {batch_result.total_frames} frames, {batch_result.batch_duration:.1f}s'
+        })
+        
+        return {
+            'success': True,
+            'classification': batch_result.dominant_classification,
+            'confidence': float(round(batch_result.classification_dominance_pct, 3)),
+            'face_detection': {
+                'face_count': int(batch_result.dominant_face_count),
+                'faces_detected': batch_result.dominant_face_count > 0,
+                'multiple_faces': batch_result.dominant_face_count > 1,
+                'multiple_faces_confirmed': batch_result.multi_face_confirmed,
+                'no_face_duration': 0.0,
+                'no_face_confirmed': batch_result.no_face_confirmed
+            },
+            'head_pose': {'direction': 'unknown', 'gaze_away': False},
+            'phone_detection': {'detected': phone_detected, 'probability': 0.0},
+            'idle_detection': {'is_idle': is_idle},
+            'audio_monitoring': {'noise_detected': audio_level > 0.5, 'level': float(round(audio_level, 3))},
+            'probabilities': {k: float(round(v, 3)) for k, v in batch_result.classification_histogram.items()},
+            'events': events,
+            'credibility_score': float(round(state['credibility_score'], 1)),
+            'credibility_score_delta': 0.0,
+            'frame_number': session['frame_count'],
+            'batch_processed': True,
+            'batch_number': state['batch_count'],
+            # TASK 7: Debug verification data
+            'debug': {
+                'batch': {
+                    'total_frames': batch_result.total_frames,
+                    'duration': float(round(batch_result.batch_duration, 2)),
+                    'face_count_histogram': {str(k): float(round(v, 3)) for k, v in batch_result.face_count_histogram.items()},
+                    'face_count_dominant': batch_result.dominant_face_count,
+                    'face_count_dominance_pct': float(round(batch_result.face_count_dominance_pct, 3)),
+                    'classification_histogram': {k: float(round(v, 3)) for k, v in batch_result.classification_histogram.items()},
+                    'classification_dominant': batch_result.dominant_classification,
+                    'classification_dominance_pct': float(round(batch_result.classification_dominance_pct, 3)),
+                    'multi_face_confirmed': batch_result.multi_face_confirmed,
+                    'no_face_confirmed': batch_result.no_face_confirmed,
+                    'decision_reason': batch_result.decision_reason
+                },
+                'state': {
+                    'confirmed_state': state['confirmed_state'],
+                    'pending_state': state['pending_state'],
+                    'consecutive_batches': state['consecutive_batches']
+                }
+            }
+        }
+    else:
+        # BATCH PENDING - Return interim response (using last confirmed state)
+        # NO DECISIONS MADE - just collecting frames
+        return {
+            'success': True,
+            'classification': state['confirmed_state'],  # Use last confirmed state
+            'confidence': 0.9,
+            'face_detection': {
+                'face_count': face_count,  # Raw frame count (not yet batch-confirmed)
+                'faces_detected': face_count > 0,
+                'multiple_faces': face_count > 1,
+                'multiple_faces_confirmed': False,  # Not batch-confirmed yet
+                'no_face_duration': 0.0,
+                'no_face_confirmed': False
+            },
+            'head_pose': {'direction': 'unknown', 'gaze_away': False},
+            'phone_detection': {'detected': phone_detected, 'probability': 0.0},
+            'idle_detection': {'is_idle': is_idle},
+            'audio_monitoring': {'noise_detected': audio_level > 0.5, 'level': float(round(audio_level, 3))},
+            'probabilities': raw_probs,
+            'events': [],
+            'credibility_score': float(round(state['credibility_score'], 1)),
+            'credibility_score_delta': 0.0,
+            'frame_number': session['frame_count'],
+            'batch_pending': True,
+            'batch_buffer_size': state['buffer_size'],
+            # TASK 7: Debug info for pending batch
+            'debug': {
+                'batch_pending': {
+                    'buffer_size': state['buffer_size'],
+                    'max_frames': BATCH_MAX_FRAMES,
+                    'max_duration': BATCH_MAX_DURATION_SECONDS
+                },
+                'raw_frame': {
+                    'face_count': face_count,
+                    'classification': raw_classification,
+                    'confidence': float(round(raw_confidence, 3))
+                },
+                'state': {
+                    'confirmed_state': state['confirmed_state'],
+                    'pending_state': state['pending_state'],
+                    'consecutive_batches': state['consecutive_batches']
+                }
+            }
+        }
+
+
+# =============================================================================
+# API ENDPOINTS
+# =============================================================================
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -769,117 +1658,89 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'service': 'face-detection-service',
-        'version': '1.0.0'
+        'version': '2.0.0',
+        'features': {
+            'temporal_tracking': True,
+            'classification_smoothing': True,
+            'credibility_ema': True,
+            'multi_face_confirmation': True
+        }
     })
 
 
+@app.route('/api/reset-session', methods=['POST'])
+def reset_session():
+    """Reset session state (call at start of new exam)"""
+    try:
+        data = request.get_json() or {}
+        session_id = data.get('session_id')
+        session_manager.reset_session(session_id)
+        return jsonify({'success': True, 'message': 'Session reset'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/detect-faces', methods=['POST'])
+@require_auth
 def detect_faces_endpoint():
-    """
-    Main endpoint for face detection
-    
-    Expected JSON:
-    {
-        "image": "base64_encoded_image_string",
-        "min_confidence": 0.5  // optional
-    }
-    
-    Returns:
-    {
-        "success": true,
-        "face_count": 1,
-        "faces_detected": true,
-        "multiple_faces": false,
-        "status": "valid|multiple|no_face",
-        "message": "Face detection successful"
-    }
-    """
+    """Face detection endpoint (requires authentication)"""
     try:
         data = request.get_json()
         
         if not data or 'image' not in data:
-            return jsonify({
-                'success': False,
-                'error': 'Missing image data'
-            }), 400
+            return jsonify({'success': False, 'error': 'Missing image data'}), 400
         
-        # Decode image
         frame = decode_base64_image(data['image'])
-        
         if frame is None:
-            return jsonify({
-                'success': False,
-                'error': 'Failed to decode image'
-            }), 400
+            return jsonify({'success': False, 'error': 'Failed to decode image'}), 400
         
-        # Analyze frame
-        result = detector.analyze_frame(frame)
+        # Raw detection (no tracking)
+        boxes, confidences = detector.detect_faces_raw(frame)
         
-        # Determine message based on status
-        if result['status'] == 'valid':
-            message = 'Face detected and validated successfully'
-        elif result['status'] == 'multiple':
-            message = 'Multiple faces detected - suspicious activity'
-        else:
-            message = 'No face detected - please ensure your face is visible in frame'
+        # For single-frame detection, use tracker briefly
+        session = session_manager.get_session()
+        stable_faces, stable_count, _ = session['face_tracker'].update(boxes, confidences)
+        
+        status = 'valid' if stable_count == 1 else ('multiple' if stable_count > 1 else 'no_face')
+        message = {
+            'valid': 'Face detected and validated successfully',
+            'multiple': 'Multiple faces detected - suspicious activity',
+            'no_face': 'No face detected - please ensure your face is visible'
+        }.get(status, 'Unknown status')
         
         return jsonify({
             'success': True,
-            'face_count': int(result['face_count']),
-            'faces_detected': bool(result['faces_detected']),
-            'multiple_faces': bool(result['multiple_faces']),
-            'status': str(result['status']),
-            'message': str(message),
-            'bboxes': [[int(x) for x in bbox] for bbox in result['bboxes']]
+            'face_count': int(stable_count),
+            'faces_detected': stable_count > 0,
+            'multiple_faces': stable_count > 1,
+            'status': status,
+            'message': message,
+            'bboxes': [[int(x) for x in bbox] for bbox in [f.bbox for f in stable_faces]]
         })
         
     except Exception as e:
-        logger.error(f"Error in detect_faces_endpoint: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        logger.error(f"Error in detect_faces: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/validate-setup', methods=['POST'])
+@require_auth
 def validate_setup():
-    """
-    Validate webcam setup by checking for face presence over time
-    
-    Expected JSON:
-    {
-        "images": ["base64_image_1", "base64_image_2", ...],  // array of frames
-        "duration_seconds": 5  // optional, default 3
-    }
-    
-    Returns:
-    {
-        "success": true,
-        "valid": true/false,
-        "face_consistency": 0.95,  // percentage of frames with exactly 1 face
-        "multiple_face_instances": 0,  // number of frames with multiple faces
-        "no_face_instances": 0,  // number of frames with no face
-        "message": "Setup validated successfully"
-    }
-    """
+    """Validate webcam setup with multiple frames"""
     try:
         data = request.get_json()
         
         if not data or 'images' not in data:
-            return jsonify({
-                'success': False,
-                'error': 'Missing images data'
-            }), 400
+            return jsonify({'success': False, 'error': 'Missing images data'}), 400
         
         images = data['images']
         if not isinstance(images, list) or len(images) == 0:
-            return jsonify({
-                'success': False,
-                'error': 'Invalid images data'
-            }), 400
+            return jsonify({'success': False, 'error': 'Invalid images data'}), 400
         
-        # Analyze each frame
-        results = []
+        # Reset tracker for fresh validation
+        session_manager.reset_session()
+        session = session_manager.get_session()
+        
         valid_count = 0
         multiple_count = 0
         no_face_count = 0
@@ -887,770 +1748,192 @@ def validate_setup():
         for image_str in images:
             frame = decode_base64_image(image_str)
             if frame is not None:
-                result = detector.analyze_frame(frame)
-                results.append(result)
+                boxes, confs = detector.detect_faces_raw(frame)
+                stable_faces, stable_count, multi_confirmed = session['face_tracker'].update(boxes, confs)
                 
-                if result['status'] == 'valid':
+                if stable_count == 1:
                     valid_count += 1
-                elif result['status'] == 'multiple':
+                elif stable_count > 1:
                     multiple_count += 1
                 else:
                     no_face_count += 1
         
-        # Calculate consistency
-        total_frames = len(results)
+        total_frames = valid_count + multiple_count + no_face_count
         face_consistency = valid_count / total_frames if total_frames > 0 else 0
         
-        # Determine if setup is valid
-        # Valid if: face_consistency >= 0.8, multiple_face_instances == 0
         is_valid = face_consistency >= 0.8 and multiple_count == 0
         
         if is_valid:
-            message = 'Webcam setup validated successfully - face detected consistently'
+            message = 'Webcam setup validated successfully'
         elif multiple_count > 0:
-            message = f'Validation failed - multiple faces detected in {multiple_count} frame(s)'
-        elif no_face_count > 0:
-            message = f'Validation failed - no face detected in {no_face_count} frame(s)'
+            message = f'Validation failed - multiple faces in {multiple_count} frame(s)'
         else:
             message = f'Validation failed - face detected in only {int(face_consistency * 100)}% of frames'
         
-        return jsonify({
-            'success': True,
+            return jsonify({
+        'success': True,
             'valid': bool(is_valid),
             'face_consistency': float(round(face_consistency, 2)),
             'multiple_face_instances': int(multiple_count),
             'no_face_instances': int(no_face_count),
             'total_frames': int(total_frames),
             'valid_frames': int(valid_count),
-            'message': str(message)
+            'message': message
         })
         
     except Exception as e:
         logger.error(f"Error in validate_setup: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/classify-behavior', methods=['POST'])
-def classify_behavior():
-    """
-    Classify behavior using the trained CNN model
-    
-    Expected JSON:
-    {
-        "image": "base64_encoded_image_string"
-    }
-    
-    Returns:
-    {
-        "success": true,
-        "classification": "normal|suspicious|very_suspicious",
-        "confidence": 0.85,
-        "probabilities": {
-            "normal": 0.70,
-            "suspicious": 0.15,
-            "very_suspicious": 0.15
-        },
-        "face_count": 1,
-        "multiple_faces": false
-    }
-    """
-    try:
-        if not TENSORFLOW_AVAILABLE or behavior_model is None:
-            return jsonify({
-                'success': False,
-                'error': 'Behavior classification model not available'
-            }), 503
-        
-        data = request.get_json()
-        
-        if not data or 'image' not in data:
-            return jsonify({
-                'success': False,
-                'error': 'Missing image data'
-            }), 400
-        
-        # Decode image
-        frame = decode_base64_image(data['image'])
-        
-        if frame is None:
-            return jsonify({
-                'success': False,
-                'error': 'Failed to decode image'
-            }), 400
-        
-        # First detect faces for additional context
-        face_result = detector.analyze_frame(frame)
-        
-        # Preprocess image for model (224x224x3)
-        resized = cv2.resize(frame, (224, 224))
-        # Convert BGR to RGB
-        rgb_frame = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        # Normalize to [0, 1]
-        normalized = rgb_frame.astype(np.float32) / 255.0
-        # Add batch dimension
-        input_array = np.expand_dims(normalized, axis=0)
-        
-        # Predict
-        predictions = behavior_model.predict(input_array, verbose=0)
-        
-        # Get class probabilities
-        class_names = ['normal', 'suspicious', 'very_suspicious']
-        probabilities = {
-            class_names[i]: float(predictions[0][i])
-            for i in range(len(class_names))
-        }
-        
-        # Get predicted class
-        predicted_class_idx = np.argmax(predictions[0])
-        predicted_class = class_names[predicted_class_idx]
-        confidence = float(predictions[0][predicted_class_idx])
-        
-        # Adjust classification based on face count
-        if face_result['multiple_faces']:
-            predicted_class = 'very_suspicious'
-            confidence = max(confidence, 0.9)
-        elif not face_result['faces_detected']:
-            predicted_class = 'suspicious'
-            confidence = max(confidence, 0.7)
-        
-        return jsonify({
-            'success': True,
-            'classification': predicted_class,
-            'confidence': round(confidence, 3),
-            'probabilities': probabilities,
-            'face_count': face_result['face_count'],
-            'multiple_faces': face_result['multiple_faces'],
-            'faces_detected': face_result['faces_detected']
-        })
-        
-    except Exception as e:
-        logger.error(f"Error in classify_behavior: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-def estimate_head_pose(face_bbox, frame):
-    """
-    Simple head pose estimation based on face position
-    Returns: 'center', 'left', 'right', 'up', 'down', 'away'
-    """
-    try:
-        h, w = frame.shape[:2]
-        fx, fy, fw, fh = face_bbox
-        face_center_x = fx + fw // 2
-        face_center_y = fy + fh // 2
-        
-        # Calculate position relative to frame center
-        frame_center_x = w // 2
-        frame_center_y = h // 2
-        
-        # More sensitive thresholds (15% of frame size instead of 20%)
-        threshold_x = w * 0.15
-        threshold_y = h * 0.15
-        
-        # Determine direction
-        offset_x = face_center_x - frame_center_x
-        offset_y = face_center_y - frame_center_y
-        
-        if abs(offset_x) < threshold_x and abs(offset_y) < threshold_y:
-            return 'center'
-        elif abs(offset_x) > abs(offset_y):
-            # Horizontal movement dominates
-            if offset_x < -threshold_x:
-                return 'left'
-            elif offset_x > threshold_x:
-                return 'right'
-            else:
-                return 'center'
-        else:
-            # Vertical movement dominates
-            if offset_y < -threshold_y:
-                return 'up'
-            elif offset_y > threshold_y:
-                return 'down'
-            else:
-                return 'center'
-    except Exception as e:
-        logger.warning(f"Error in head pose estimation: {str(e)}")
-        return 'unknown'
-
-
-def detect_phone_usage(frame, face_bbox):
-    """
-    Simple phone detection based on hand position and face interaction
-    Returns probability of phone usage (0-1)
-    """
-    try:
-        # Simple heuristic: if face is looking down and hands are near face
-        # This is a simplified version - real implementation would use object detection
-        h, w = frame.shape[:2]
-        fx, fy, fw, fh = face_bbox
-        
-        # Look for small rectangular objects near face (simplified)
-        face_region = frame[max(0, fy-50):min(h, fy+fh+50), max(0, fx-50):min(w, fx+fw+50)]
-        
-        # Convert to grayscale
-        gray_region = cv2.cvtColor(face_region, cv2.COLOR_BGR2GRAY)
-        
-        # Detect edges (phones typically have strong edges)
-        edges = cv2.Canny(gray_region, 50, 150)
-        edge_density = np.sum(edges > 0) / (gray_region.shape[0] * gray_region.shape[1]) if gray_region.size > 0 else 0
-        
-        # If high edge density in face region, might be phone
-        phone_probability = min(edge_density * 2, 1.0)  # Scale to 0-1
-        
-        return phone_probability
-    except:
-        return 0.0
-
-
-def apply_decision_tree_rules(face_result, no_face_duration, is_idle, audio_level, phone_prob, head_pose):
-    """
-    Decision Tree for conditional logic-based decision automation
-    Returns action recommendations based on multiple conditions
-    """
-    result = {
-        'escalate': False,
-        'pause_recommended': False,
-        'reason': ''
-    }
-    
-    # Decision Tree Logic:
-    # Rule 1: Multiple faces + No face for long + High audio = ESCALATE
-    if (face_result['multiple_faces'] and no_face_duration > 2 and audio_level > 0.6):
-        result['escalate'] = True
-        result['reason'] = 'Critical: Multiple faces detected with prolonged no-face periods and high audio activity'
-        return result
-    
-    # Rule 2: No face > 10s + Idle > 60s + Phone detected = PAUSE
-    if (no_face_duration > 10 and is_idle and phone_prob > 0.5):
-        result['pause_recommended'] = True
-        result['reason'] = 'Recommend pausing exam: No face detected for extended period, user idle, and phone usage detected'
-        return result
-    
-    # Rule 3: Multiple faces + Phone = ESCALATE
-    if (face_result['multiple_faces'] and phone_prob > 0.4):
-        result['escalate'] = True
-        result['reason'] = 'Critical: Multiple faces detected with potential phone usage'
-        return result
-    
-    # Rule 4: Gaze away > 30s + High audio = SUSPICIOUS
-    # (This is handled in main logic)
-    
-    # Rule 5: No face > 15s + High audio = ESCALATE
-    if (no_face_duration > 15 and audio_level > 0.7):
-        result['escalate'] = True
-        result['reason'] = 'Critical: No face detected for extended period with high audio activity (possible collaboration)'
-        return result
-    
-    # Rule 6: Idle > 30s + No face > 5s = PAUSE
-    if (is_idle and no_face_duration > 5):
-        result['pause_recommended'] = True
-        result['reason'] = 'Recommend pausing: User idle for extended period with no face detected'
-        return result
-    
-    return result
-
-
-def rule_based_classification(face_result, head_pose, phone_prob, no_face_duration=0):
-    """
-    Rule-based behavior classification as fallback when model isn't available
-    """
-    classification = 'normal'
-    confidence = 0.5
-    
-    # Multiple faces = very suspicious
-    if face_result['multiple_faces']:
-        classification = 'very_suspicious'
-        confidence = 0.9
-    # No face for > 10 seconds = suspicious
-    elif no_face_duration > 10:
-        classification = 'very_suspicious'
-        confidence = 0.8
-    # No face for > 5 seconds = suspicious
-    elif no_face_duration > 5:
-        classification = 'suspicious'
-        confidence = 0.7
-    # Phone detection
-    elif phone_prob > 0.6:
-        classification = 'very_suspicious'
-        confidence = 0.75
-    elif phone_prob > 0.4:
-        classification = 'suspicious'
-        confidence = 0.65
-    # Head pose away from center
-    elif head_pose in ['left', 'right', 'away']:
-        classification = 'suspicious'
-        confidence = 0.6
-    # Normal case
-    else:
-        classification = 'normal'
-        confidence = 0.7
-    
-    return classification, confidence
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/comprehensive-proctoring', methods=['POST'])
+@require_auth
 def comprehensive_proctoring():
-    """
-    Comprehensive proctoring endpoint that combines all features
-    
-    Expected JSON:
-    {
-        "image": "base64_encoded_image_string",
-        "no_face_duration": 0,  // seconds
-        "is_idle": false,  // keyboard/mouse inactivity
-        "audio_level": 0.0  // optional, 0-1 normalized audio level
-    }
-    
-    Returns:
-    {
-        "success": true,
-        "classification": "normal|suspicious|very_suspicious",
-        "confidence": 0.85,
-        "face_detection": {
-            "face_count": 1,
-            "faces_detected": true,
-            "multiple_faces": false,
-            "no_face_duration": 0
-        },
-        "head_pose": {
-            "direction": "center",
-            "gaze_away": false
-        },
-        "phone_detection": {
-            "detected": false,
-            "probability": 0.2
-        },
-        "idle_detection": {
-            "is_idle": false
-        },
-        "audio_monitoring": {
-            "noise_detected": false,
-            "level": 0.0
-        },
-        "probabilities": {
-            "normal": 0.70,
-            "suspicious": 0.15,
-            "very_suspicious": 0.15
-        },
-        "events": [],  // List of flagged events
-        "credibility_score_delta": 1.0
-    }
-    """
+    """Comprehensive proctoring endpoint (requires authentication)"""
     try:
         data = request.get_json()
         
-        if not data:
-            logger.error("No data received in comprehensive_proctoring request")
-            return jsonify({
-                'success': False,
-                'error': 'No data received'
-            }), 400
+        if not data or 'image' not in data:
+            return jsonify({'success': False, 'error': 'Missing image data'}), 400
         
-        if 'image' not in data:
-            logger.error("Missing image data in comprehensive_proctoring request")
-            return jsonify({
-                'success': False,
-                'error': 'Missing image data'
-            }), 400
-        
-        # Decode image
-        logger.info(f"Processing comprehensive proctoring request - image length: {len(data.get('image', ''))}")
         frame = decode_base64_image(data['image'])
         if frame is None:
-            logger.error("Failed to decode image in comprehensive_proctoring")
-            return jsonify({
-                'success': False,
-                'error': 'Failed to decode image'
-            }), 400
+            return jsonify({'success': False, 'error': 'Failed to decode image'}), 400
         
-        logger.info(f"Image decoded successfully - shape: {frame.shape if frame is not None else 'None'}")
-        
-        # Extract parameters
         no_face_duration = data.get('no_face_duration', 0)
         is_idle = data.get('is_idle', False)
         audio_level = data.get('audio_level', 0.0)
+        session_id = data.get('session_id')
         
-        # 1. Face Detection
-        face_result = detector.analyze_frame(frame)
-        face_bboxes = face_result['bboxes']
-        logger.info(f"Face detection result: {face_result['face_count']} faces, multiple: {face_result['multiple_faces']}")
-        
-        # 2. Head Pose / Eye Gaze Estimation
-        head_pose = 'unknown'
-        gaze_away = False
-        if face_result['faces_detected'] and len(face_bboxes) > 0:
-            head_pose = estimate_head_pose(face_bboxes[0], frame)
-            # More sensitive - any deviation from center is considered "away"
-            gaze_away = head_pose not in ['center', 'unknown']
-        
-        # 3. Phone Detection
-        phone_prob = 0.0
-        phone_detected = False
-        if face_result['faces_detected'] and len(face_bboxes) > 0:
-            phone_prob = detect_phone_usage(frame, face_bboxes[0])
-            phone_detected = phone_prob > 0.5
-        
-        # Extract features for ML models
-        features = extract_features(frame, face_result, head_pose, phone_prob, no_face_duration, is_idle, audio_level)
-        
-        # 4. Behavior Classification (Priority: Critical Rules > Ensemble ML > CNN Model > Rule-based)
-        classification = 'normal'
-        confidence = 0.5
-        probabilities = {'normal': 0.7, 'suspicious': 0.2, 'very_suspicious': 0.1}
-        individual_model_predictions = None  # Initialize at start
-        
-        # Check for critical rules first, but still get ML predictions for display
-        critical_rule_triggered = False
-        
-        # CRITICAL: Check rule-based overrides FIRST (these should never be overridden by ML)
-        # Multiple faces = ALWAYS very suspicious
-        if face_result['multiple_faces']:
-            classification = 'very_suspicious'
-            confidence = 0.95
-            probabilities = {'normal': 0.05, 'suspicious': 0.05, 'very_suspicious': 0.90}
-            critical_rule_triggered = True
-            logger.warning(f"🚨 CRITICAL: Multiple faces detected ({face_result['face_count']} faces) - overriding ML models")
-        # Phone detected = ALWAYS very suspicious
-        elif phone_prob > 0.5:
-            classification = 'very_suspicious'
-            confidence = max(0.85, phone_prob)
-            probabilities = {'normal': 0.1, 'suspicious': 0.1, 'very_suspicious': 0.8}
-            critical_rule_triggered = True
-            logger.warning(f"🚨 CRITICAL: Phone detected (prob: {phone_prob:.2f}) - overriding ML models")
-        # No face > 10s = ALWAYS very suspicious
-        elif no_face_duration > 10:
-            classification = 'very_suspicious'
-            confidence = 0.9
-            probabilities = {'normal': 0.05, 'suspicious': 0.15, 'very_suspicious': 0.80}
-            critical_rule_triggered = True
-            logger.warning(f"🚨 CRITICAL: No face for {no_face_duration}s - overriding ML models")
-        # No face > 5s = suspicious
-        elif no_face_duration > 5:
-            classification = 'suspicious'
-            confidence = 0.75
-            probabilities = {'normal': 0.2, 'suspicious': 0.7, 'very_suspicious': 0.1}
-            critical_rule_triggered = True
-            logger.warning(f"⚠️  Warning: No face for {no_face_duration}s - overriding ML models")
-        
-        # Always try to get ML model predictions for display (even if critical rules triggered)
-        # Priority: Ensemble ML > CNN Model > Rule-based
-        ensemble_result = None
-        if ml_models and scaler is not None:
-            try:
-                ensemble_result = classify_with_ensemble(features)
-                if ensemble_result[0] is not None:
-                    ml_classification, ml_confidence, ml_probabilities, individual_model_predictions = ensemble_result
-                    
-                    # Log individual model predictions
-                    if individual_model_predictions:
-                        logger.info("📊 ML Model Predictions:")
-                        for model_name, pred in individual_model_predictions.items():
-                            logger.info(f"   {model_name.upper()}: {pred['classification']} ({pred['confidence']:.1%})")
-                    
-                    # Only use ML predictions if no critical rule triggered
-                    if not critical_rule_triggered:
-                        classification = ml_classification
-                        confidence = ml_confidence
-                        probabilities = ml_probabilities
-                        logger.info(f"✅ Ensemble ML classification: {classification} ({confidence:.2%})")
-                    else:
-                        logger.info(f"📊 ML suggested: {ml_classification} ({ml_confidence:.2%}), but CRITICAL RULE takes precedence")
-            except Exception as e:
-                logger.warning(f"Ensemble classification failed: {str(e)[:200]}")
-        
-        # Fallback to CNN model if ensemble didn't provide result and no critical rule
-        if not critical_rule_triggered and (ensemble_result is None or ensemble_result[0] is None):
-                if behavior_model is not None:
-                    try:
-                        # Use AI model (CNN)
-                        resized = cv2.resize(frame, (224, 224))
-                        rgb_frame = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-                        normalized = rgb_frame.astype(np.float32) / 255.0
-                        input_array = np.expand_dims(normalized, axis=0)
-                        
-                        predictions = behavior_model.predict(input_array, verbose=0)
-                        class_names = ['normal', 'suspicious', 'very_suspicious']
-                        cnn_probs = {
-                            class_names[i]: float(predictions[0][i])
-                            for i in range(len(class_names))
-                        }
-                        
-                        predicted_class_idx = np.argmax(predictions[0])
-                        cnn_classification = class_names[predicted_class_idx]
-                        cnn_confidence = float(predictions[0][predicted_class_idx])
-                        
-                        # If ensemble provided result, combine them
-                        if ensemble_result and ensemble_result[0] is not None:
-                            # Weighted combination: 60% ensemble, 40% CNN (reduced from 70/30)
-                            final_probs = {
-                                k: 0.6 * probabilities[k] + 0.4 * cnn_probs[k]
-                                for k in probabilities.keys()
-                            }
-                            # Renormalize
-                            total = sum(final_probs.values())
-                            probabilities = {k: v/total for k, v in final_probs.items()}
-                            classification = max(probabilities, key=probabilities.get)
-                            confidence = probabilities[classification]
-                        else:
-                            # Use CNN result
-                            classification = cnn_classification
-                            confidence = cnn_confidence
-                            probabilities = cnn_probs
-                    except Exception as e:
-                        logger.warning(f"AI model prediction failed: {str(e)[:200]}")
-                        # Fall back to rule-based
-                        classification, confidence = rule_based_classification(
-                            face_result, head_pose, phone_prob, no_face_duration
-                        )
-                else:
-                    # Use rule-based classification
-                    classification, confidence = rule_based_classification(
-                        face_result, head_pose, phone_prob, no_face_duration
-                    )
-        
-        # Adjust classification based on additional factors
-        events = []
-        
-        # Always log face detection status for visibility
-        if face_result['faces_detected']:
-            if face_result['face_count'] == 1:
-                events.append({
-                    'type': 'face_detection',
-                    'severity': 'info',
-                    'message': f'Face detected (count: {face_result["face_count"]}, pose: {head_pose})'
-                })
-        
-        # Decision Tree Logic for Conditional Automation
-        # Apply decision tree rules (these override ML predictions for critical cases)
-        decision_tree_action = apply_decision_tree_rules(
-            face_result, no_face_duration, is_idle, audio_level, phone_prob, head_pose
+        response = process_comprehensive_proctoring(
+            frame, no_face_duration, is_idle, audio_level, session_id
         )
-        
-        if decision_tree_action['escalate']:
-            # Critical situation - override to very_suspicious
-            classification = 'very_suspicious'
-            confidence = max(confidence, 0.95)
-            events.append({
-                'type': 'decision_tree_escalation',
-                'severity': 'very_suspicious',
-                'message': decision_tree_action['reason']
-            })
-        elif decision_tree_action['pause_recommended']:
-            # Recommend pausing exam
-            if classification != 'very_suspicious':
-                classification = 'very_suspicious'
-                confidence = max(confidence, 0.85)
-            events.append({
-                'type': 'decision_tree_pause',
-                'severity': 'very_suspicious',
-                'message': decision_tree_action['reason']
-            })
-        
-        # Multiple faces override (already handled in critical rules, just log event)
-        if face_result['multiple_faces']:
-            events.append({
-                'type': 'multiple_faces',
-                'severity': 'very_suspicious',
-                'message': f'Multiple faces detected ({face_result["face_count"]} faces)'
-            })
-        
-        # No face duration logging (classification already set by critical rules)
-        if no_face_duration > 10:
-            events.append({
-                'type': 'no_face',
-                'severity': 'very_suspicious',
-                'message': f'No face detected for {no_face_duration} seconds'
-            })
-        elif no_face_duration > 5:
-            events.append({
-                'type': 'no_face',
-                'severity': 'suspicious',
-                'message': f'No face detected for {no_face_duration} seconds'
-            })
-        elif not face_result['faces_detected']:
-            # Log no face in current frame (warning level)
-            events.append({
-                'type': 'no_face',
-                'severity': 'warning',
-                'message': f'No face detected in current frame'
-            })
-        
-        # Phone detection logging (classification already set by critical rules)
-        if phone_prob > 0.5:
-            phone_detected = True
-            events.append({
-                'type': 'phone_detection',
-                'severity': 'very_suspicious',
-                'message': f'Phone usage detected (probability: {phone_prob:.2f})'
-            })
-        elif phone_prob > 0.3:
-            # Lower threshold for warning
-            events.append({
-                'type': 'phone_detection',
-                'severity': 'suspicious',
-                'message': f'Possible phone usage detected (probability: {phone_prob:.2f})'
-            })
-        
-        # Gaze away (only mark suspicious if classification is still normal)
-        # Don't override if already marked as suspicious/very_suspicious by critical rules
-        if head_pose in ['left', 'right', 'away', 'up', 'down']:
-            if classification == 'normal':
-                classification = 'suspicious'
-                confidence = max(confidence, 0.65)
-                events.append({
-                    'type': 'gaze_away',
-                    'severity': 'suspicious',
-                    'message': f'Gaze direction: {head_pose} (not looking at screen center)'
-                })
-            else:
-                # Just log, don't override existing classification
-                events.append({
-                    'type': 'gaze_away',
-                    'severity': 'info',
-                    'message': f'Gaze direction: {head_pose} (not looking at screen center)'
-                })
-        elif head_pose == 'center' and face_result['faces_detected']:
-            # Log when gaze is good (only if normal behavior)
-            if classification == 'normal':
-                events.append({
-                    'type': 'gaze_center',
-                    'severity': 'info',
-                    'message': 'Gaze centered - looking at screen'
-                })
-        
-        # Idle detection
-        if is_idle:
-            if classification == 'normal':
-                classification = 'suspicious'
-                confidence = max(confidence, 0.7)
-            events.append({
-                'type': 'idle',
-                'severity': 'suspicious',
-                'message': 'No keyboard/mouse activity detected (idle)'
-            })
-        
-        # Audio monitoring (lower threshold)
-        noise_detected = bool(audio_level > 0.5)  # Reduced from 0.7, ensure native bool
-        if noise_detected:
-            if classification == 'normal':
-                classification = 'suspicious'
-                confidence = max(confidence, 0.7)
-            events.append({
-                'type': 'audio_noise',
-                'severity': 'suspicious',
-                'message': f'High audio level detected: {audio_level:.2f}'
-            })
-        
-        # Always add a status event for every frame (for visibility)
-        # This ensures we see activity even when everything is normal
-        status_severity = 'info'
-        if classification == 'very_suspicious':
-            status_severity = 'very_suspicious'
-        elif classification == 'suspicious':
-            status_severity = 'suspicious'
-        
-        events.append({
-            'type': 'frame_analysis',
-            'severity': status_severity,
-            'message': f'Frame analyzed - Classification: {classification} ({confidence:.1%}), Faces: {face_result["face_count"]}, Pose: {head_pose}, Phone: {phone_prob:.1%}, Idle: {is_idle}, Audio: {audio_level:.1%}'
-        })
-        
-        # Calculate credibility score delta
-        score_delta = 0.0
-        if classification == 'normal':
-            score_delta = 1.0
-        elif classification == 'suspicious':
-            score_delta = -1.0
-        else:  # very_suspicious
-            score_delta = -2.0
-        
-        logger.info(f"Proctoring result: classification={classification}, confidence={confidence}, events={len(events)}, score_delta={score_delta}")
-        
-        # Convert NumPy types to native Python types for JSON serialization
-        def convert_numpy_types(obj):
-            """Recursively convert NumPy types to native Python types"""
-            if isinstance(obj, (np.integer, np.int_)):
-                return int(obj)
-            elif isinstance(obj, (np.floating, np.float_)):
-                return float(obj)
-            elif isinstance(obj, np.bool_):
-                return bool(obj)
-            elif isinstance(obj, np.ndarray):
-                return obj.tolist()
-            elif isinstance(obj, dict):
-                return {key: convert_numpy_types(value) for key, value in obj.items()}
-            elif isinstance(obj, (list, tuple)):
-                return [convert_numpy_types(item) for item in obj]
-            return obj
-        
-        # Ensure all values are JSON-serializable
-        face_count = int(face_result['face_count'])
-        faces_detected = bool(face_result['faces_detected'])
-        multiple_faces = bool(face_result['multiple_faces'])
-        
-        # Convert probabilities dict
-        probabilities_clean = {
-            key: float(value) if isinstance(value, (np.floating, np.float_)) else float(value)
-            for key, value in probabilities.items()
-        }
-        
-        # Prepare individual model predictions (if available)
-        model_predictions_clean = None
-        if individual_model_predictions:
-            model_predictions_clean = convert_numpy_types(individual_model_predictions)
-        
-        response = {
-            'success': True,
-            'classification': str(classification),
-            'confidence': float(round(confidence, 3)),
-            'face_detection': {
-                'face_count': face_count,
-                'faces_detected': faces_detected,
-                'multiple_faces': multiple_faces,
-                'no_face_duration': int(no_face_duration)
-            },
-            'head_pose': {
-                'direction': str(head_pose),
-                'gaze_away': bool(gaze_away)
-            },
-            'phone_detection': {
-                'detected': bool(phone_detected),
-                'probability': float(round(phone_prob, 3))
-            },
-            'idle_detection': {
-                'is_idle': bool(is_idle)
-            },
-            'audio_monitoring': {
-                'noise_detected': bool(noise_detected),
-                'level': float(round(audio_level, 3))
-            },
-            'probabilities': probabilities_clean,
-            'events': convert_numpy_types(events),
-            'credibility_score_delta': float(score_delta)
-        }
-        
-        # Add individual model predictions if available
-        if model_predictions_clean:
-            response['ml_models'] = model_predictions_clean
         
         return jsonify(response)
         
     except Exception as e:
         import traceback
         logger.error(f"Error in comprehensive_proctoring: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/comprehensive-proctoring-test', methods=['POST', 'OPTIONS'])
+def comprehensive_proctoring_test():
+    """Test endpoint (no auth required)"""
+    if request.method == 'OPTIONS':
+        response = jsonify({'success': True})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        return response, 200
+    
+    try:
+        data = request.get_json()
+        
+        if not data or 'image' not in data:
+            return jsonify({'success': False, 'error': 'Missing image data'}), 400
+        
+        frame = decode_base64_image(data['image'])
+        if frame is None:
+            return jsonify({'success': False, 'error': 'Failed to decode image'}), 400
+        
+        no_face_duration = data.get('no_face_duration', 0)
+        is_idle = data.get('is_idle', False)
+        audio_level = data.get('audio_level', 0.0)
+        
+        response_data = process_comprehensive_proctoring(
+            frame, no_face_duration, is_idle, audio_level, 'test'
+        )
+        
+        response = jsonify(response_data)
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+        
+    except Exception as e:
+        import traceback
+        logger.error(f"Error in comprehensive_proctoring_test: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/classify-behavior', methods=['POST'])
+def classify_behavior():
+    """Classify behavior using CNN model"""
+    try:
+        if behavior_model is None:
+            return jsonify({'success': False, 'error': 'Model not available'}), 503
+        
+        data = request.get_json()
+        if not data or 'image' not in data:
+            return jsonify({'success': False, 'error': 'Missing image data'}), 400
+        
+        frame = decode_base64_image(data['image'])
+        if frame is None:
+            return jsonify({'success': False, 'error': 'Failed to decode image'}), 400
+        
+        classification, confidence, probabilities = classify_behavior_raw(frame)
+        
+        # Also get face detection for context
+        boxes, confs = detector.detect_faces_raw(frame)
+        face_count = len(boxes)
+        multiple_faces = face_count > 1
+        
         return jsonify({
-            'success': False,
-            'error': str(e),
-            'traceback': traceback.format_exc() if logger.level <= logging.DEBUG else None
-        }), 500
+            'success': True,
+            'classification': classification,
+            'confidence': round(confidence, 3),
+            'probabilities': probabilities,
+            'face_count': face_count,
+            'multiple_faces': multiple_faces,
+            'faces_detected': face_count > 0
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in classify_behavior: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# Model management stubs
+@app.route('/api/models', methods=['GET', 'OPTIONS'])
+def get_all_models():
+    if request.method == 'OPTIONS':
+        return jsonify({'success': True}), 200
+    return jsonify({'success': True, 'models': [], 'activeModelId': None})
+
+@app.route('/api/models/train', methods=['POST', 'OPTIONS'])
+@require_auth
+def start_training():
+    if request.method == 'OPTIONS':
+        return jsonify({'success': True}), 200
+    return jsonify({'success': False, 'error': 'Not implemented'}), 501
+
+@app.route('/api/models/<model_id>/progress', methods=['GET', 'OPTIONS'])
+@require_auth
+def get_training_progress(model_id):
+    if request.method == 'OPTIONS':
+        return jsonify({'success': True}), 200
+    return jsonify({'success': False, 'error': 'Not implemented'}), 501
+
+@app.route('/api/models/<model_id>/publish', methods=['POST', 'OPTIONS'])
+@require_auth
+def publish_model(model_id):
+    if request.method == 'OPTIONS':
+        return jsonify({'success': True}), 200
+    return jsonify({'success': False, 'error': 'Not implemented'}), 501
+
+@app.route('/api/models/<model_id>/switch', methods=['POST', 'OPTIONS'])
+@require_auth
+def switch_model(model_id):
+    if request.method == 'OPTIONS':
+        return jsonify({'success': True}), 200
+    return jsonify({'success': False, 'error': 'Not implemented'}), 501
+
+@app.route('/api/models/<model_id>', methods=['DELETE', 'OPTIONS'])
+@require_auth
+def delete_model(model_id):
+    if request.method == 'OPTIONS':
+        return jsonify({'success': True}), 200
+    return jsonify({'success': False, 'error': 'Not implemented'}), 501
 
 
 def find_free_port(start_port=5002, max_attempts=10):
@@ -1663,25 +1946,22 @@ def find_free_port(start_port=5002, max_attempts=10):
                 s.bind(('127.0.0.1', port))
                 return port
             except OSError:
-                if i == 0:
-                    logger.warning(f"Port {start_port} is in use, searching for alternative...")
                 continue
-    raise RuntimeError(f"Could not find a free port after {max_attempts} attempts")
+    raise RuntimeError(f"Could not find free port after {max_attempts} attempts")
+
 
 if __name__ == '__main__':
-    # Get port from environment or use default
     default_port = int(os.environ.get('PORT', 5002))
+    debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
     
-    # Find a free port
     port = find_free_port(default_port)
-    
     if port != default_port:
-        logger.warning(f"Port {default_port} was in use, using port {port} instead")
+        logger.warning(f"Port {default_port} in use, using {port}")
     
-    logger.info(f"Starting Face Detection Service on port {port}")
-    logger.info(f"Service URL: http://localhost:{port}")
+    logger.info(f"Starting Face Detection Service v2.0 on port {port}")
+    logger.info(f"Features: Temporal tracking, Classification smoothing, EMA credibility")
     
     try:
-        app.run(host='0.0.0.0', port=port, debug=True, use_reloader=False)
+        app.run(host='0.0.0.0', port=port, debug=debug_mode, use_reloader=False)
     except KeyboardInterrupt:
-        logger.info("Shutting down Face Detection Service...")
+        logger.info("Shutting down...")

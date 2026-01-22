@@ -1,0 +1,128 @@
+# =============================================================================
+# EVALON - DOCKER COMPOSE DEVELOPMENT
+# =============================================================================
+# Development environment with all services
+# Usage: docker-compose up
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7
+    container_name: evalon-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=evalon
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - evalon-network
+
+  # Backend API Server
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: evalon-backend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5001}:5001"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=5001
+      - REALTIME_PORT=5004
+      - MONGODB_URI=mongodb://mongodb:27017/evalon
+      - JWT_SECRET=${JWT_SECRET:-your-dev-jwt-secret}
+      - SESSION_SECRET=${SESSION_SECRET:-your-dev-session-secret}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3001}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3001,http://localhost:3000}
+      - AI_SERVICE_URL=http://ai-service:5002
+    volumes:
+      - ./backend/uploads:/app/uploads
+    networks:
+      - evalon-network
+
+  # Real-time WebSocket Server
+  realtime:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: evalon-realtime
+    restart: unless-stopped
+    ports:
+      - "${REALTIME_PORT:-5004}:5004"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=5004
+      - MONGODB_URI=mongodb://mongodb:27017/evalon
+      - JWT_SECRET=${JWT_SECRET:-your-dev-jwt-secret}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3001}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3001,http://localhost:3000}
+    command: ["node", "src/realtimeServer.js"]
+    networks:
+      - evalon-network
+
+  # AI Proctoring Service
+  ai-service:
+    build:
+      context: .
+      dockerfile: docker/ai-service.Dockerfile
+    container_name: evalon-ai-service
+    restart: unless-stopped
+    ports:
+      - "${AI_SERVICE_PORT:-5002}:5002"
+    environment:
+      - PORT=5002
+      - FLASK_DEBUG=false
+      - JWT_SECRET=${JWT_SECRET:-your-dev-jwt-secret}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3001,http://localhost:3000}
+    networks:
+      - evalon-network
+
+  # Frontend Application (Development)
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:5001}
+        - VITE_SOCKET_URL=${VITE_SOCKET_URL:-http://localhost:5004}
+        - VITE_AI_URL=${VITE_AI_URL:-http://localhost:5002}
+    container_name: evalon-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3001}:80"
+    depends_on:
+      - backend
+      - realtime
+      - ai-service
+    networks:
+      - evalon-network
+
+volumes:
+  mongodb_data:
+    driver: local
+
+networks:
+  evalon-network:
+    driver: bridge
+
+
+
+
+
