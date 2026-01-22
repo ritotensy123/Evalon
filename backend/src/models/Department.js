@@ -70,7 +70,8 @@ const departmentSchema = new mongoose.Schema({
     default: null
   },
   standard: {
-    type: String
+    type: String,
+    trim: true
   },
   section: {
     type: String,
@@ -137,11 +138,13 @@ const departmentSchema = new mongoose.Schema({
     },
     maxStudents: {
       type: Number,
-      default: null
+      default: null,
+      min: 0
     },
     maxTeachers: {
       type: Number,
-      default: null
+      default: null,
+      min: 0
     }
   },
   
@@ -156,15 +159,18 @@ const departmentSchema = new mongoose.Schema({
   stats: {
     totalStudents: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
     totalTeachers: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
     totalSubjects: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     }
   },
   

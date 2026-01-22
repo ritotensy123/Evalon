@@ -2,6 +2,9 @@ const Subject = require('../models/Subject');
 const Department = require('../models/Department');
 const Teacher = require('../models/Teacher');
 const Organization = require('../models/Organization');
+const { sendSuccess, sendError } = require('../utils/apiResponse');
+const { HTTP_STATUS } = require('../constants');
+const { logger } = require('../utils/logger');
 
 // Create a new subject
 const createSubject = async (req, res) => {
@@ -31,10 +34,7 @@ const createSubject = async (req, res) => {
     // Check if organization exists
     const organization = await Organization.findById(organizationId);
     if (!organization) {
-      return res.status(404).json({
-        success: false,
-        message: 'Organization not found'
-      });
+      return sendError(res, new Error('Organization not found'), 'Organization not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Check if department exists
@@ -45,10 +45,7 @@ const createSubject = async (req, res) => {
     });
 
     if (!department) {
-      return res.status(404).json({
-        success: false,
-        message: 'Department not found or inactive'
-      });
+      return sendError(res, new Error('Department not found or inactive'), 'Department not found or inactive', HTTP_STATUS.NOT_FOUND);
     }
 
     // Check if subject code already exists in organization
@@ -58,10 +55,7 @@ const createSubject = async (req, res) => {
     });
 
     if (existingSubject) {
-      return res.status(400).json({
-        success: false,
-        message: 'Subject code already exists in this organization'
-      });
+      return sendError(res, new Error('Subject code already exists in this organization'), 'Subject code already exists in this organization', HTTP_STATUS.BAD_REQUEST);
     }
 
     // Validate prerequisites if provided
@@ -73,10 +67,7 @@ const createSubject = async (req, res) => {
       });
 
       if (prerequisiteSubjects.length !== prerequisites.length) {
-        return res.status(400).json({
-          success: false,
-          message: 'One or more prerequisite subjects not found'
-        });
+        return sendError(res, new Error('One or more prerequisite subjects not found'), 'One or more prerequisite subjects not found', HTTP_STATUS.BAD_REQUEST);
       }
     }
 
@@ -89,10 +80,7 @@ const createSubject = async (req, res) => {
       });
 
       if (!teacher) {
-        return res.status(400).json({
-          success: false,
-          message: 'Coordinator not found or inactive'
-        });
+        return sendError(res, new Error('Coordinator not found or inactive'), 'Coordinator not found or inactive', HTTP_STATUS.BAD_REQUEST);
       }
     }
 
@@ -139,19 +127,12 @@ const createSubject = async (req, res) => {
       { path: 'prerequisites', select: 'name code' }
     ]);
 
-    res.status(201).json({
-      success: true,
-      message: 'Subject created successfully',
-      data: subject
-    });
+    sendSuccess(res, subject, 'Subject created successfully', HTTP_STATUS.CREATED);
 
   } catch (error) {
-    console.error('Error creating subject:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    const { logger } = require('../utils/logger');
+    logger.error('Error creating subject', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error creating subject', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -214,7 +195,8 @@ const getSubjects = async (req, res) => {
         // Filter subjects by department IDs
         query.departmentId = { $in: Array.from(allDepartmentIds) };
         
-        console.log('🎓 Teacher subject filtering:', {
+        const { logger } = require('../utils/logger');
+        logger.debug('Teacher subject filtering', {
           teacherId: teacher._id,
           departments: teacher.departments,
           effectiveDepartmentIds: Array.from(allDepartmentIds),
@@ -223,7 +205,8 @@ const getSubjects = async (req, res) => {
       } else {
         // If teacher has no assigned departments, show all subjects in the organization
         // This allows teachers to see subjects even if they haven't been assigned to departments yet
-        console.log('⚠️ Teacher has no assigned departments, showing all organization subjects');
+        const { logger } = require('../utils/logger');
+        logger.warn('Teacher has no assigned departments, showing all organization subjects');
         // Don't add departmentId filter, so all subjects in the organization are returned
       }
     } else if (departmentId) {
@@ -239,16 +222,14 @@ const getSubjects = async (req, res) => {
       query.subjectType = subjectType;
     }
 
-    console.log('🔍 Subject query:', JSON.stringify(query, null, 2));
+    const { logger } = require('../utils/logger');
+    logger.debug('Subject query', { query });
     
     // Validate organizationId exists
     if (!organizationId) {
-      console.error('❌ No organizationId found for user:', { userId, userType });
-      return res.status(400).json({
-        success: false,
-        message: 'User organization not found. Please contact administrator.',
-        debug: { userId, userType, organizationId }
-      });
+      const { logger } = require('../utils/logger');
+      logger.error('No organizationId found for user', { userId, userType, organizationId });
+      return sendError(res, new Error('User organization not found'), 'User organization not found. Please contact administrator.', HTTP_STATUS.BAD_REQUEST);
     }
     
     const subjects = await Subject.find(query)
@@ -257,11 +238,12 @@ const getSubjects = async (req, res) => {
       .populate('prerequisites', 'name code')
       .sort({ name: 1 });
 
-    console.log('📚 Found subjects:', subjects.length, subjects.map(s => ({ id: s._id, name: s.name, department: s.departmentId?.name })));
+    logger.info('📚 Found subjects', { count: subjects.length, subjects: subjects.map(s => ({ id: s._id, name: s.name, department: s.departmentId?.name })) });
 
     // Log warning if no subjects found for teachers
     if (userType === 'teacher' && subjects.length === 0) {
-      console.warn('⚠️ No subjects found for teacher:', {
+      const { logger } = require('../utils/logger');
+      logger.warn('No subjects found for teacher', {
         teacherId: userId,
         organizationId,
         departments: query.departmentId ? 'filtered by departments' : 'no department filter',
@@ -269,24 +251,12 @@ const getSubjects = async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      data: subjects,
-      meta: {
-        total: subjects.length,
-        organizationId,
-        userType,
-        filteredByDepartments: userType === 'teacher' && query.departmentId
-      }
-    });
+    sendSuccess(res, subjects, 'Subjects retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching subjects:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    const { logger } = require('../utils/logger');
+    logger.error('Error fetching subjects', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching subjects', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -305,10 +275,7 @@ const getSubjectsByDepartment = async (req, res) => {
     });
 
     if (!department) {
-      return res.status(404).json({
-        success: false,
-        message: 'Department not found'
-      });
+      return sendError(res, new Error('Department not found'), 'Department not found', HTTP_STATUS.NOT_FOUND);
     }
 
     const subjects = await Subject.find({
@@ -319,21 +286,15 @@ const getSubjectsByDepartment = async (req, res) => {
       .populate('prerequisites', 'name code')
       .sort({ name: 1 });
 
-    res.json({
-      success: true,
-      data: {
-        department: department.getSummary(),
-        subjects
-      }
-    });
+    sendSuccess(res, {
+      department: department.getSummary(),
+      subjects
+    }, 'Subjects retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching subjects by department:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    const { logger } = require('../utils/logger');
+    logger.error('Error fetching subjects by department', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching subjects by department', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -352,10 +313,7 @@ const getSubject = async (req, res) => {
       .populate('prerequisites', 'name code description');
 
     if (!subject) {
-      return res.status(404).json({
-        success: false,
-        message: 'Subject not found'
-      });
+      return sendError(res, new Error('Subject not found'), 'Subject not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Get teachers who can teach this subject
@@ -365,21 +323,15 @@ const getSubject = async (req, res) => {
       subjects: { $elemMatch: { departmentId: subject.departmentId } }
     }).select('fullName emailAddress subjects role');
 
-    res.json({
-      success: true,
-      data: {
-        ...subject.toObject(),
-        availableTeachers: teachers
-      }
-    });
+    sendSuccess(res, {
+      ...subject.toObject(),
+      availableTeachers: teachers
+    }, 'Subject retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching subject:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    const { logger } = require('../utils/logger');
+    logger.error('Error fetching subject', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching subject', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -396,10 +348,7 @@ const updateSubject = async (req, res) => {
     });
 
     if (!subject) {
-      return res.status(404).json({
-        success: false,
-        message: 'Subject not found'
-      });
+      return sendError(res, new Error('Subject not found'), 'Subject not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Check if code is being changed and if it conflicts
@@ -411,10 +360,7 @@ const updateSubject = async (req, res) => {
       });
 
       if (existingSubject) {
-        return res.status(400).json({
-          success: false,
-          message: 'Subject code already exists in this organization'
-        });
+        return sendError(res, new Error('Subject code already exists in this organization'), 'Subject code already exists in this organization', HTTP_STATUS.BAD_REQUEST);
       }
     }
 
@@ -427,10 +373,7 @@ const updateSubject = async (req, res) => {
       });
 
       if (!department) {
-        return res.status(400).json({
-          success: false,
-          message: 'Department not found or inactive'
-        });
+        return sendError(res, new Error('Department not found or inactive'), 'Department not found or inactive', HTTP_STATUS.BAD_REQUEST);
       }
     }
 
@@ -443,10 +386,7 @@ const updateSubject = async (req, res) => {
       });
 
       if (prerequisiteSubjects.length !== updateData.prerequisites.length) {
-        return res.status(400).json({
-          success: false,
-          message: 'One or more prerequisite subjects not found'
-        });
+        return sendError(res, new Error('One or more prerequisite subjects not found'), 'One or more prerequisite subjects not found', HTTP_STATUS.BAD_REQUEST);
       }
     }
 
@@ -472,19 +412,12 @@ const updateSubject = async (req, res) => {
       { path: 'prerequisites', select: 'name code' }
     ]);
 
-    res.json({
-      success: true,
-      message: 'Subject updated successfully',
-      data: subject
-    });
+    sendSuccess(res, subject, 'Subject updated successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error updating subject:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    const { logger } = require('../utils/logger');
+    logger.error('Error updating subject', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error updating subject', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -500,10 +433,7 @@ const deleteSubject = async (req, res) => {
     });
 
     if (!subject) {
-      return res.status(404).json({
-        success: false,
-        message: 'Subject not found'
-      });
+      return sendError(res, new Error('Subject not found'), 'Subject not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Check if subject is a prerequisite for other subjects
@@ -513,15 +443,7 @@ const deleteSubject = async (req, res) => {
     });
 
     if (dependentSubjects.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete subject as it is a prerequisite for other subjects',
-        dependentSubjects: dependentSubjects.map(sub => ({
-          id: sub._id,
-          name: sub.name,
-          code: sub.code
-        }))
-      });
+      return sendError(res, new Error('Cannot delete subject as it is a prerequisite for other subjects'), 'Cannot delete subject as it is a prerequisite for other subjects', HTTP_STATUS.BAD_REQUEST);
     }
 
     // Soft delete by changing status
@@ -531,18 +453,12 @@ const deleteSubject = async (req, res) => {
     // Update department statistics
     await updateDepartmentStats(organizationId);
 
-    res.json({
-      success: true,
-      message: 'Subject archived successfully'
-    });
+    sendSuccess(res, null, 'Subject archived successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error deleting subject:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    const { logger } = require('../utils/logger');
+    logger.error('Error deleting subject', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error deleting subject', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -560,10 +476,7 @@ const assignCoordinator = async (req, res) => {
     });
 
     if (!subject) {
-      return res.status(404).json({
-        success: false,
-        message: 'Subject not found'
-      });
+      return sendError(res, new Error('Subject not found'), 'Subject not found', HTTP_STATUS.NOT_FOUND);
     }
 
     const teacher = await Teacher.findOne({
@@ -573,10 +486,7 @@ const assignCoordinator = async (req, res) => {
     });
 
     if (!teacher) {
-      return res.status(404).json({
-        success: false,
-        message: 'Teacher not found'
-      });
+      return sendError(res, new Error('Teacher not found'), 'Teacher not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Update subject coordinator
@@ -604,26 +514,19 @@ const assignCoordinator = async (req, res) => {
       await teacher.save();
     }
 
-    res.json({
-      success: true,
-      message: 'Coordinator assigned to subject successfully',
-      data: {
-        subject: subject.getSummary(),
-        coordinator: {
-          id: teacher._id,
-          name: teacher.fullName,
-          email: teacher.emailAddress
-        }
+    sendSuccess(res, {
+      subject: subject.getSummary(),
+      coordinator: {
+        id: teacher._id,
+        name: teacher.fullName,
+        email: teacher.emailAddress
       }
-    });
+    }, 'Coordinator assigned to subject successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error assigning coordinator:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    const { logger } = require('../utils/logger');
+    logger.error('Error assigning coordinator', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error assigning coordinator', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -660,27 +563,21 @@ const getSubjectStats = async (req, res) => {
       { $group: { _id: null, avgCredits: { $avg: '$credits' } } }
     ]);
 
-    res.json({
-      success: true,
-      data: {
-        totalSubjects,
-        subjectsByCategory,
-        subjectsByType,
-        subjectsWithCoordinators,
-        averageCredits: averageCredits[0]?.avgCredits || 0,
-        coverage: {
-          coordinators: Math.round((subjectsWithCoordinators / totalSubjects) * 100) || 0
-        }
+    sendSuccess(res, {
+      totalSubjects,
+      subjectsByCategory,
+      subjectsByType,
+      subjectsWithCoordinators,
+      averageCredits: averageCredits[0]?.avgCredits || 0,
+      coverage: {
+        coordinators: Math.round((subjectsWithCoordinators / totalSubjects) * 100) || 0
       }
-    });
+    }, 'Subject statistics retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching subject stats:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    const { logger } = require('../utils/logger');
+    logger.error('Error fetching subject stats', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching subject stats', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -700,18 +597,12 @@ const getSubjectsByCategory = async (req, res) => {
       .populate('coordinator', 'fullName emailAddress')
       .sort({ name: 1 });
 
-    res.json({
-      success: true,
-      data: subjects
-    });
+    sendSuccess(res, subjects, 'Subjects retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching subjects by category:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    const { logger } = require('../utils/logger');
+    logger.error('Error fetching subjects by category', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching subjects by category', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -754,7 +645,8 @@ const updateDepartmentStats = async (organizationId) => {
       await department.save();
     }
   } catch (error) {
-    console.error('Error updating department stats:', error);
+    const { logger } = require('../utils/logger');
+    logger.error('Error updating department stats', { error: error.message, stack: error.stack });
   }
 };
 

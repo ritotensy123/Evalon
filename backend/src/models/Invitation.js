@@ -44,11 +44,26 @@ const invitationSchema = new mongoose.Schema({
     ref: 'User'
   },
   metadata: {
-    firstName: String,
-    lastName: String,
-    department: String,
-    phone: String,
-    customMessage: String
+    firstName: {
+      type: String,
+      trim: true
+    },
+    lastName: {
+      type: String,
+      trim: true
+    },
+    department: {
+      type: String,
+      trim: true
+    },
+    phone: {
+      type: String,
+      trim: true
+    },
+    customMessage: {
+      type: String,
+      trim: true
+    }
   }
 }, {
   timestamps: true

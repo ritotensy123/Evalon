@@ -20,9 +20,26 @@ const organizationSchema = new mongoose.Schema({
     trim: true
   },
   address: {
-    type: String,
-    required: true,
-    trim: true
+    country: {
+      type: String,
+      default: ''
+    },
+    state: {
+      type: String,
+      default: ''
+    },
+    city: {
+      type: String,
+      default: ''
+    },
+    postalCode: {
+      type: String,
+      default: ''
+    },
+    street: {
+      type: String,
+      default: ''
+    }
   },
   website: {
     type: String,
@@ -90,7 +107,8 @@ const organizationSchema = new mongoose.Schema({
   },
   studentStrength: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   isGovernmentRecognized: {
     type: Boolean,
@@ -163,6 +181,9 @@ const organizationSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  setupSkippedAt: {
+    type: Date
+  },
   
   // Admin Permissions
   adminPermissions: {
@@ -179,7 +200,8 @@ const organizationSchema = new mongoose.Schema({
     },
     sessionTimeout: {
       type: Number,
-      default: 30
+      default: 30,
+      min: 0
     },
     passwordPolicy: {
       type: String,
@@ -188,7 +210,8 @@ const organizationSchema = new mongoose.Schema({
     },
     loginAttempts: {
       type: Number,
-      default: 5
+      default: 5,
+      min: 0
     },
     ipWhitelist: {
       type: Boolean,
@@ -263,15 +286,18 @@ const organizationSchema = new mongoose.Schema({
   stats: {
     totalStudents: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
     totalTeachers: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
     totalSubAdmins: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     }
   }
 }, {

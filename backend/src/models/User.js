@@ -42,7 +42,8 @@ const userSchema = new mongoose.Schema({
   userTypeEmail: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    trim: true
   },
   
   // Authentication provider
@@ -87,6 +88,12 @@ const userSchema = new mongoose.Schema({
   emailVerificationToken: String,
   emailVerificationExpires: Date,
   
+  // Phone verification
+  phoneVerified: {
+    type: Boolean,
+    default: false
+  },
+  
   // Registration completion
   isRegistrationComplete: {
     type: Boolean,
@@ -104,6 +111,22 @@ const userSchema = new mongoose.Schema({
     avatar: String,
     phoneNumber: String,
     countryCode: String
+  },
+  
+  // Organization reference (denormalized for performance)
+  // This avoids extra DB queries in auth middleware
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization',
+    index: true
+  },
+  
+  // Token version for revocation support
+  // Increment this to invalidate all existing tokens for this user
+  tokenVersion: {
+    type: Number,
+    default: 0,
+    min: 0
   }
 }, {
   timestamps: true,
@@ -117,6 +140,9 @@ userSchema.index({ userType: 1 });
 userSchema.index({ userId: 1, userModel: 1 });
 userSchema.index({ googleId: 1 });
 userSchema.index({ userTypeEmail: 1 }, { unique: true });
+userSchema.index({ organizationId: 1, userType: 1 }); // Composite for org + userType queries
+userSchema.index({ organizationId: 1, status: 1 }); // Composite for org + status queries
+userSchema.index({ lastLogin: -1 }); // For sorting by last login
 
 // Virtual for full name
 userSchema.virtual('fullName').get(function() {
@@ -145,7 +171,7 @@ userSchema.pre('save', async function(next) {
   
   // Check if password is already hashed (bcrypt hashes start with $2a$, $2b$, or $2y$)
   if (this.password && /^\$2[aby]\$\d+\$/.test(this.password)) {
-    console.log('Password is already hashed, skipping hashing');
+    // SECURITY: Don't log password-related operations
     return next();
   }
   
@@ -164,6 +190,12 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
     return false;
   }
   return bcrypt.compare(candidatePassword, this.password);
+};
+
+// Method to invalidate all existing tokens by incrementing tokenVersion
+userSchema.methods.invalidateTokens = async function() {
+  this.tokenVersion = (this.tokenVersion || 0) + 1;
+  return this.save();
 };
 
 // Method to get user details with populated data
@@ -201,7 +233,7 @@ userSchema.statics.findByEmailAndType = function(email, userType) {
 
 // Static method to create user from registration data
 userSchema.statics.createFromRegistration = async function(userData) {
-  const { email, password, userType, userId, userModel, profile } = userData;
+  const { email, password, userType, userId, userModel, profile, firstLogin } = userData;
   
   const userTypeEmail = `${email.toLowerCase()}_${userType}`;
   
@@ -214,7 +246,10 @@ userSchema.statics.createFromRegistration = async function(userData) {
     userTypeEmail,
     profile,
     authProvider: 'local', // Explicitly set auth provider
-    isEmailVerified: true // Assuming email is verified during registration
+    isEmailVerified: true, // Assuming email is verified during registration
+    // IMPORTANT: Organization admins should have firstLogin: false
+    // Other user types default to firstLogin: true (set password/profile on first login)
+    firstLogin: firstLogin !== undefined ? firstLogin : (userType === 'organization_admin' ? false : true)
   });
   
   // Mark password as modified to ensure it gets hashed

@@ -5,6 +5,7 @@ const {
   registerStep2,
   completeRegistration,
   getOrganizationByCode,
+  getOrganizationById,
   getAllOrganizations,
   updateOrganization,
   deleteOrganization,
@@ -12,7 +13,8 @@ const {
   upload,
   completeSetup,
   getSetupStatus,
-  skipSetup
+  skipSetup,
+  getRegistrationSessionStatus
 } = require('../controllers/organizationController');
 
 const {
@@ -22,7 +24,10 @@ const {
   verifyPhoneOTPForOrganization
 } = require('../controllers/otpController');
 
+const { authenticate } = require('../middleware/auth');
+
 // Public routes
+router.get('/register/session-status', getRegistrationSessionStatus);
 router.post('/register/step1', registerStep1);
 router.post('/register/step2', registerStep2);
 router.post('/auth/send-email-otp', sendEmailOTPForOrganization);
@@ -40,7 +45,8 @@ router.get('/:organizationId/setup-status', getSetupStatus);
 router.post('/skip-setup', skipSetup);
 
 // Protected routes (require authentication)
-// router.put('/:orgId', auth, updateOrganization);
-// router.delete('/:orgId', auth, deleteOrganization);
+router.get('/:orgId', authenticate, getOrganizationById);
+router.put('/:orgId', authenticate, updateOrganization);
+// router.delete('/:orgId', authenticate, deleteOrganization);
 
 module.exports = router;

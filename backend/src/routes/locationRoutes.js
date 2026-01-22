@@ -1,6 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const router = express.Router();
+const { logger } = require('../utils/logger');
 
 // CountryStateCity API configuration
 const CSC_API_KEY = 'aFZ4Q2ttOXA4TU5PY2FNWUZpNmxmNUhnYTRlNHprVXJHb291Vk9GZQ==';
@@ -19,7 +20,7 @@ const cscApi = axios.create({
 // Get all countries
 router.get('/countries', async (req, res) => {
   try {
-    console.log('🌍 Fetching countries from CountryStateCity API...');
+    logger.info('[LOCATION] Fetching countries from CountryStateCity API');
     
     const response = await cscApi.get('/countries');
     const countries = response.data;
@@ -33,7 +34,7 @@ router.get('/countries', async (req, res) => {
       currencySymbol: country.currency_symbol
     }));
     
-    console.log(`✅ Successfully fetched ${transformedCountries.length} countries`);
+    logger.info('[LOCATION] Successfully fetched countries', { count: transformedCountries.length });
     res.json({
       success: true,
       message: 'Countries fetched successfully',
@@ -41,7 +42,7 @@ router.get('/countries', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Error fetching countries:', error);
+    logger.error('[LOCATION] Error fetching countries', { error: error.message });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch countries',
@@ -55,7 +56,7 @@ router.get('/countries/:countryCode/states', async (req, res) => {
   try {
     const { countryCode } = req.params;
     
-    console.log(`🌍 Fetching states for country: ${countryCode}`);
+    logger.info('[LOCATION] Fetching states for country', { countryCode });
     
     const response = await cscApi.get(`/countries/${countryCode}/states`);
     const states = response.data;
@@ -67,7 +68,7 @@ router.get('/countries/:countryCode/states', async (req, res) => {
       countryCode: state.country_code
     }));
     
-    console.log(`✅ Successfully fetched ${transformedStates.length} states for ${countryCode}`);
+    logger.info('[LOCATION] Successfully fetched states', { count: transformedStates.length, countryCode });
     res.json({
       success: true,
       message: `States for ${countryCode} fetched successfully`,
@@ -75,7 +76,7 @@ router.get('/countries/:countryCode/states', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Error fetching states:', error);
+    logger.error('[LOCATION] Error fetching states', { error: error.message });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch states',
@@ -89,7 +90,7 @@ router.get('/states/:countryCode', async (req, res) => {
   try {
     const { countryCode } = req.params;
     
-    console.log(`🌍 Fetching states for country: ${countryCode}`);
+    logger.info('[LOCATION] Fetching states for country', { countryCode });
     
     const response = await cscApi.get(`/countries/${countryCode}/states`);
     const states = response.data;
@@ -101,7 +102,7 @@ router.get('/states/:countryCode', async (req, res) => {
       countryCode: state.country_code
     }));
     
-    console.log(`✅ Successfully fetched ${transformedStates.length} states for ${countryCode}`);
+    logger.info('[LOCATION] Successfully fetched states', { count: transformedStates.length, countryCode });
     res.json({
       success: true,
       message: `States for ${countryCode} fetched successfully`,
@@ -109,7 +110,7 @@ router.get('/states/:countryCode', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Error fetching states:', error);
+    logger.error('[LOCATION] Error fetching states', { error: error.message });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch states',

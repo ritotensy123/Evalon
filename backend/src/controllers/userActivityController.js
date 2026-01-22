@@ -1,5 +1,6 @@
 const UserManagement = require('../models/UserManagement');
 const { store, retrieve, remove } = require('../utils/tempStorage');
+const { logger } = require('../utils/logger');
 
 // Track user activity
 const trackUserActivity = async (req, res) => {
@@ -42,7 +43,7 @@ const trackUserActivity = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Track user activity error:', error);
+    logger.error('Track user activity error', { error: error.message, stack: error.stack, userId: req.params.userId });
     res.status(500).json({
       success: false,
       message: 'Failed to track user activity',
@@ -115,7 +116,7 @@ const getUserActivityLog = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get user activity log error:', error);
+    logger.error('Get user activity log error', { error: error.message, stack: error.stack, userId: req.params.userId });
     res.status(500).json({
       success: false,
       message: 'Failed to get user activity log',
@@ -152,7 +153,7 @@ const getOnlineUsers = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get online users error:', error);
+    logger.error('Get online users error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       message: 'Failed to get online users',
@@ -195,7 +196,7 @@ const getUserSession = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get user session error:', error);
+    logger.error('Get user session error', { error: error.message, stack: error.stack, userId: req.params.userId });
     res.status(500).json({
       success: false,
       message: 'Failed to get user session',
@@ -238,7 +239,7 @@ const updateUserSession = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Update user session error:', error);
+    logger.error('Update user session error', { error: error.message, stack: error.stack, userId: req.params.userId });
     res.status(500).json({
       success: false,
       message: 'Failed to update user session',

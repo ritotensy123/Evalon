@@ -4,6 +4,9 @@ const Student = require('../models/Student');
 const Department = require('../models/Department');
 const Subject = require('../models/Subject');
 const Organization = require('../models/Organization');
+const { sendSuccess, sendError } = require('../utils/apiResponse');
+const { HTTP_STATUS } = require('../constants');
+const { logger } = require('../utils/logger');
 
 // Create a new teacher class
 const createTeacherClass = async (req, res) => {
@@ -25,32 +28,21 @@ const createTeacherClass = async (req, res) => {
     const userId = req.user.id; // Get user ID from authenticated user
     const teacherId = req.user.userId; // Get teacher model ID
 
-    console.log('🎓 Creating teacher class - req.user:', {
-      userId: req.user.id,
-      teacherId: req.user.userId,
-      userType: req.user.userType,
-      organizationId: req.user.organizationId
-    });
+    logger.debug('Creating teacher class', { userType: req.user.userType, requestId: req.id });
 
     // Verify teacher exists
     const teacher = await Teacher.findById(teacherId);
 
     if (!teacher) {
-      console.error('❌ Teacher not found:', teacherId);
-      return res.status(404).json({
-        success: false,
-        message: 'Teacher not found or inactive'
-      });
+      logger.error('Teacher not found', { teacherId, requestId: req.id });
+      return sendError(res, new Error('Teacher not found or inactive'), 'Teacher not found or inactive', HTTP_STATUS.NOT_FOUND);
     }
 
     // If organizationId is not set, get it from teacher
     const orgId = organizationId || teacher.organization;
     
     if (!orgId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Organization not found'
-      });
+      return sendError(res, new Error('Organization not found'), 'Organization not found', HTTP_STATUS.BAD_REQUEST);
     }
 
     // Verify department exists if provided
@@ -63,10 +55,7 @@ const createTeacherClass = async (req, res) => {
       });
 
       if (!department) {
-        return res.status(404).json({
-          success: false,
-          message: 'Department not found'
-        });
+        return sendError(res, new Error('Department not found'), 'Department not found', HTTP_STATUS.NOT_FOUND);
       }
     }
 
@@ -77,10 +66,7 @@ const createTeacherClass = async (req, res) => {
     });
 
     if (existingClass) {
-      return res.status(400).json({
-        success: false,
-        message: 'Class code already exists'
-      });
+      return sendError(res, new Error('Class code already exists'), 'Class code already exists', HTTP_STATUS.BAD_REQUEST);
     }
 
     // Verify subject if provided
@@ -166,19 +152,11 @@ const createTeacherClass = async (req, res) => {
       { path: 'students.studentId', select: 'firstName lastName email studentId' }
     ]);
 
-    res.status(201).json({
-      success: true,
-      message: 'Class created successfully',
-      data: teacherClass
-    });
+    sendSuccess(res, teacherClass, 'Class created successfully', HTTP_STATUS.CREATED);
 
   } catch (error) {
-    console.error('Error creating teacher class:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error creating teacher class', { error: error.message, stack: error.stack, requestId: req.id });
+    sendError(res, error, 'Error creating teacher class', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -190,10 +168,7 @@ const getTeacherClasses = async (req, res) => {
     // Get teacher to find their organization
     const teacher = await Teacher.findById(teacherId);
     if (!teacher) {
-      return res.status(404).json({
-        success: false,
-        message: 'Teacher not found'
-      });
+      return sendError(res, new Error('Teacher not found'), 'Teacher not found', HTTP_STATUS.NOT_FOUND);
     }
 
     const organizationId = teacher.organization;
@@ -209,18 +184,11 @@ const getTeacherClasses = async (req, res) => {
       .populate('students.studentId', 'firstName lastName email studentId')
       .sort({ createdAt: -1 });
 
-    res.json({
-      success: true,
-      data: teacherClasses
-    });
+    sendSuccess(res, teacherClasses, 'Teacher classes retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching teacher classes:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error fetching teacher classes', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching teacher classes', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -233,19 +201,13 @@ const getAvailableStudents = async (req, res) => {
     // Get teacher to find their assigned departments and organization
     const teacher = await Teacher.findById(teacherId);
     if (!teacher) {
-      return res.status(404).json({
-        success: false,
-        message: 'Teacher not found'
-      });
+      return sendError(res, new Error('Teacher not found'), 'Teacher not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Get organizationId from teacher object
     const organizationId = teacher.organization;
     if (!organizationId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Teacher is not assigned to any organization'
-      });
+      return sendError(res, new Error('Teacher is not assigned to any organization'), 'Teacher is not assigned to any organization', HTTP_STATUS.BAD_REQUEST);
     }
 
     // Get all department IDs that teacher is assigned to (including hierarchy)
@@ -279,7 +241,7 @@ const getAvailableStudents = async (req, res) => {
 
     const departmentIdsArray = Array.from(allDepartmentIds);
 
-    console.log('🔍 Fetching students with:', {
+    logger.debug('Fetching students', {
       organizationId: organizationId.toString(),
       departmentIdsArray,
       departmentCount: departmentIdsArray.length
@@ -292,9 +254,8 @@ const getAvailableStudents = async (req, res) => {
       status: 'active'
     }).select('firstName lastName email studentId grade section department');
 
-    console.log('✅ Raw students query result:', {
-      count: students.length,
-      students: students.map(s => ({ name: `${s.firstName} ${s.lastName}`, dept: s.department?.toString() }))
+    logger.debug('Students query result', {
+      count: students.length
     });
 
     // Add department info to each student
@@ -308,24 +269,17 @@ const getAvailableStudents = async (req, res) => {
       return studentObj;
     }));
 
-    console.log('🎓 Available students for teacher:', {
+    logger.info('🎓 Available students for teacher', {
       teacherId: teacherId.toString(),
       departmentIds: departmentIdsArray,
       studentCount: studentsWithDeptInfo.length
     });
 
-    res.json({
-      success: true,
-      data: studentsWithDeptInfo
-    });
+    sendSuccess(res, studentsWithDeptInfo, 'Available students retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching available students:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error fetching available students', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching available students', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -346,10 +300,7 @@ const addStudentsToClass = async (req, res) => {
 
     // Verify teacher owns this class
     if (teacherClass.teacherId.toString() !== req.user.userId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to modify this class'
-      });
+      return sendError(res, new Error('You do not have permission to modify this class'), 'You do not have permission to modify this class', HTTP_STATUS.FORBIDDEN);
     }
 
     // Get valid students from the department
@@ -370,19 +321,11 @@ const addStudentsToClass = async (req, res) => {
     // Refresh the class data
     await teacherClass.populate('students.studentId', 'firstName lastName email studentId');
 
-    res.json({
-      success: true,
-      message: 'Students added to class successfully',
-      data: teacherClass
-    });
+    sendSuccess(res, teacherClass, 'Students added to class successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error adding students to class:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error adding students to class', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error adding students to class', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -394,35 +337,21 @@ const removeStudentFromClass = async (req, res) => {
     const teacherClass = await TeacherClass.findById(classId);
 
     if (!teacherClass) {
-      return res.status(404).json({
-        success: false,
-        message: 'Class not found'
-      });
+      return sendError(res, new Error('Class not found'), 'Class not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Verify teacher owns this class
     if (teacherClass.teacherId.toString() !== req.user.userId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to modify this class'
-      });
+      return sendError(res, new Error('You do not have permission to modify this class'), 'You do not have permission to modify this class', HTTP_STATUS.FORBIDDEN);
     }
 
     await teacherClass.removeStudent(studentId);
 
-    res.json({
-      success: true,
-      message: 'Student removed from class successfully',
-      data: teacherClass
-    });
+    sendSuccess(res, teacherClass, 'Student removed from class successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error removing student from class:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error removing student from class', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error removing student from class', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -438,24 +367,14 @@ const getTeacherClass = async (req, res) => {
       .populate('students.studentId', 'firstName lastName email studentId grade section');
 
     if (!teacherClass) {
-      return res.status(404).json({
-        success: false,
-        message: 'Class not found'
-      });
+      return sendError(res, new Error('Class not found'), 'Class not found', HTTP_STATUS.NOT_FOUND);
     }
 
-    res.json({
-      success: true,
-      data: teacherClass
-    });
+    sendSuccess(res, teacherClass, 'Teacher class retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching teacher class:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error fetching teacher class', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching teacher class', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -476,10 +395,7 @@ const updateTeacherClass = async (req, res) => {
 
     // Verify teacher owns this class
     if (teacherClass.teacherId.toString() !== req.user.userId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to modify this class'
-      });
+      return sendError(res, new Error('You do not have permission to modify this class'), 'You do not have permission to modify this class', HTTP_STATUS.FORBIDDEN);
     }
 
     // Update fields
@@ -493,19 +409,11 @@ const updateTeacherClass = async (req, res) => {
 
     await teacherClass.populate('students.studentId', 'firstName lastName email studentId');
 
-    res.json({
-      success: true,
-      message: 'Class updated successfully',
-      data: teacherClass
-    });
+    sendSuccess(res, teacherClass, 'Class updated successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error updating teacher class:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error updating teacher class', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error updating teacher class', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -517,34 +425,21 @@ const deleteTeacherClass = async (req, res) => {
     const teacherClass = await TeacherClass.findById(classId);
 
     if (!teacherClass) {
-      return res.status(404).json({
-        success: false,
-        message: 'Class not found'
-      });
+      return sendError(res, new Error('Class not found'), 'Class not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Verify teacher owns this class
     if (teacherClass.teacherId.toString() !== req.user.userId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to delete this class'
-      });
+      return sendError(res, new Error('You do not have permission to delete this class'), 'You do not have permission to delete this class', HTTP_STATUS.FORBIDDEN);
     }
 
     await TeacherClass.deleteOne({ _id: classId });
 
-    res.json({
-      success: true,
-      message: 'Class deleted successfully'
-    });
+    sendSuccess(res, null, 'Class deleted successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error deleting teacher class:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error deleting teacher class', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error deleting teacher class', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 

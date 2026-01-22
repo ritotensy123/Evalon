@@ -74,9 +74,18 @@ const teacherClassSchema = new mongoose.Schema({
       enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
       required: true
     },
-    startTime: String,
-    endTime: String,
-    room: String
+    startTime: {
+      type: String,
+      trim: true
+    },
+    endTime: {
+      type: String,
+      trim: true
+    },
+    room: {
+      type: String,
+      trim: true
+    }
   }],
   
   // Academic Information
@@ -97,7 +106,8 @@ const teacherClassSchema = new mongoose.Schema({
     },
     maxStudents: {
       type: Number,
-      default: null
+      default: null,
+      min: 0
     },
     requireApproval: {
       type: Boolean,
@@ -116,15 +126,18 @@ const teacherClassSchema = new mongoose.Schema({
   stats: {
     totalStudents: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
     totalAssignments: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
     averageScore: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     }
   },
   

@@ -3,6 +3,9 @@ const Subject = require('../models/Subject');
 const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
 const Organization = require('../models/Organization');
+const { sendSuccess, sendError } = require('../utils/apiResponse');
+const { HTTP_STATUS } = require('../constants');
+const { logger } = require('../utils/logger');
 
 // Create a new department
 const createDepartment = async (req, res) => {
@@ -35,10 +38,7 @@ const createDepartment = async (req, res) => {
     // Check if organization exists
     const organization = await Organization.findById(organizationId);
     if (!organization) {
-      return res.status(404).json({
-        success: false,
-        message: 'Organization not found'
-      });
+      return sendError(res, new Error('Organization not found'), 'Organization not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Clean up empty strings for ObjectId fields
@@ -60,12 +60,8 @@ const createDepartment = async (req, res) => {
     });
 
     if (existingDepartment) {
-      console.error('Department code already exists:', code);
-      return res.status(400).json({
-        success: false,
-        message: 'Department code already exists in this organization',
-        code: code
-      });
+      logger.error('Department code already exists', { code, organizationId });
+      return sendError(res, new Error('Department code already exists in this organization'), 'Department code already exists in this organization', HTTP_STATUS.BAD_REQUEST);
     }
 
     // Validate parent department if provided
@@ -78,20 +74,12 @@ const createDepartment = async (req, res) => {
         });
 
         if (!parent) {
-          console.error('Parent department not found:', cleanParentDepartment);
-          return res.status(400).json({
-            success: false,
-            message: 'Parent department not found or inactive',
-            parentDepartment: cleanParentDepartment
-          });
+          logger.error('Parent department not found', { parentDepartment: cleanParentDepartment, organizationId });
+          return sendError(res, new Error('Parent department not found or inactive'), 'Parent department not found or inactive', HTTP_STATUS.BAD_REQUEST);
         }
       } catch (error) {
-        console.error('Error validating parent department:', error);
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid parent department ID',
-          parentDepartment: cleanParentDepartment
-        });
+        logger.error('Error validating parent department', { error: error.message, parentDepartment: cleanParentDepartment });
+        return sendError(res, new Error('Invalid parent department ID'), 'Invalid parent department ID', HTTP_STATUS.BAD_REQUEST);
       }
     }
 
@@ -104,10 +92,7 @@ const createDepartment = async (req, res) => {
       });
 
       if (!teacher) {
-        return res.status(400).json({
-          success: false,
-          message: 'Head of department not found or inactive'
-        });
+        return sendError(res, new Error('Head of department not found or inactive'), 'Head of department not found or inactive', HTTP_STATUS.BAD_REQUEST);
       }
     }
 
@@ -120,10 +105,7 @@ const createDepartment = async (req, res) => {
       });
 
       if (!teacher) {
-        return res.status(400).json({
-          success: false,
-          message: 'Coordinator not found or inactive'
-        });
+        return sendError(res, new Error('Coordinator not found or inactive'), 'Coordinator not found or inactive', HTTP_STATUS.BAD_REQUEST);
       }
     }
 
@@ -155,12 +137,8 @@ const createDepartment = async (req, res) => {
     // Validate hierarchy before saving
     const hierarchyErrors = await department.validateHierarchy();
     if (hierarchyErrors.length > 0) {
-      console.error('Hierarchy validation failed:', hierarchyErrors);
-      return res.status(400).json({
-        success: false,
-        message: 'Hierarchy validation failed',
-        errors: hierarchyErrors
-      });
+      logger.error('Hierarchy validation failed', { hierarchyErrors });
+      return sendError(res, new Error('Hierarchy validation failed'), 'Hierarchy validation failed', HTTP_STATUS.BAD_REQUEST);
     }
 
     await department.save();
@@ -175,20 +153,11 @@ const createDepartment = async (req, res) => {
       { path: 'coordinator', select: 'fullName emailAddress' }
     ]);
 
-    res.status(201).json({
-      success: true,
-      message: 'Department created successfully',
-      data: department
-    });
+    sendSuccess(res, department, 'Department created successfully', HTTP_STATUS.CREATED);
 
   } catch (error) {
-    console.error('Error creating department:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message,
-      stack: error.stack
-    });
+    logger.error('Error creating department', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error creating department', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -210,18 +179,11 @@ const getDepartments = async (req, res) => {
       .populate('coordinator', 'fullName emailAddress')
       .sort({ level: 1, name: 1 });
 
-    res.json({
-      success: true,
-      data: departments
-    });
+    sendSuccess(res, departments, 'Departments retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching departments:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error fetching departments', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching departments', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -266,18 +228,11 @@ const getDepartmentTree = async (req, res) => {
 
     const tree = buildTree();
 
-    res.json({
-      success: true,
-      data: tree
-    });
+    sendSuccess(res, tree, 'Department tree retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching department tree:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error fetching department tree', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching department tree', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -321,10 +276,7 @@ const getDepartment = async (req, res) => {
       .populate('coordinator', 'fullName emailAddress phoneNumber');
 
     if (!department) {
-      return res.status(404).json({
-        success: false,
-        message: 'Department not found'
-      });
+      return sendError(res, new Error('Department not found'), 'Department not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Get children departments
@@ -346,23 +298,16 @@ const getDepartment = async (req, res) => {
       'subjects.departmentId': id
     }).select('fullName emailAddress subjects role');
 
-    res.json({
-      success: true,
-      data: {
-        ...department.toObject(),
-        children,
-        subjects,
-        teachers
-      }
-    });
+    sendSuccess(res, {
+      ...department.toObject(),
+      children,
+      subjects,
+      teachers
+    }, 'Department retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching department:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error fetching department', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching department', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -379,10 +324,7 @@ const updateDepartment = async (req, res) => {
     });
 
     if (!department) {
-      return res.status(404).json({
-        success: false,
-        message: 'Department not found'
-      });
+      return sendError(res, new Error('Department not found'), 'Department not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Check if code is being changed and if it conflicts
@@ -394,20 +336,14 @@ const updateDepartment = async (req, res) => {
       });
 
       if (existingDepartment) {
-        return res.status(400).json({
-          success: false,
-          message: 'Department code already exists in this organization'
-        });
+        return sendError(res, new Error('Department code already exists in this organization'), 'Department code already exists in this organization', HTTP_STATUS.BAD_REQUEST);
       }
     }
 
     // Validate parent department if being changed
     if (updateData.parentDepartment && updateData.parentDepartment !== department.parentDepartment?.toString()) {
       if (updateData.parentDepartment === id) {
-        return res.status(400).json({
-          success: false,
-          message: 'Department cannot be its own parent'
-        });
+        return sendError(res, new Error('Department cannot be its own parent'), 'Department cannot be its own parent', HTTP_STATUS.BAD_REQUEST);
       }
 
       const parent = await Department.findOne({
@@ -417,10 +353,7 @@ const updateDepartment = async (req, res) => {
       });
 
       if (!parent) {
-        return res.status(400).json({
-          success: false,
-          message: 'Parent department not found or inactive'
-        });
+        return sendError(res, new Error('Parent department not found or inactive'), 'Parent department not found or inactive', HTTP_STATUS.BAD_REQUEST);
       }
     }
 
@@ -438,19 +371,11 @@ const updateDepartment = async (req, res) => {
       { path: 'coordinator', select: 'fullName emailAddress' }
     ]);
 
-    res.json({
-      success: true,
-      message: 'Department updated successfully',
-      data: department
-    });
+    sendSuccess(res, department, 'Department updated successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error updating department:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error updating department', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error updating department', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -466,10 +391,7 @@ const deleteDepartment = async (req, res) => {
     });
 
     if (!department) {
-      return res.status(404).json({
-        success: false,
-        message: 'Department not found'
-      });
+      return sendError(res, new Error('Department not found'), 'Department not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Check if department has children
@@ -479,10 +401,7 @@ const deleteDepartment = async (req, res) => {
     });
 
     if (children.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete department with active child departments'
-      });
+      return sendError(res, new Error('Cannot delete department with active child departments'), 'Cannot delete department with active child departments', HTTP_STATUS.BAD_REQUEST);
     }
 
     // Check if department has subjects
@@ -492,10 +411,7 @@ const deleteDepartment = async (req, res) => {
     });
 
     if (subjects.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete department with active subjects'
-      });
+      return sendError(res, new Error('Cannot delete department with active subjects'), 'Cannot delete department with active subjects', HTTP_STATUS.BAD_REQUEST);
     }
 
     // Soft delete by changing status
@@ -505,18 +421,11 @@ const deleteDepartment = async (req, res) => {
     // Update department statistics
     await updateDepartmentStats(organizationId);
 
-    res.json({
-      success: true,
-      message: 'Department archived successfully'
-    });
+    sendSuccess(res, null, 'Department archived successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error deleting department:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error deleting department', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error deleting department', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -534,10 +443,7 @@ const assignTeacher = async (req, res) => {
     });
 
     if (!department) {
-      return res.status(404).json({
-        success: false,
-        message: 'Department not found'
-      });
+      return sendError(res, new Error('Department not found'), 'Department not found', HTTP_STATUS.NOT_FOUND);
     }
 
     const teacher = await Teacher.findOne({
@@ -547,10 +453,7 @@ const assignTeacher = async (req, res) => {
     });
 
     if (!teacher) {
-      return res.status(404).json({
-        success: false,
-        message: 'Teacher not found'
-      });
+      return sendError(res, new Error('Teacher not found'), 'Teacher not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Update department based on role
@@ -580,27 +483,19 @@ const assignTeacher = async (req, res) => {
     // Update department statistics
     await updateDepartmentStats(organizationId);
 
-    res.json({
-      success: true,
-      message: 'Teacher assigned to department successfully',
-      data: {
-        department: department.getSummary(),
-        teacher: {
-          id: teacher._id,
-          name: teacher.fullName,
-          email: teacher.emailAddress,
-          role: role
-        }
+    sendSuccess(res, {
+      department: department.getSummary(),
+      teacher: {
+        id: teacher._id,
+        name: teacher.fullName,
+        email: teacher.emailAddress,
+        role: role
       }
-    });
+    }, 'Teacher assigned to department successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error assigning teacher:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error assigning teacher', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error assigning teacher', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -636,28 +531,21 @@ const getDepartmentStats = async (req, res) => {
       coordinator: { $exists: true, $ne: null }
     });
 
-    res.json({
-      success: true,
-      data: {
-        totalDepartments,
-        totalSubjects,
-        totalTeachers,
-        departmentsWithHeads,
-        departmentsWithCoordinators,
-        coverage: {
-          heads: Math.round((departmentsWithHeads / totalDepartments) * 100) || 0,
-          coordinators: Math.round((departmentsWithCoordinators / totalDepartments) * 100) || 0
-        }
+    sendSuccess(res, {
+      totalDepartments,
+      totalSubjects,
+      totalTeachers,
+      departmentsWithHeads,
+      departmentsWithCoordinators,
+      coverage: {
+        heads: Math.round((departmentsWithHeads / totalDepartments) * 100) || 0,
+        coordinators: Math.round((departmentsWithCoordinators / totalDepartments) * 100) || 0
       }
-    });
+    }, 'Department statistics retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching department stats:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error fetching department stats', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching department stats', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -697,7 +585,7 @@ const updateDepartmentStats = async (organizationId) => {
       await department.save();
     }
   } catch (error) {
-    console.error('Error updating department stats:', error);
+    logger.error('Error updating department stats', { error: error.message, stack: error.stack });
   }
 };
 
@@ -713,26 +601,16 @@ const getDepartmentHierarchy = async (req, res) => {
     });
 
     if (!department) {
-      return res.status(404).json({
-        success: false,
-        message: 'Department not found'
-      });
+      return sendError(res, new Error('Department not found'), 'Department not found', HTTP_STATUS.NOT_FOUND);
     }
 
     const hierarchyPath = await department.getHierarchyPath();
 
-    res.json({
-      success: true,
-      data: hierarchyPath
-    });
+    sendSuccess(res, hierarchyPath, 'Department hierarchy retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching department hierarchy:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error fetching department hierarchy', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching department hierarchy', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -758,18 +636,11 @@ const getDepartmentsByType = async (req, res) => {
       .populate('coordinator', 'fullName emailAddress')
       .sort({ level: 1, name: 1 });
 
-    res.json({
-      success: true,
-      data: departments
-    });
+    sendSuccess(res, departments, 'Departments retrieved successfully', HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Error fetching departments by type:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
+    logger.error('Error fetching departments by type', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Error fetching departments by type', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 

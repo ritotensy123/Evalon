@@ -160,15 +160,18 @@ const subjectSchema = new mongoose.Schema({
   stats: {
     totalTeachers: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
     totalStudents: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
     totalClasses: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     }
   },
   
@@ -189,6 +192,9 @@ const subjectSchema = new mongoose.Schema({
 subjectSchema.index({ organizationId: 1 });
 subjectSchema.index({ departmentId: 1 });
 subjectSchema.index({ code: 1, organizationId: 1 }, { unique: true });
+subjectSchema.index({ organizationId: 1, departmentId: 1 }); // Composite for org + department queries
+subjectSchema.index({ organizationId: 1, status: 1 }); // Composite for org + status queries
+subjectSchema.index({ createdAt: -1 }); // For sorting by newest
 subjectSchema.index({ category: 1 });
 subjectSchema.index({ subjectType: 1 });
 subjectSchema.index({ status: 1 });

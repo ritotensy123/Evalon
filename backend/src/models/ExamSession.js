@@ -36,11 +36,13 @@ const examSessionSchema = new mongoose.Schema({
   },
   duration: {
     type: Number, // in minutes
-    required: true
+    required: true,
+    min: 0
   },
   timeRemaining: {
     type: Number, // in seconds
-    default: null
+    default: null,
+    min: 0
   },
 
   // Monitoring Information
@@ -58,26 +60,57 @@ const examSessionSchema = new mongoose.Schema({
   },
   activityCount: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
 
   // Device and Browser Information
   deviceInfo: {
-    userAgent: String,
-    platform: String,
-    browser: String,
-    screenResolution: String,
-    timezone: String,
-    language: String
+    userAgent: {
+      type: String,
+      trim: true
+    },
+    platform: {
+      type: String,
+      trim: true
+    },
+    browser: {
+      type: String,
+      trim: true
+    },
+    screenResolution: {
+      type: String,
+      trim: true
+    },
+    timezone: {
+      type: String,
+      trim: true
+    },
+    language: {
+      type: String,
+      trim: true
+    }
   },
 
   // Network Information
   networkInfo: {
-    ipAddress: String,
+    ipAddress: {
+      type: String,
+      trim: true
+    },
     location: {
-      country: String,
-      region: String,
-      city: String
+      country: {
+        type: String,
+        trim: true
+      },
+      region: {
+        type: String,
+        trim: true
+      },
+      city: {
+        type: String,
+        trim: true
+      }
     }
   },
 
@@ -91,7 +124,10 @@ const examSessionSchema = new mongoose.Schema({
       type: Date,
       default: Date.now
     },
-    details: String,
+    details: {
+      type: String,
+      trim: true
+    },
     severity: {
       type: String,
       enum: ['low', 'medium', 'high', 'critical'],
@@ -122,7 +158,8 @@ const examSessionSchema = new mongoose.Schema({
   // WebSocket Connection
   socketId: {
     type: String,
-    default: null
+    default: null,
+    trim: true
   },
   isConnected: {
     type: Boolean,
@@ -158,7 +195,10 @@ const examSessionSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
       },
-      timeSpent: Number // in seconds
+      timeSpent: {
+        type: Number, // in seconds
+        min: 0
+      }
     }],
     autoSaveEnabled: {
       type: Boolean,
@@ -187,7 +227,8 @@ const examSessionSchema = new mongoose.Schema({
     },
     totalTimeSpent: {
       type: Number, // in minutes
-      default: null
+      default: null,
+      min: 0
     }
   },
 

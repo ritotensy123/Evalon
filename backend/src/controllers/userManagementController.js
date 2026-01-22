@@ -5,1482 +5,246 @@ const Student = require('../models/Student');
 const Department = require('../models/Department');
 const Invitation = require('../models/Invitation');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { store, retrieve, remove } = require('../utils/tempStorage');
 const { sendRegistrationEmail, sendTemporaryCredentialsEmail } = require('../services/emailService');
+const { config } = require('../config/server');
+const { generateToken } = require('../middleware/auth');
+const UserService = require('../services/UserService');
+const OrganizationService = require('../services/OrganizationService');
+const asyncWrapper = require('../middleware/asyncWrapper');
+const { sendSuccess, sendError } = require('../utils/apiResponse');
+const { HTTP_STATUS } = require('../constants');
+const { logger } = require('../utils/logger');
+const AppError = require('../utils/AppError');
 
 // Get all users for an organization
-const getAllUserManagements = async (req, res) => {
-  try {
-    const { organizationId } = req.params;
-    const { page = 1, limit = 10, role, status, search, departmentId, userType } = req.query;
+const getAllUserManagements = asyncWrapper(async (req, res) => {
+  const { organizationId } = req.params;
+  const filters = {
+    page: req.query.page,
+    limit: req.query.limit,
+    role: req.query.role,
+    status: req.query.status,
+    search: req.query.search,
+    departmentId: req.query.departmentId,
+    userType: req.query.userType
+  };
 
-    // Get all users for this organization
-    let teachersInOrg = await Teacher.find({ organization: organizationId }).select('_id');
-    let studentsInOrg = await Student.find({ organization: organizationId }).select('_id');
-    
-    // Filter by department if specified
-    if (departmentId) {
-      // Teacher model uses 'departments' array, Student model uses 'department' field
-      teachersInOrg = await Teacher.find({ 
-        organization: organizationId, 
-        departments: departmentId 
-      }).select('_id');
-      studentsInOrg = await Student.find({ 
-        organization: organizationId, 
-        department: departmentId 
-      }).select('_id');
-    }
-    
-    console.log('🔍 User Management - Organization users query:', {
-      organizationId,
-      departmentId,
-      userType,
-      teachersCount: teachersInOrg.length,
-      studentsCount: studentsInOrg.length,
-      teacherIds: teachersInOrg.map(t => t._id),
-      studentIds: studentsInOrg.map(s => s._id)
-    });
+  const result = await UserService.getAllUserManagements(filters, organizationId);
 
-    // Debug: Check if there are any users with this organizationId
-    const usersByOrgId = await User.find({ organizationId }).select('_id email userType userId');
-    console.log('🔍 Users by organizationId:', {
-      count: usersByOrgId.length,
-      users: usersByOrgId.map(u => ({
-        id: u._id,
-        email: u.email,
-        userType: u.userType,
-        userId: u.userId
-      }))
-    });
-
-    // Get all users for this organization - both org admins and regular users
-    let organizationUsers = await User.find({
-      $or: [
-        { organizationId: organizationId }, // Regular users (teachers, students)
-        { userType: 'organization_admin', userId: organizationId } // Organization admin users
-      ]
-    })
-      .select('-password')
-      .sort({ createdAt: -1 });
-
-    // Fetch teachers directly from Teacher model
-    if (departmentId && userType === 'teacher') {
-      // Get the current department and its hierarchy
-      const Department = require('../models/Department');
-      const currentDepartment = await Department.findById(departmentId);
-      
-      if (!currentDepartment) {
-        console.log('❌ Department not found:', departmentId);
-        return res.status(404).json({
-          success: false,
-          message: 'Department not found'
-        });
-      }
-
-      // Get all parent departments in the hierarchy
-      const hierarchyPath = await currentDepartment.getHierarchyPath();
-      const parentDepartmentIds = hierarchyPath.map(dept => dept.id);
-      
-      console.log('🏗️ Department hierarchy for teacher assignment:', {
-        currentDepartment: currentDepartment.name,
-        hierarchyPath: hierarchyPath.map(h => ({ name: h.name, id: h.id })),
-        parentDepartmentIds
-      });
-
-      // Fetch teachers from current department AND all parent departments
-      const teachersInDepartment = await Teacher.find({
-        organization: organizationId,
-        departments: { $in: parentDepartmentIds }
-      }).select('firstName lastName email phoneNumber subjects role organizationName yearsOfExperience status departments organization createdAt');
-
-      // Convert Teacher model entries to User-like format for consistency
-      const teacherUsers = teachersInDepartment.map(teacher => ({
-        _id: teacher._id,
-        email: teacher.email,
-        userType: 'teacher',
-        userId: teacher._id,
-        isActive: teacher.status === 'active',
-        organizationId: teacher.organization,
-        profile: {
-          firstName: teacher.firstName,
-          lastName: teacher.lastName,
-          phone: teacher.phoneNumber,
-          department: teacher.departments
-        },
-        createdAt: teacher.createdAt,
-        // Add teacher-specific fields
-        teacherData: {
-          subjects: teacher.subjects,
-          yearsOfExperience: teacher.yearsOfExperience,
-          role: teacher.role,
-          organizationName: teacher.organizationName
-        }
-      }));
-
-      // Add teacher users to organization users
-      organizationUsers = [...organizationUsers, ...teacherUsers];
-      
-      console.log('🔍 Added teachers from Teacher model (hierarchical filter):', {
-        count: teacherUsers.length,
-        teachers: teacherUsers.map(t => ({
-          id: t._id,
-          name: `${t.profile.firstName} ${t.profile.lastName}`,
-          email: t.email,
-          departments: t.profile.department
-        }))
-      });
-    } else if (departmentId && userType === 'student') {
-      // Get department hierarchy for student assignment
-      const currentDepartment = await Department.findById(departmentId);
-      let parentDepartmentIds = [departmentId]; // Include current department
-      
-      if (currentDepartment) {
-        const hierarchyPath = await currentDepartment.getHierarchyPath();
-        console.log('🏗️ Department hierarchy for student assignment:', {
-          currentDepartment: currentDepartment.name,
-          hierarchyPath: hierarchyPath.map(dept => ({ name: dept.name, id: dept.id })),
-          parentDepartmentIds: hierarchyPath.map(dept => dept.id)
-        });
-        
-        // Get all parent department IDs for hierarchical assignment
-        parentDepartmentIds = hierarchyPath.map(dept => dept.id);
-      }
-
-      // Fetch students from current department AND all parent departments (hierarchical)
-      const studentsInDepartment = await Student.find({
-        organization: organizationId,
-        department: { $in: parentDepartmentIds }
-      }).select('firstName lastName email phoneNumber academicYear grade section rollNumber studentCode status department organization createdAt');
-
-      // Convert Student model entries to User-like format for consistency
-      const studentUsers = studentsInDepartment.map(student => ({
-        _id: student._id,
-        email: student.email,
-        userType: 'student',
-        userId: student._id,
-        isActive: student.status === 'active',
-        organizationId: student.organization,
-        profile: {
-          firstName: student.firstName,
-          lastName: student.lastName,
-          phone: student.phoneNumber,
-          department: student.department
-        },
-        createdAt: student.createdAt,
-        // Add student-specific fields
-        studentData: {
-          academicYear: student.academicYear,
-          grade: student.grade,
-          section: student.section,
-          rollNumber: student.rollNumber,
-          studentCode: student.studentCode
-        }
-      }));
-
-      // Add student users to organization users
-      organizationUsers = [...organizationUsers, ...studentUsers];
-      
-      console.log('🔍 Added students from Student model (hierarchical filter):', {
-        count: studentUsers.length,
-        students: studentUsers.map(s => ({
-          id: s._id,
-          name: `${s.profile.firstName} ${s.profile.lastName}`,
-          email: s.email,
-          department: s.profile.department
-        }))
-      });
-    } else if (!departmentId) {
-      // Fetch ALL teachers and students from organization (no department filter)
-      const allTeachers = await Teacher.find({
-        organization: organizationId
-      }).select('firstName lastName email phoneNumber subjects role organizationName yearsOfExperience status departments organization createdAt');
-
-      const allStudents = await Student.find({
-        organization: organizationId
-      }).select('firstName lastName email phoneNumber academicYear grade section rollNumber studentCode status department organization createdAt');
-
-      // Convert teachers
-      const teacherUsers = allTeachers.map(teacher => ({
-        _id: teacher._id,
-        email: teacher.email,
-        userType: 'teacher',
-        userId: teacher._id,
-        isActive: teacher.status === 'active',
-        organizationId: teacher.organization,
-        profile: {
-          firstName: teacher.firstName,
-          lastName: teacher.lastName,
-          phone: teacher.phoneNumber,
-          department: teacher.departments
-        },
-        createdAt: teacher.createdAt,
-        teacherData: {
-          subjects: teacher.subjects,
-          yearsOfExperience: teacher.yearsOfExperience,
-          role: teacher.role,
-          organizationName: teacher.organizationName
-        }
-      }));
-
-      // Convert students
-      const studentUsers = allStudents.map(student => ({
-        _id: student._id,
-        email: student.email,
-        userType: 'student',
-        userId: student._id,
-        isActive: student.status === 'active',
-        organizationId: student.organization,
-        profile: {
-          firstName: student.firstName,
-          lastName: student.lastName,
-          phone: student.phoneNumber,
-          department: student.department
-        },
-        createdAt: student.createdAt,
-        studentData: {
-          academicYear: student.academicYear,
-          grade: student.grade,
-          section: student.section,
-          rollNumber: student.rollNumber,
-          studentCode: student.studentCode
-        }
-      }));
-
-      // Add all teachers and students
-      organizationUsers = [...organizationUsers, ...teacherUsers, ...studentUsers];
-      
-      console.log('🔍 Added teachers and students from models (no department filter):', {
-        teachersCount: teacherUsers.length,
-        studentsCount: studentUsers.length,
-        teachers: teacherUsers.map(t => ({
-          id: t._id,
-          name: `${t.profile.firstName} ${t.profile.lastName}`,
-          email: t.email
-        })),
-        students: studentUsers.map(s => ({
-          id: s._id,
-          name: `${s.profile.firstName} ${s.profile.lastName}`,
-          email: s.email
-        }))
-      });
-    }
-
-    console.log('🔍 User Management - Found users:', {
-      totalUsers: organizationUsers.length,
-      users: organizationUsers.map(u => ({
-        id: u._id,
-        email: u.email,
-        userType: u.userType,
-        userId: u.userId,
-        isActive: u.isActive,
-        organizationId: u.organizationId
-      }))
-    });
-
-    // Debug: Check user types
-    const userTypes = organizationUsers.reduce((acc, user) => {
-      acc[user.userType] = (acc[user.userType] || 0) + 1;
-      return acc;
-    }, {});
-    console.log('🔍 User types found:', userTypes);
-
-    // Additional debug - check for the specific user we just created
-    const recentUsers = await User.find({ organizationId })
-      .select('_id email userType createdAt')
-      .sort({ createdAt: -1 })
-      .limit(5);
-    console.log('🔍 Recent users in organization:', recentUsers.map(u => ({
-      id: u._id,
-      email: u.email,
-      userType: u.userType,
-      createdAt: u.createdAt
-    })));
-
-    // Apply filters
-    if (role && role !== 'all') {
-      organizationUsers = organizationUsers.filter(user => user.userType === role);
-    }
-    
-    if (userType && userType !== 'all') {
-      organizationUsers = organizationUsers.filter(user => user.userType === userType);
-    }
-    
-    if (status && status !== 'all') {
-      if (status === 'active') {
-        organizationUsers = organizationUsers.filter(user => user.isActive);
-      } else if (status === 'inactive') {
-        organizationUsers = organizationUsers.filter(user => !user.isActive);
-      }
-    }
-    
-    if (search) {
-      organizationUsers = organizationUsers.filter(user => 
-        (user.profile?.firstName && user.profile.firstName.toLowerCase().includes(search.toLowerCase())) ||
-        (user.profile?.lastName && user.profile.lastName.toLowerCase().includes(search.toLowerCase())) ||
-        user.email.toLowerCase().includes(search.toLowerCase())
-      );
-    }
-
-    // Apply pagination
-    const total = organizationUsers.length;
-    const skip = (page - 1) * limit;
-    const paginatedUsers = organizationUsers.slice(skip, skip + parseInt(limit));
-
-    // Fetch complete user data including Teacher/Student details
-    const formattedUsers = await Promise.all(paginatedUsers.map(async (user) => {
-      let additionalData = {};
-      
-      // If user already has teacherData (from direct Teacher model fetch), use it
-      if (user.teacherData) {
-        additionalData = {
-          firstName: user.profile?.firstName || '',
-          lastName: user.profile?.lastName || '',
-          phone: user.profile?.phone || '',
-          department: user.profile?.department || '',
-          subjects: user.teacherData.subjects || [],
-          experienceLevel: user.teacherData.experienceLevel || '',
-          yearsOfExperience: user.teacherData.yearsOfExperience || '',
-          qualification: user.teacherData.qualification || '',
-          specialization: user.teacherData.specialization || '',
-          address: user.teacherData.address || '',
-          dateOfBirth: user.teacherData.dateOfBirth || '',
-          emergencyContact: user.teacherData.emergencyContact || '',
-          notes: user.teacherData.notes || ''
-        };
-      } else if (user.studentData) {
-        // If user already has studentData (from direct Student model fetch), use it
-        additionalData = {
-          firstName: user.profile?.firstName || '',
-          lastName: user.profile?.lastName || '',
-          phone: user.profile?.phone || '',
-          department: user.profile?.department || '',
-          academicYear: user.studentData.academicYear || '',
-          grade: user.studentData.grade || '',
-          section: user.studentData.section || '',
-          rollNumber: user.studentData.rollNumber || '',
-          studentCode: user.studentData.studentCode || '',
-          address: user.studentData.address || '',
-          dateOfBirth: user.studentData.dateOfBirth || '',
-          emergencyContact: user.studentData.emergencyContact || '',
-          parentName: user.studentData.parentName || '',
-          parentPhone: user.studentData.parentPhone || '',
-          notes: user.studentData.notes || ''
-        };
-      } else if (user.userType === 'teacher' && user.userId) {
-        try {
-          const teacher = await Teacher.findById(user.userId);
-          if (teacher) {
-            additionalData = {
-              firstName: teacher.fullName?.split(' ')[0] || '',
-              lastName: teacher.fullName?.split(' ').slice(1).join(' ') || '',
-              phone: teacher.phoneNumber || '',
-              department: teacher.department || '',
-              subjects: teacher.subjects || [],
-              experienceLevel: teacher.experienceLevel || '',
-              yearsOfExperience: teacher.yearsOfExperience || '',
-              qualification: teacher.qualification || '',
-              specialization: teacher.specialization || '',
-              address: teacher.address || '',
-              dateOfBirth: teacher.dateOfBirth || '',
-              emergencyContact: teacher.emergencyContact || '',
-              notes: teacher.notes || ''
-            };
-          }
-        } catch (error) {
-          console.error('Error fetching teacher data:', error);
-        }
-      } else if (user.userType === 'student' && user.userId) {
-        try {
-          const student = await Student.findById(user.userId);
-          if (student) {
-            additionalData = {
-              firstName: student.fullName?.split(' ')[0] || '',
-              lastName: student.fullName?.split(' ').slice(1).join(' ') || '',
-              phone: student.phoneNumber || '',
-              department: student.department || '',
-              academicYear: student.academicYear || '',
-              grade: student.grade || '',
-              section: student.section || '',
-              rollNumber: student.rollNumber || '',
-              studentCode: student.studentCode || '',
-              address: student.address || '',
-              dateOfBirth: student.dateOfBirth || '',
-              emergencyContact: student.emergencyContact || '',
-              parentName: student.parentName || '',
-              parentPhone: student.parentPhone || '',
-              notes: student.notes || ''
-            };
-          }
-        } catch (error) {
-          console.error('Error fetching student data:', error);
-        }
-      } else if (user.userType === 'organization_admin') {
-        // For organization admin, use profile data if available
-        additionalData = {
-          firstName: user.profile?.firstName || '',
-          lastName: user.profile?.lastName || '',
-          phone: user.profile?.phone || '',
-          department: 'Administration',
-          address: user.profile?.address || '',
-          notes: user.profile?.notes || ''
-        };
-      }
-
-      const firstName = additionalData.firstName || user.profile?.firstName || '';
-      const lastName = additionalData.lastName || user.profile?.lastName || '';
-      
-      return {
-        _id: user._id,
-        firstName,
-        lastName,
-        fullName: firstName && lastName ? `${firstName} ${lastName}` : '',
-        email: user.email,
-        emailAddress: user.email,
-        phone: additionalData.phone || '',
-        userType: user.userType,
-        status: user.isActive ? 'active' : 'inactive',
-        isActive: user.isActive,
-        lastLogin: user.lastLogin,
-        createdAt: user.createdAt,
-        department: additionalData.department || user.profile?.department || '',
-        isEmailVerified: user.isEmailVerified || false,
-        phoneVerified: user.phoneVerified || false,
-        // Teacher specific fields
-        subjects: additionalData.subjects || [],
-        experienceLevel: additionalData.experienceLevel || '',
-        yearsOfExperience: additionalData.yearsOfExperience || '',
-        qualification: additionalData.qualification || '',
-        specialization: additionalData.specialization || '',
-        // Student specific fields
-        academicYear: additionalData.academicYear || '',
-        grade: additionalData.grade || '',
-        section: additionalData.section || '',
-        rollNumber: additionalData.rollNumber || '',
-        studentCode: additionalData.studentCode || '',
-        parentName: additionalData.parentName || '',
-        parentPhone: additionalData.parentPhone || '',
-        // Common fields
-        address: additionalData.address || '',
-        dateOfBirth: additionalData.dateOfBirth || '',
-        emergencyContact: additionalData.emergencyContact || '',
-        notes: additionalData.notes || ''
-      };
-    }));
-
-    res.status(200).json({
-      success: true,
-      data: {
-        users: formattedUsers,
-        pagination: {
-          current: parseInt(page),
-          pages: Math.ceil(total / limit),
-          total,
-          limit: parseInt(limit)
-        }
-      }
-    });
-
-  } catch (error) {
-    console.error('Get all users error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get users',
-      error: error.message
-    });
-  }
-};
+  return sendSuccess(res, result, 'OK', 200);
+});
 
 // Get user by ID
-const getUserManagementById = async (req, res) => {
-  try {
-    const { userId } = req.params;
+const getUserManagementById = asyncWrapper(async (req, res) => {
+  const { userId } = req.params;
+  const organizationId = req.params.organizationId || req.user?.organizationId;
 
-    const user = await User.findById(userId).select('-password').populate('userId');
-    
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
+  const user = await UserService.getUserById(userId, organizationId);
 
-    res.status(200).json({
-      success: true,
-      data: user
-    });
-
-  } catch (error) {
-    console.error('Get user by ID error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get user',
-      error: error.message
-    });
-  }
-};
+  return sendSuccess(res, user, 'OK', 200);
+});
 
 // Create new user (Teacher or Student) - Admin creates without password
-const createUserManagement = async (req, res) => {
-  try {
-    const {
-      firstName,
-      lastName,
-      email,
-      phone,
-      countryCode = '+1',
-      role,
-      department,
-      status = 'active',
-      dateOfBirth,
-      address,
-      emergencyContact,
-      emergencyPhone,
-      notes,
-      organizationId,
-      // Teacher specific fields
-      subjects = [],
-      teacherRole = 'teacher',
-      affiliationType = 'organization',
-      experienceLevel,
-      currentInstitution,
-      yearsOfExperience,
-      // Student specific fields
-      gender,
-      academicYear,
-      grade,
-      section,
-      rollNumber,
-      studentSubjects = []
-    } = req.body;
+const createUserManagement = asyncWrapper(async (req, res) => {
+  const organizationId = req.body.organizationId || req.user?.organizationId;
+  const createdBy = req.user?.id || req.user?.userId;
 
-    // Validate required fields
-    if (!firstName || !lastName || !email || !role || !organizationId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields: firstName, lastName, email, role, organizationId'
-      });
-    }
+  const result = await UserService.createUserManagement(req.body, organizationId, createdBy);
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ 
-      email: email.toLowerCase()
-    });
-
-    if (existingUser) {
-      // If user exists and is pending registration, update their details
-      if (existingUser.authProvider === 'pending_registration' && !existingUser.isRegistrationComplete) {
-        console.log(`🔄 Updating existing pending user: ${email}`);
-        
-        // Generate temporary credentials
-        const tempPassword = crypto.randomBytes(8).toString('hex');
-        const hashedTempPassword = await bcrypt.hash(tempPassword, 12);
-        const organization = await Organization.findById(organizationId);
-        const orgCode = organization?.orgCode || 'ORG001';
-
-        // Update the existing user with temporary credentials
-        existingUser.password = hashedTempPassword;
-        existingUser.isActive = true; // Active with temporary credentials
-        existingUser.authProvider = 'temp_password'; // Mark as temporary password
-        existingUser.isRegistrationComplete = true; // Mark as complete since they have credentials
-        existingUser.isEmailVerified = true; // Email is verified for admin-created users
-        existingUser.firstLogin = true; // Flag for first login flow
-        existingUser.profile = {
-          firstName,
-          lastName,
-          email: email.toLowerCase(),
-          phone: phone ? `${countryCode}${phone}` : null,
-          role: role,
-          department
-        };
-
-        // Update the associated Teacher or Student record
-        if (role === 'teacher') {
-          const teacherRecord = await Teacher.findById(existingUser.userId);
-          if (teacherRecord) {
-            teacherRecord.firstName = firstName;
-            teacherRecord.lastName = lastName;
-            teacherRecord.phoneNumber = phone || '0000000000';
-            teacherRecord.countryCode = countryCode;
-            teacherRecord.department = department;
-            teacherRecord.subjects = subjects || [];
-            teacherRecord.experienceLevel = experienceLevel || 'beginner';
-            teacherRecord.currentInstitution = currentInstitution || 'Unknown';
-            teacherRecord.yearsOfExperience = yearsOfExperience || 0;
-            teacherRecord.organizationCode = orgCode;
-            await teacherRecord.save();
-          }
-        } else if (role === 'student') {
-          const studentRecord = await Student.findById(existingUser.userId);
-          if (studentRecord) {
-            studentRecord.fullName = `${firstName} ${lastName}`;
-            studentRecord.phoneNumber = phone || '0000000000';
-            studentRecord.countryCode = countryCode;
-            studentRecord.department = department;
-            studentRecord.academicYear = academicYear || '2024-25';
-            studentRecord.grade = grade || '10';
-            studentRecord.section = section || 'A';
-            studentRecord.organizationCode = orgCode;
-            await studentRecord.save();
-          }
-        }
-
-        await existingUser.save();
-
-        // Send temporary credentials email
-        const emailResult = await sendTemporaryCredentialsEmail(
-          email, 
-          `${firstName} ${lastName}`, 
-          tempPassword, 
-          role
-        );
-        
-        if (emailResult.success) {
-          console.log(`📧 Temporary credentials email sent successfully to ${email}`);
-        } else {
-          console.error(`❌ Failed to send temporary credentials email to ${email}:`, emailResult.error);
-        }
-
-        return res.status(200).json({
-          success: true,
-          message: `${role.charAt(0).toUpperCase() + role.slice(1)} account created successfully. Temporary credentials sent via email.`,
-          data: {
-            user: {
-              id: existingUser._id,
-              email: existingUser.email,
-              userType: existingUser.userType,
-              isActive: existingUser.isActive,
-              isRegistrationComplete: existingUser.isRegistrationComplete,
-              firstLogin: existingUser.firstLogin
-            }
-          }
-        });
-      } else {
-        // User exists and is not pending registration
-        // Check if they want to create a different user type
-        const existingUserType = existingUser.userType;
-        const requestedRole = role;
-        
-        if (existingUserType !== requestedRole) {
-          return res.status(400).json({
-            success: false,
-            message: `User with this email already exists as a ${existingUserType}. Cannot create a ${requestedRole} account with the same email.`,
-            data: {
-              existingUserType,
-              requestedRole,
-              suggestion: `Try using a different email or update the existing ${existingUserType} account.`
-            }
-          });
-        } else {
-          return res.status(400).json({
-            success: false,
-            message: `A ${existingUserType} account with this email already exists and has completed registration.`,
-            data: {
-              existingUserType,
-              suggestion: 'Try using a different email or update the existing account.'
-            }
-          });
-        }
-      }
-    }
-
-    // Check if userTypeEmail already exists (for the specific user type)
-    const existingUserTypeEmail = await User.findOne({
-      userTypeEmail: `${email.toLowerCase()}_${role}`
-    });
-
-    if (existingUserTypeEmail) {
-      return res.status(400).json({
-        success: false,
-        message: `A ${role} account with this email already exists`
-      });
-    }
-
-    // Generate temporary credentials
-    const tempPassword = crypto.randomBytes(8).toString('hex');
-    const hashedTempPassword = await bcrypt.hash(tempPassword, 12);
-    
-    // Get organization details
-    const organization = await Organization.findById(organizationId);
-    const orgCode = organization?.orgCode || 'ORG001';
-
-    let createdUser = null;
-    let userRecord = null;
-
-    if (role === 'teacher') {
-      // Create Teacher record
-      const teacherData = {
-        firstName,
-        lastName,
-        fullName: `${firstName} ${lastName}`,
-        email: email.toLowerCase(),
-        emailAddress: email.toLowerCase(),
-        phoneNumber: phone || '0000000000',
-        countryCode,
-        employeeId: `EMP${Date.now()}${Math.random().toString(36).substr(2, 5).toUpperCase()}`, // Generate unique employee ID
-        country: 'India', // Default, can be made configurable
-        city: 'Unknown', // Default, can be made configurable
-        pincode: '000000', // Default, can be made configurable
-        subjects: subjects || [],
-        teacherRole: teacherRole,
-        role: teacherRole,
-        affiliationType,
-        experienceLevel: experienceLevel || 'beginner',
-        currentInstitution: currentInstitution || 'Unknown',
-        yearsOfExperience: yearsOfExperience || 0,
-        organizationId,
-        organization: organizationId, // Required field for Teacher model
-        organizationCode: orgCode,
-        status: status === 'active' ? 'active' : 'inactive',
-        createdBy: req.user.id // Required field for Teacher model
-      };
-
-      // Set organization validation
-      if (affiliationType === 'organization') {
-        teacherData.isOrganizationValid = true;
-        teacherData.associationStatus = 'verified';
-      } else {
-        teacherData.associationStatus = 'freelance';
-      }
-
-      userRecord = new Teacher(teacherData);
-      await userRecord.save();
-
-      // Create User record for teacher with temporary credentials
-      const userData = {
-        email: email.toLowerCase(),
-        password: hashedTempPassword,
-        userType: 'teacher',
-        userId: userRecord._id,
-        userModel: 'Teacher',
-        userTypeEmail: `${email.toLowerCase()}_teacher`, // Explicitly set userTypeEmail
-        isActive: true, // Active with temporary credentials
-        authProvider: 'temp_password', // Mark as temporary password
-        isRegistrationComplete: true, // Complete since they have credentials
-        isEmailVerified: true, // Email is verified for admin-created teachers
-        firstLogin: true, // Flag for first login flow
-        organizationId: organizationId,
-        profile: {
-          firstName,
-          lastName,
-          email: email.toLowerCase(),
-          phone: phone ? `${countryCode}${phone}` : null,
-          role: 'teacher',
-          department
-        }
-      };
-      
-      console.log('🔧 Creating User record for teacher:', {
-        email: userData.email,
-        userType: userData.userType,
-        userId: userData.userId,
-        userTypeEmail: userData.userTypeEmail,
-        organizationId: userData.organizationId
-      });
-
-      // Validate organizationId is set
-      if (!userData.organizationId) {
-        throw new Error('organizationId is required for teacher user creation');
-      }
-      
-      createdUser = new User(userData);
-
-    } else if (role === 'student') {
-      // Student fields will use defaults if not provided
-
-      // Create Student record
-      const studentData = {
-        firstName,
-        lastName,
-        fullName: `${firstName} ${lastName}`,
-        email: email.toLowerCase(),
-        emailAddress: email.toLowerCase(),
-        phoneNumber: phone || '0000000000',
-        countryCode,
-        studentId: `STU${Date.now()}${Math.random().toString(36).substr(2, 5).toUpperCase()}`, // Generate unique student ID
-        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : new Date('1990-01-01'),
-        gender: gender || 'other',
-        country: 'India', // Default, can be made configurable
-        city: 'Unknown', // Default, can be made configurable
-        pincode: '000000', // Default, can be made configurable
-        organizationId,
-        organization: organizationId, // Required field for Student model
-        organizationCode: orgCode,
-        academicYear: academicYear || '2024-25',
-        grade: grade || '1',
-        section: section || 'A',
-        rollNumber: rollNumber || '001',
-        subjects: studentSubjects || [],
-        status: status === 'active' ? 'active' : 'inactive',
-        createdBy: req.user.id // Required field for Student model
-      };
-
-      // Set organization validation
-      studentData.isOrganizationValid = true;
-      studentData.associationStatus = 'verified';
-
-      userRecord = new Student(studentData);
-      await userRecord.save();
-
-      // Create User record for student with temporary credentials
-      const userData = {
-        email: email.toLowerCase(),
-        password: hashedTempPassword,
-        userType: 'student',
-        userId: userRecord._id,
-        userModel: 'Student',
-        userTypeEmail: `${email.toLowerCase()}_student`, // Explicitly set userTypeEmail
-        isActive: true, // Active with temporary credentials
-        authProvider: 'temp_password', // Mark as temporary password
-        isRegistrationComplete: true, // Complete since they have credentials
-        isEmailVerified: false, // Students need email verification
-        firstLogin: true, // Flag for first login flow
-        organizationId: organizationId,
-        profile: {
-          firstName,
-          lastName,
-          email: email.toLowerCase(),
-          phone: phone ? `${countryCode}${phone}` : null,
-          role: 'student',
-          department
-        }
-      };
-      
-      console.log('🔧 Creating User record for student:', {
-        email: userData.email,
-        userType: userData.userType,
-        userId: userData.userId,
-        userTypeEmail: userData.userTypeEmail,
-        organizationId: userData.organizationId
-      });
-
-      // Validate organizationId is set
-      if (!userData.organizationId) {
-        throw new Error('organizationId is required for student user creation');
-      }
-      
-      createdUser = new User(userData);
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid role. Only "teacher" and "student" are supported'
-      });
-    }
-
-    // Save the User record with error handling
-    try {
-      await createdUser.save();
-      console.log(`✅ User record created successfully: ${createdUser._id}`);
-      
-      // Final validation - ensure organizationId is set
-      if (!createdUser.organizationId) {
-        throw new Error('CRITICAL: User was saved without organizationId!');
-      }
-      
-      console.log(`✅ User organizationId validated: ${createdUser.organizationId}`);
-    } catch (userSaveError) {
-      console.error('❌ Failed to save User record:', userSaveError);
-      // If User record fails, we should clean up the Teacher/Student record
-      if (userRecord) {
-        await userRecord.deleteOne();
-        console.log('🧹 Cleaned up Teacher/Student record due to User creation failure');
-      }
-      throw userSaveError;
-    }
-
-    // Send temporary credentials email
-    const emailResult = await sendTemporaryCredentialsEmail(
-      email, 
-      `${firstName} ${lastName}`, 
-      tempPassword, 
-      role
-    );
-    
-    if (emailResult.success) {
-      console.log(`📧 Temporary credentials email sent successfully to ${email}`);
-    } else {
-      console.error(`❌ Failed to send temporary credentials email to ${email}:`, emailResult.error);
-    }
-
-    // Return success response
-    res.status(201).json({
-      success: true,
-      message: `${role.charAt(0).toUpperCase() + role.slice(1)} created successfully. Temporary credentials sent via email.`,
-      data: {
-        user: {
-          id: createdUser._id,
-          email: createdUser.email,
-          userType: createdUser.userType,
-          isActive: createdUser.isActive,
-          isRegistrationComplete: createdUser.isRegistrationComplete,
-          firstLogin: createdUser.firstLogin,
-          profile: createdUser.profile
-        },
-        userRecord: {
-          id: userRecord._id,
-          fullName: userRecord.fullName,
-          email: userRecord.emailAddress,
-          status: userRecord.status
-        }
-      }
-    });
-
-  } catch (error) {
-    console.error('Create user error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create user',
-      error: error.message
-    });
-  }
-};
+  const role = req.body.role || 'user';
+  const roleCapitalized = role.charAt(0).toUpperCase() + role.slice(1);
+  
+  return sendSuccess(res, {
+    user: result.user,
+    userRecord: result.userRecord
+  }, `${roleCapitalized} created successfully. Temporary credentials sent via email.`, 201);
+});
 
 // Update user
-const updateUserManagement = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const updateData = req.body;
+const updateUserManagement = asyncWrapper(async (req, res) => {
+  const { userId } = req.params;
+  const organizationId = req.params.organizationId || req.user?.organizationId;
+  let updateData = req.body;
 
-    // Remove sensitive fields that shouldn't be updated directly
-    delete updateData.password;
-    delete updateData._id;
-    delete updateData.organizationId;
-    delete updateData.authProvider;
+  // Remove sensitive fields that shouldn't be updated directly
+  delete updateData.password;
+  delete updateData._id;
+  delete updateData.organizationId;
+  delete updateData.authProvider;
 
-    // Update profile if basic info is changed
-    if (updateData.firstName || updateData.lastName || updateData.email) {
-      updateData.profile = {
-        firstName: updateData.firstName,
-        lastName: updateData.lastName,
-        email: updateData.email?.toLowerCase(),
-        phone: updateData.phone ? `${updateData.countryCode}${updateData.phone}` : null,
-        role: updateData.role,
-        department: updateData.department
-      };
-    }
-
-    const user = await User.findByIdAndUpdate(
-      userId,
-      updateData,
-      { new: true, runValidators: true }
-    ).select('-password').populate('userId');
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'User updated successfully',
-      data: user
-    });
-
-  } catch (error) {
-    console.error('Update user error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update user',
-      error: error.message
-    });
+  // Update profile if basic info is changed
+  if (updateData.firstName || updateData.lastName || updateData.email) {
+    updateData.profile = {
+      firstName: updateData.firstName,
+      lastName: updateData.lastName,
+      email: updateData.email?.toLowerCase(),
+      phone: updateData.phone ? `${updateData.countryCode}${updateData.phone}` : null,
+      role: updateData.role,
+      department: updateData.department
+    };
   }
-};
+
+  const user = await UserService.updateUser(userId, updateData, organizationId);
+
+  return sendSuccess(res, user, 'User updated successfully', 200);
+});
 
 // Delete user
-const deleteUserManagement = async (req, res) => {
-  try {
-    const { userId } = req.params;
+const deleteUserManagement = asyncWrapper(async (req, res) => {
+  const { userId } = req.params;
+  const organizationId = req.params.organizationId || req.user?.organizationId;
 
-    // Find the user first to get their related data
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
+  await UserService.deleteUserManagement(userId, organizationId);
 
-    // Delete related Teacher/Student record if exists
-    if (user.userType === 'teacher' && user.userId) {
-      await Teacher.findByIdAndDelete(user.userId);
-      console.log('✅ Deleted related teacher record:', user.userId);
-    } else if (user.userType === 'student' && user.userId) {
-      await Student.findByIdAndDelete(user.userId);
-      console.log('✅ Deleted related student record:', user.userId);
-    }
-
-    // Delete the user record
-    await User.findByIdAndDelete(userId);
-    console.log('✅ Permanently deleted user:', userId);
-
-    res.status(200).json({
-      success: true,
-      message: 'User permanently deleted successfully'
-    });
-
-  } catch (error) {
-    console.error('Delete user error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete user',
-      error: error.message
-    });
-  }
-};
+  return sendSuccess(res, null, 'User permanently deleted successfully', 200);
+});
 
 // Suspend/Activate user (toggle isActive status)
-const toggleUserStatus = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { action } = req.body; // 'suspend' or 'activate'
+const toggleUserStatus = asyncWrapper(async (req, res) => {
+  const { userId } = req.params;
+  const { action } = req.body;
+  const organizationId = req.params.organizationId || req.user?.organizationId;
 
-    if (!action || !['suspend', 'activate'].includes(action)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid action. Must be "suspend" or "activate"'
-      });
-    }
+  const updated = await UserService.toggleUserStatus(userId, organizationId, action);
 
-    const isActive = action === 'activate';
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { isActive },
-      { new: true }
-    ).select('-password');
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    const statusText = isActive ? 'activated' : 'suspended';
-    console.log(`✅ User ${statusText}:`, userId);
-
-    res.status(200).json({
-      success: true,
-      message: `User ${statusText} successfully`,
-      data: {
-        _id: user._id,
-        email: user.email,
-        isActive: user.isActive,
-        status: user.isActive ? 'active' : 'inactive'
-      }
-    });
-
-  } catch (error) {
-    console.error('Toggle user status error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update user status',
-      error: error.message
-    });
-  }
-};
+  const statusText = action === 'activate' ? 'activated' : 'suspended';
+  
+  return sendSuccess(res, updated, `User ${statusText} successfully`, 200);
+});
 
 // Bulk create users from CSV
-const bulkCreateUserManagements = async (req, res) => {
-  try {
-    const { users, organizationId } = req.body;
+const bulkCreateUserManagements = asyncWrapper(async (req, res) => {
+  const { users } = req.body;
+  const organizationId = req.body.organizationId || req.user?.organizationId;
+  const createdBy = req.user?.id || req.user?.userId;
 
-    if (!users || !Array.isArray(users) || users.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No users provided for bulk creation'
-      });
-    }
+  const result = await UserService.bulkCreateUsers(users, organizationId, createdBy);
 
-    if (!organizationId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Organization ID is required'
-      });
-    }
-
-    const results = {
-      successful: [],
-      failed: [],
-      total: users.length
-    };
-
-    for (const userData of users) {
-      try {
-        // Validate required fields
-        if (!userData.firstName || !userData.lastName || !userData.email || !userData.userType) {
-          results.failed.push({
-            email: userData.email,
-            error: 'Missing required fields'
-          });
-          continue;
-        }
-
-        // Check if user already exists
-        const existingUser = await User.findOne({ 
-          email: userData.email.toLowerCase()
-        });
-
-        if (existingUser) {
-          results.failed.push({
-            email: userData.email,
-            error: 'User already exists'
-          });
-          continue;
-        }
-
-        // Generate temporary password
-        const tempPassword = Math.random().toString(36).substring(2, 15);
-        const hashedPassword = await bcrypt.hash(tempPassword, 12);
-
-        // Create user based on userType
-        let createdUser;
-        let createdProfile;
-        
-        if (userData.userType === 'teacher') {
-          // Create Teacher profile
-          createdProfile = new Teacher({
-            fullName: `${userData.firstName} ${userData.lastName}`,
-            emailAddress: userData.email.toLowerCase(),
-            phoneNumber: userData.phone || '',
-            countryCode: '+91',
-            country: 'India',
-            city: 'Mumbai',
-            pincode: '400001',
-            department: userData.department || '',
-            organizationId: organizationId,
-            organizationCode: 'ORG001', // Add required organizationCode
-            isActive: true,
-            subjects: [],
-            role: 'teacher',
-            affiliationType: 'organization',
-            experienceLevel: 'beginner',
-            yearsOfExperience: 0,
-            qualification: '',
-            specialization: '',
-            address: '',
-            dateOfBirth: new Date('1990-01-01'),
-            emergencyContact: '',
-            notes: ''
-          });
-          
-          await createdProfile.save();
-          
-          // Create User account
-          createdUser = new User({
-            email: userData.email.toLowerCase(),
-            password: hashedPassword,
-            userType: 'teacher',
-            userId: createdProfile._id,
-            organizationId: organizationId,
-            userTypeEmail: `${userData.email.toLowerCase()}_${userData.userType}`,
-            userModel: 'Teacher',
-            authProvider: 'temp_password',
-            isRegistrationComplete: true,
-            isActive: true,
-            profile: {
-              firstName: userData.firstName,
-              lastName: userData.lastName,
-              phone: userData.phone || '',
-              department: userData.department || ''
-            },
-            emailVerified: false,
-            phoneVerified: false,
-            firstLogin: true
-          });
-          
-        } else if (userData.userType === 'student') {
-          // Create Student profile
-          createdProfile = new Student({
-            fullName: `${userData.firstName} ${userData.lastName}`,
-            emailAddress: userData.email.toLowerCase(),
-            phoneNumber: userData.phone || '',
-            countryCode: '+91',
-            dateOfBirth: new Date('2000-01-01'),
-            gender: 'other',
-            country: 'India',
-            city: 'Mumbai',
-            pincode: '400001',
-            organizationId: organizationId,
-            isActive: true,
-            studentId: '',
-            address: '',
-            emergencyContact: '',
-            parentGuardianName: '',
-            parentGuardianPhone: '',
-            parentGuardianEmail: '',
-            notes: '',
-            // Academic fields
-            grade: 'Grade 10',
-            section: 'A',
-            rollNumber: `STU${Date.now()}`,
-            academicYear: '2024-2025',
-            subjects: []
-          });
-          
-          await createdProfile.save();
-          
-          // Create User account
-          createdUser = new User({
-            email: userData.email.toLowerCase(),
-            password: hashedPassword,
-            userType: 'student',
-            userId: createdProfile._id,
-            organizationId: organizationId,
-            userTypeEmail: `${userData.email.toLowerCase()}_${userData.userType}`,
-            userModel: 'Student',
-            authProvider: 'temp_password',
-            isRegistrationComplete: true,
-            isActive: true,
-            profile: {
-              firstName: userData.firstName,
-              lastName: userData.lastName,
-              phone: userData.phone || '',
-              department: userData.department || ''
-            },
-            emailVerified: false,
-            phoneVerified: false,
-            firstLogin: true
-          });
-        } else {
-          results.failed.push({
-            email: userData.email,
-            error: 'Invalid user type. Must be teacher or student.'
-          });
-          continue;
-        }
-        
-        await createdUser.save();
-        
-        // Send email notification if requested
-        if (userData.sendEmailNotification) {
-          try {
-            await sendTemporaryCredentialsEmail(
-              userData.email,
-              userData.firstName,
-              tempPassword,
-              userData.userType,
-              organizationId
-            );
-          } catch (emailError) {
-            console.error('Email sending failed:', emailError);
-            // Don't fail the user creation if email fails
-          }
-        }
-        
-        results.successful.push({
-          email: userData.email,
-          firstName: userData.firstName,
-          lastName: userData.lastName,
-          userType: userData.userType,
-          tempPassword: tempPassword,
-          userId: createdUser._id,
-          profileId: createdProfile._id
-        });
-
-      } catch (error) {
-        results.failed.push({
-          email: userData.email,
-          error: error.message
-        });
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message: `Bulk user creation completed. ${results.successful.length} successful, ${results.failed.length} failed.`,
-      data: {
-        results: [...results.successful, ...results.failed],
-        successCount: results.successful.length,
-        failureCount: results.failed.length,
-        total: results.total
-      }
-    });
-
-  } catch (error) {
-    console.error('Bulk create users error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to bulk create users',
-      error: error.message
-    });
-  }
-};
+  return sendSuccess(res, result, `Bulk user creation completed. ${result.successCount} successful, ${result.failureCount} failed.`, 200);
+});
 
 // Send invitation email
-const sendInvitation = async (req, res) => {
-  try {
-    const {
-      email,
-      role,
-      department,
-      customMessage,
-      expiryDays = 7,
+const sendInvitation = asyncWrapper(async (req, res) => {
+  const {
+    email,
+    role,
+    department,
+    customMessage,
+    expiryDays = 7,
+    firstName,
+    lastName,
+    phone
+  } = req.body;
+
+  const { organizationId } = req.params;
+  const invitedBy = req.user.userId;
+
+  if (!email || !role) {
+    throw AppError.badRequest('Email and role are required');
+  }
+
+  // Validate role
+  const validRoles = ['teacher', 'student', 'sub_admin'];
+  if (!validRoles.includes(role)) {
+    throw AppError.badRequest('Invalid role. Must be teacher, student, or sub_admin');
+  }
+
+  // Check if user already exists
+  const existingUser = await User.findOne({ 
+    email: email.toLowerCase()
+  });
+
+  if (existingUser) {
+    throw AppError.badRequest('User with this email already exists');
+  }
+
+  // Check if there's already a pending invitation
+  const existingInvitation = await Invitation.findPendingByEmail(email.toLowerCase(), organizationId);
+  if (existingInvitation) {
+    throw AppError.badRequest('A pending invitation already exists for this email');
+  }
+
+  // Create invitation
+  const invitation = new Invitation({
+    email: email.toLowerCase(),
+    organizationId,
+    invitedBy,
+    role,
+    metadata: {
       firstName,
       lastName,
-      phone
-    } = req.body;
+      department,
+      phone,
+      customMessage
+    },
+    expiresAt: new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000)
+  });
 
-    const { organizationId } = req.params;
-    const invitedBy = req.user.userId;
+  await invitation.save();
 
-    if (!email || !role) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email and role are required'
-      });
-    }
+  // TODO: Send actual email using nodemailer
+  // SECURITY: Invitation tokens must never be logged
 
-    // Validate role
-    const validRoles = ['teacher', 'student', 'sub_admin'];
-    if (!validRoles.includes(role)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid role. Must be teacher, student, or sub_admin'
-      });
-    }
-
-    // Check if user already exists
-    const existingUser = await User.findOne({ 
-      email: email.toLowerCase()
-    });
-
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'User with this email already exists'
-      });
-    }
-
-    // Check if there's already a pending invitation
-    const existingInvitation = await Invitation.findPendingByEmail(email.toLowerCase(), organizationId);
-    if (existingInvitation) {
-      return res.status(400).json({
-        success: false,
-        message: 'A pending invitation already exists for this email'
-      });
-    }
-
-    // Create invitation
-    const invitation = new Invitation({
-      email: email.toLowerCase(),
-      organizationId,
-      invitedBy,
-      role,
-      metadata: {
-        firstName,
-        lastName,
-        department,
-        phone,
-        customMessage
-      },
-      expiresAt: new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000)
-    });
-
-    await invitation.save();
-
-    // TODO: Send actual email using nodemailer
-    console.log(`📧 Invitation created for ${email}: ${invitation.token}`);
-
-    res.status(200).json({
-      success: true,
-      message: 'Invitation sent successfully',
-      data: {
-        id: invitation._id,
-        email: invitation.email,
-        role: invitation.role,
-        expiresAt: invitation.expiresAt,
-        invitationLink: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/invite/${invitation.token}`
-      }
-    });
-
-  } catch (error) {
-    console.error('Send invitation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send invitation',
-      error: error.message
-    });
-  }
-};
+  return sendSuccess(res, {
+    id: invitation._id,
+    email: invitation.email,
+    role: invitation.role,
+    expiresAt: invitation.expiresAt,
+    invitationLink: `${config.FRONTEND_URL}/invite/${invitation.token}`
+  }, 'Invitation sent successfully', HTTP_STATUS.OK);
+});
 
 // Get invitation by token
-const getInvitation = async (req, res) => {
-  try {
-    const { token } = req.params;
+const getInvitation = asyncWrapper(async (req, res) => {
+  const { token } = req.params;
 
-    const invitation = await Invitation.findByToken(token);
-    
-    if (!invitation) {
-      return res.status(404).json({
-        success: false,
-        message: 'Invitation not found or expired'
-      });
-    }
-
-    // Get organization details
-    const organization = await Organization.findById(invitation.organizationId);
-    
-    res.status(200).json({
-      success: true,
-      data: {
-        id: invitation._id,
-        email: invitation.email,
-        role: invitation.role,
-        organizationId: invitation.organizationId,
-        organizationName: organization?.name || 'Unknown Organization',
-        metadata: invitation.metadata,
-        expiresAt: invitation.expiresAt,
-        createdAt: invitation.createdAt
-      }
-    });
-
-  } catch (error) {
-    console.error('Get invitation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get invitation',
-      error: error.message
-    });
+  const invitation = await Invitation.findByToken(token);
+  
+  if (!invitation) {
+    throw AppError.notFound('Invitation not found or expired');
   }
-};
+
+  // Get organization details
+  const organization = await Organization.findById(invitation.organizationId);
+  
+  return sendSuccess(res, {
+    id: invitation._id,
+    email: invitation.email,
+    role: invitation.role,
+    organizationId: invitation.organizationId,
+    organizationName: organization?.name || 'Unknown Organization',
+    metadata: invitation.metadata,
+    expiresAt: invitation.expiresAt,
+    createdAt: invitation.createdAt
+  }, 'Invitation retrieved successfully', HTTP_STATUS.OK);
+});
 
 // Accept invitation and create user
-const acceptInvitation = async (req, res) => {
-  try {
-    const { token } = req.params;
-    const { password, firstName, lastName, phone, countryCode } = req.body;
+const acceptInvitation = asyncWrapper(async (req, res) => {
+  const { token } = req.params;
+  const { password, firstName, lastName, phone, countryCode } = req.body;
 
-    if (!password || !firstName || !lastName) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password, first name, and last name are required'
-      });
-    }
+  if (!password || !firstName || !lastName) {
+    throw AppError.badRequest('Password, first name, and last name are required');
+  }
 
-    // Get invitation
-    const invitation = await Invitation.findByToken(token);
-    
-    if (!invitation) {
-      return res.status(404).json({
-        success: false,
-        message: 'Invitation not found or expired'
-      });
-    }
+  // Get invitation
+  const invitation = await Invitation.findByToken(token);
+  
+  if (!invitation) {
+    throw AppError.notFound('Invitation not found or expired');
+  }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ 
-      email: invitation.email
-    });
+  // Check if user already exists
+  const existingUser = await User.findOne({ 
+    email: invitation.email
+  });
 
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: 'User with this email already exists'
-      });
-    }
+  if (existingUser) {
+    throw AppError.badRequest('User with this email already exists');
+  }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -1538,10 +302,7 @@ const acceptInvitation = async (req, res) => {
     } else if (invitation.role === 'sub_admin') {
       // For sub_admin, we'll create a user with organization_admin type but different permissions
       // This would need additional logic based on your sub_admin requirements
-      return res.status(400).json({
-        success: false,
-        message: 'Sub-admin creation through invitation is not yet implemented'
-      });
+      throw AppError.badRequest('Sub-admin creation through invitation is not yet implemented');
     }
 
     // Create user account
@@ -1568,159 +329,32 @@ const acceptInvitation = async (req, res) => {
     // Mark invitation as accepted
     await invitation.accept(newUser._id);
 
-    // Generate JWT token
-    const jwtToken = jwt.sign(
-      { 
-        userId: newUser._id, 
+    // Generate JWT token (with tokenVersion for revocation support)
+    const jwtToken = generateToken(newUser._id, newUser.userType, newUser.tokenVersion || 0);
+
+    return sendSuccess(res, {
+      user: {
+        id: newUser._id,
+        email: newUser.email,
         userType: newUser.userType,
-        iat: Math.floor(Date.now() / 1000)
+        profile: newUser.profile
       },
-      process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
-      { expiresIn: '7d' }
-    );
-
-    res.status(200).json({
-      success: true,
-      message: 'Invitation accepted successfully. User created.',
-      data: {
-        user: {
-          id: newUser._id,
-          email: newUser.email,
-          userType: newUser.userType,
-          profile: newUser.profile
-        },
-        token: jwtToken
-      }
-    });
-
-  } catch (error) {
-    console.error('Accept invitation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to accept invitation',
-      error: error.message
-    });
-  }
-};
+      token: jwtToken
+    }, 'Invitation accepted successfully. User created.', HTTP_STATUS.OK);
+});
 
 // Get user statistics
-const getUserManagementStats = async (req, res) => {
-  try {
-    const { organizationId } = req.params;
+const getUserManagementStats = asyncWrapper(async (req, res) => {
+  const { organizationId } = req.params;
 
-    // Get all users for this organization - use the same logic as getAllUserManagements
-    let organizationUsers = await User.find({
-      $or: [
-        { organizationId: organizationId }, // Regular users (teachers, students)
-        { userType: 'organization_admin', userId: organizationId } // Organization admin users
-      ]
-    });
+  const stats = await UserService.getUserStatistics(organizationId);
 
-    // Also fetch teachers and students from their respective models (same logic as getAllUserManagements)
-    const allTeachers = await Teacher.find({
-      organization: organizationId
-    }).select('firstName lastName email phoneNumber subjects role organizationName yearsOfExperience status departments organization createdAt');
-
-    const allStudents = await Student.find({
-      organization: organizationId
-    }).select('firstName lastName email phoneNumber academicYear grade section rollNumber studentCode status department organization createdAt');
-
-    // Convert teachers to User-like format
-    const teacherUsers = allTeachers.map(teacher => ({
-      _id: teacher._id,
-      email: teacher.email,
-      userType: 'teacher',
-      userId: teacher._id,
-      isActive: teacher.status === 'active',
-      organizationId: teacher.organization,
-      profile: {
-        firstName: teacher.firstName,
-        lastName: teacher.lastName,
-        phone: teacher.phoneNumber,
-        department: teacher.departments
-      },
-      createdAt: teacher.createdAt,
-      teacherData: {
-        subjects: teacher.subjects,
-        yearsOfExperience: teacher.yearsOfExperience,
-        role: teacher.role,
-        organizationName: teacher.organizationName
-      }
-    }));
-
-    // Convert students to User-like format
-    const studentUsers = allStudents.map(student => ({
-      _id: student._id,
-      email: student.email,
-      userType: 'student',
-      userId: student._id,
-      isActive: student.status === 'active',
-      organizationId: student.organization,
-      profile: {
-        firstName: student.firstName,
-        lastName: student.lastName,
-        phone: student.phoneNumber,
-        department: student.department
-      },
-      createdAt: student.createdAt,
-      studentData: {
-        academicYear: student.academicYear,
-        grade: student.grade,
-        section: student.section,
-        rollNumber: student.rollNumber,
-        studentCode: student.studentCode
-      }
-    }));
-
-    // Combine all users
-    organizationUsers = [...organizationUsers, ...teacherUsers, ...studentUsers];
-
-    console.log('📊 User Management Stats - Found users:', {
-      totalUsers: organizationUsers.length,
-      users: organizationUsers.map(u => ({
-        id: u._id,
-        email: u.email,
-        userType: u.userType,
-        isActive: u.isActive,
-        organizationId: u.organizationId
-      }))
-    });
-
-    // Calculate stats
-    const stats = {
-      total: organizationUsers.length,
-      active: organizationUsers.filter(u => u.isActive).length,
-      pending: 0, // No pending status in current User model
-      inactive: organizationUsers.filter(u => !u.isActive).length,
-      suspended: 0, // No suspended status in current User model
-      teachers: organizationUsers.filter(u => u.userType === 'teacher').length,
-      students: organizationUsers.filter(u => u.userType === 'student').length,
-      admins: organizationUsers.filter(u => u.userType === 'organization_admin').length,
-      emailVerified: organizationUsers.filter(u => u.isEmailVerified).length,
-      phoneVerified: 0 // No phone verification in current User model
-    };
-
-    console.log('📊 User Management Stats - Calculated stats:', stats);
-
-    res.status(200).json({
-      success: true,
-      data: stats
-    });
-
-  } catch (error) {
-    console.error('Get user stats error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get user statistics',
-      error: error.message
-    });
-  }
-};
+  return sendSuccess(res, stats, 'OK', 200);
+});
 
 // Get role distribution for organization
-const getRoleDistribution = async (req, res) => {
-  try {
-    const { organizationId } = req.params;
+const getRoleDistribution = asyncWrapper(async (req, res) => {
+  const { organizationId } = req.params;
 
     // Get all users for this organization - use the same logic as getAllUserManagements
     let organizationUsers = await User.find({
@@ -1804,24 +438,11 @@ const getRoleDistribution = async (req, res) => {
 
     const result = Object.values(roleDistribution).sort((a, b) => b.count - a.count);
 
-    res.status(200).json({
-      success: true,
-      data: result
-    });
-
-  } catch (error) {
-    console.error('Get role distribution error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get role distribution',
-      error: error.message
-    });
-  }
-};
+    return sendSuccess(res, result, 'Role distribution retrieved successfully', HTTP_STATUS.OK);
+});
 
 // Get recent activity for organization
-const getRecentActivity = async (req, res) => {
-  try {
+const getRecentActivity = asyncWrapper(async (req, res) => {
     const { organizationId } = req.params;
     const { limit = 10 } = req.query;
 
@@ -1832,7 +453,7 @@ const getRecentActivity = async (req, res) => {
         { userType: 'organization_admin', userId: organizationId } // Organization admin users
       ]
     })
-      .select('email userType lastLogin profile createdAt')
+      .select('email userType lastLogin profile createdAt isActive')
       .sort({ lastLogin: -1 })
       .limit(parseInt(limit));
 
@@ -1848,749 +469,433 @@ const getRecentActivity = async (req, res) => {
       createdAt: user.createdAt
     }));
 
-    res.status(200).json({
-      success: true,
-      data: recentActivity
-    });
-
-  } catch (error) {
-    console.error('Get recent activity error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get recent activity',
-      error: error.message
-    });
-  }
-};
+    return sendSuccess(res, recentActivity, 'Recent activity retrieved successfully', HTTP_STATUS.OK);
+});
 
 // Get users by role for organization
-const getUsersByRole = async (req, res) => {
-  try {
-    const { organizationId, role } = req.params;
+const getUsersByRole = asyncWrapper(async (req, res) => {
+  const { organizationId, role } = req.params;
 
-    // Get users by role for organization using the User model
-    const organizationUsers = await User.find({
-      $or: [
-        { userType: 'organization_admin', userId: organizationId },
-        { userType: 'teacher', userId: { $in: await Teacher.find({ organizationId }).select('_id') } },
-        { userType: 'student', userId: { $in: await Student.find({ organizationId }).select('_id') } }
-      ],
-      userType: role,
-      isActive: true
-    })
-      .select('-password')
-      .populate('userId')
-      .sort({ 'profile.firstName': 1, 'profile.lastName': 1 });
+  // Get users by role for organization using the User model
+  const organizationUsers = await User.find({
+    $or: [
+      { userType: 'organization_admin', userId: organizationId },
+      { userType: 'teacher', userId: { $in: await Teacher.find({ organizationId }).select('_id') } },
+      { userType: 'student', userId: { $in: await Student.find({ organizationId }).select('_id') } }
+    ],
+    userType: role,
+    isActive: true
+  })
+    .select('-password')
+    .populate('userId')
+    .sort({ 'profile.firstName': 1, 'profile.lastName': 1 });
 
-    res.status(200).json({
-      success: true,
-      data: organizationUsers
-    });
-
-  } catch (error) {
-    console.error('Get users by role error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get users by role',
-      error: error.message
-    });
-  }
-};
+  return sendSuccess(res, organizationUsers, 'Users retrieved successfully', HTTP_STATUS.OK);
+});
 
 // Update user role
-const updateUserManagementRole = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { role, department } = req.body;
+const updateUserManagementRole = asyncWrapper(async (req, res) => {
+  const { userId } = req.params;
+  const { role, department } = req.body;
 
-    if (!role) {
-      return res.status(400).json({
-        success: false,
-        message: 'Role is required'
-      });
-    }
-
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { 
-        userType: role,
-        'profile.department': department || null
-      },
-      { new: true, runValidators: true }
-    ).select('-password').populate('userId');
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'User role updated successfully',
-      data: user
-    });
-
-  } catch (error) {
-    console.error('Update user role error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update user role',
-      error: error.message
-    });
+  if (!role) {
+    throw AppError.badRequest('Role is required');
   }
-};
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { 
+      userType: role,
+      'profile.department': department || null
+    },
+    { new: true, runValidators: true }
+  ).select('-password').populate('userId');
+
+  if (!user) {
+    throw AppError.notFound('User not found');
+  }
+
+  return sendSuccess(res, user, 'User role updated successfully', HTTP_STATUS.OK);
+});
 
 // Get all invitations for an organization
-const getInvitations = async (req, res) => {
-  try {
-    const { organizationId } = req.params;
-    const { status = 'all' } = req.query;
+const getInvitations = asyncWrapper(async (req, res) => {
+  const { organizationId } = req.params;
+  const organizationIdParam = organizationId || req.user?.organizationId;
+  const status = req.query.status || 'all';
 
-    const invitations = await Invitation.findByOrganization(
-      organizationId, 
-      status === 'all' ? null : status
-    );
+  const result = await UserService.getInvitedUsers(organizationIdParam, status);
 
-    res.status(200).json({
-      success: true,
-      data: invitations
-    });
-
-  } catch (error) {
-    console.error('Get invitations error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get invitations',
-      error: error.message
-    });
-  }
-};
+  return sendSuccess(res, result.invitations, 'OK', 200);
+});
 
 // Cancel/Delete invitation
-const cancelInvitation = async (req, res) => {
-  try {
-    const { invitationId } = req.params;
+const cancelInvitation = asyncWrapper(async (req, res) => {
+  const { invitationId } = req.params;
 
-    const invitation = await Invitation.findById(invitationId);
-    if (!invitation) {
-      return res.status(404).json({
-        success: false,
-        message: 'Invitation not found'
-      });
-    }
-
-    await invitation.cancel();
-
-    res.status(200).json({
-      success: true,
-      message: 'Invitation cancelled successfully'
-    });
-
-  } catch (error) {
-    console.error('Cancel invitation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to cancel invitation',
-      error: error.message
-    });
+  const invitation = await Invitation.findById(invitationId);
+  if (!invitation) {
+    throw AppError.notFound('Invitation not found');
   }
-};
+
+  await invitation.cancel();
+
+  return sendSuccess(res, null, 'Invitation cancelled successfully', HTTP_STATUS.OK);
+});
 
 // Resend invitation
-const resendInvitation = async (req, res) => {
-  try {
-    const { invitationId } = req.params;
+const resendInvitation = asyncWrapper(async (req, res) => {
+  const { invitationId, userId } = req.params;
+  const id = invitationId || userId; // Support both
+  const organizationId = req.params.organizationId || req.user?.organizationId;
+  const requestedBy = req.user?.id || req.user?.userId;
 
-    const invitation = await Invitation.findById(invitationId);
-    if (!invitation) {
-      return res.status(404).json({
-        success: false,
-        message: 'Invitation not found'
-      });
-    }
+  // If invitationId is provided, use it; otherwise use userId
+  const useInvitationId = !!invitationId;
 
-    if (invitation.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        message: 'Can only resend pending invitations'
-      });
-    }
+  const result = await UserService.resendInvitation(id, organizationId, requestedBy, useInvitationId);
 
-    // Extend expiry date
-    invitation.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await invitation.save();
-
-    // TODO: Send actual email
-    console.log(`📧 Invitation resent to ${invitation.email}: ${invitation.token}`);
-
-    res.status(200).json({
-      success: true,
-      message: 'Invitation resent successfully',
-      data: {
-        invitationLink: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/invite/${invitation.token}`
-      }
-    });
-
-  } catch (error) {
-    console.error('Resend invitation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to resend invitation',
-      error: error.message
-    });
-  }
-};
+  return sendSuccess(res, {
+    invitationLink: result.invitationLink
+  }, 'Invitation resent successfully', 200);
+});
 
 // Bulk send invitations
-const bulkSendInvitations = async (req, res) => {
-  try {
-    const { invitations } = req.body;
-    const { organizationId } = req.params;
-    const invitedBy = req.user.userId;
+const bulkSendInvitations = asyncWrapper(async (req, res) => {
+  const { invitations } = req.body;
+  const organizationId = req.params.organizationId || req.user?.organizationId;
+  const invitedBy = req.user?.userId || req.user?.id;
 
-    if (!Array.isArray(invitations) || invitations.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invitations array is required'
-      });
-    }
+  const result = await UserService.inviteUsers(invitations, organizationId, invitedBy);
 
-    const results = [];
-    const errors = [];
-
-    for (const invitationData of invitations) {
-      try {
-        const { email, role, firstName, lastName, department, phone } = invitationData;
-
-        // Check if user already exists
-        const existingUser = await User.findOne({ email: email.toLowerCase() });
-        if (existingUser) {
-          errors.push({ email, error: 'User already exists' });
-          continue;
-        }
-
-        // Check for existing pending invitation
-        const existingInvitation = await Invitation.findPendingByEmail(email.toLowerCase(), organizationId);
-        if (existingInvitation) {
-          errors.push({ email, error: 'Pending invitation already exists' });
-          continue;
-        }
-
-        // Create invitation
-        const invitation = new Invitation({
-          email: email.toLowerCase(),
-          organizationId,
-          invitedBy,
-          role,
-          metadata: { firstName, lastName, department, phone }
-        });
-
-        await invitation.save();
-        results.push({
-          email: invitation.email,
-          role: invitation.role,
-          token: invitation.token
-        });
-
-      } catch (error) {
-        errors.push({ email: invitationData.email, error: error.message });
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message: `Processed ${invitations.length} invitations`,
-      data: {
-        successful: results,
-        errors: errors
-      }
-    });
-
-  } catch (error) {
-    console.error('Bulk send invitations error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send bulk invitations',
-      error: error.message
-    });
-  }
-};
+  return sendSuccess(res, result, `Processed ${result.total || invitations.length} invitations`, 200);
+});
 
 // Update user role
-const updateUserRole = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { newRole } = req.body;
+const updateUserRole = asyncWrapper(async (req, res) => {
+  const { userId } = req.params;
+  const { newRole } = req.body;
 
-    if (!newRole) {
-      return res.status(400).json({
-        success: false,
-        message: 'New role is required'
-      });
-    }
+  if (!newRole) {
+    throw AppError.badRequest('New role is required');
+  }
 
-    const validRoles = ['teacher', 'student', 'sub_admin'];
-    if (!validRoles.includes(newRole)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid role. Must be teacher, student, or sub_admin'
-      });
-    }
+  const validRoles = ['teacher', 'student', 'sub_admin'];
+  if (!validRoles.includes(newRole)) {
+    throw AppError.badRequest('Invalid role. Must be teacher, student, or sub_admin');
+  }
 
-    const user = await User.findById(userId).populate('userId');
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
+  const user = await User.findById(userId).populate('userId');
+  if (!user) {
+    throw AppError.notFound('User not found');
+  }
 
-    // Update user role
-    user.userType = newRole;
-    await user.save();
+  // Update user role
+  user.userType = newRole;
+  await user.save();
 
-    res.status(200).json({
-      success: true,
-      message: 'User role updated successfully',
-      data: {
+  return sendSuccess(res, {
+    userId: user._id,
+    email: user.email,
+    newRole: user.userType
+  }, 'User role updated successfully', HTTP_STATUS.OK);
+});
+
+// Bulk update users
+const bulkUpdateUsers = asyncWrapper(async (req, res) => {
+  const payload = req.body;
+  const organizationId = req.user?.organizationId || req.body.organizationId;
+  const updatedBy = req.user?.id || req.user?.userId;
+
+  const result = await UserService.bulkUpdateUsers(payload, organizationId, updatedBy);
+
+  return sendSuccess(res, result, 'Bulk user update completed', 200);
+});
+
+// Bulk update user roles
+const bulkUpdateUserRoles = asyncWrapper(async (req, res) => {
+  const { updates } = req.body;
+
+  if (!Array.isArray(updates) || updates.length === 0) {
+    throw AppError.badRequest('Updates array is required');
+  }
+
+  const results = [];
+  const errors = [];
+
+  for (const update of updates) {
+    try {
+      const { userId, newRole } = update;
+
+      const user = await User.findById(userId);
+      if (!user) {
+        errors.push({ userId, error: 'User not found' });
+        continue;
+      }
+
+      user.userType = newRole;
+      await user.save();
+
+      results.push({
         userId: user._id,
         email: user.email,
         newRole: user.userType
-      }
-    });
-
-  } catch (error) {
-    console.error('Update user role error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update user role',
-      error: error.message
-    });
-  }
-};
-
-// Bulk update user roles
-const bulkUpdateUserRoles = async (req, res) => {
-  try {
-    const { updates } = req.body;
-
-    if (!Array.isArray(updates) || updates.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Updates array is required'
       });
+
+    } catch (error) {
+      logger.error('Error updating user role in bulk', { userId: update.userId, error: error.message });
+      errors.push({ userId: update.userId, error: error.message });
     }
-
-    const results = [];
-    const errors = [];
-
-    for (const update of updates) {
-      try {
-        const { userId, newRole } = update;
-
-        const user = await User.findById(userId);
-        if (!user) {
-          errors.push({ userId, error: 'User not found' });
-          continue;
-        }
-
-        user.userType = newRole;
-        await user.save();
-
-        results.push({
-          userId: user._id,
-          email: user.email,
-          newRole: user.userType
-        });
-
-      } catch (error) {
-        errors.push({ userId: update.userId, error: error.message });
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message: `Processed ${updates.length} role updates`,
-      data: {
-        successful: results,
-        errors: errors
-      }
-    });
-
-  } catch (error) {
-    console.error('Bulk update user roles error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update user roles',
-      error: error.message
-    });
   }
-};
+
+  return sendSuccess(res, {
+    successful: results,
+    errors: errors
+  }, `Processed ${updates.length} role updates`, HTTP_STATUS.OK);
+});
 
 // Get registration details by token
-const getRegistrationDetails = async (req, res) => {
-  try {
-    const { token } = req.params;
+const getRegistrationDetails = asyncWrapper(async (req, res) => {
+  const { token } = req.params;
 
-    const user = await User.findOne({
-      registrationToken: token,
-      isRegistrationComplete: false,
-      registrationExpires: { $gt: new Date() }
-    }).populate('userId');
+  const user = await User.findOne({
+    registrationToken: token,
+    isRegistrationComplete: false,
+    registrationExpires: { $gt: new Date() }
+  }).populate('userId');
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Registration token not found or expired'
-      });
-    }
-
-    // Get organization details
-    const organization = await Organization.findById(user.userId.organizationId);
-    
-    res.status(200).json({
-      success: true,
-      data: {
-        id: user._id,
-        email: user.email,
-        userType: user.userType,
-        organizationId: user.userId.organizationId,
-        organizationName: organization?.name || 'Unknown Organization',
-        organizationCode: user.organizationCode,
-        profile: user.profile,
-        expiresAt: user.registrationExpires,
-        createdAt: user.createdAt
-      }
-    });
-
-  } catch (error) {
-    console.error('Get registration details error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get registration details',
-      error: error.message
-    });
+  if (!user) {
+    throw AppError.notFound('Registration token not found or expired');
   }
-};
+
+  // Get organization details
+  const organization = await Organization.findById(user.userId.organizationId);
+  
+  return sendSuccess(res, {
+    id: user._id,
+    email: user.email,
+    userType: user.userType,
+    organizationId: user.userId.organizationId,
+    organizationName: organization?.name || 'Unknown Organization',
+    organizationCode: user.organizationCode,
+    profile: user.profile,
+    expiresAt: user.registrationExpires,
+    createdAt: user.createdAt
+  }, 'Registration details retrieved successfully', HTTP_STATUS.OK);
+});
 
 // Complete user registration
-const completeRegistration = async (req, res) => {
-  try {
-    const { token } = req.params;
-    const { password, organizationCode } = req.body;
+const completeRegistration = asyncWrapper(async (req, res) => {
+  const { token } = req.params;
+  const { password, organizationCode } = req.body;
 
-    if (!password || !organizationCode) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password and organization code are required'
-      });
-    }
-
-    // Find user by token
-    const user = await User.findOne({
-      registrationToken: token,
-      isRegistrationComplete: false,
-      registrationExpires: { $gt: new Date() }
-    }).populate('userId');
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Registration token not found or expired'
-      });
-    }
-
-    // Validate organization code
-    if (user.organizationCode !== organizationCode.toUpperCase()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid organization code'
-      });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
-
-    // Update user with password and complete registration
-    user.password = hashedPassword;
-    user.authProvider = 'local';
-    user.isRegistrationComplete = true;
-    user.isActive = true;
-    user.isEmailVerified = true;
-    user.registrationToken = undefined;
-    user.registrationExpires = undefined;
-    user.organizationCode = undefined;
-
-    await user.save();
-
-    // Generate JWT token
-    const jwtToken = jwt.sign(
-      { 
-        userId: user._id, 
-        userType: user.userType,
-        iat: Math.floor(Date.now() / 1000)
-      },
-      process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
-      { expiresIn: '7d' }
-    );
-
-    res.status(200).json({
-      success: true,
-      message: 'Registration completed successfully. User can now login.',
-      data: {
-        user: {
-          id: user._id,
-          email: user.email,
-          userType: user.userType,
-          isActive: user.isActive,
-          isRegistrationComplete: user.isRegistrationComplete,
-          profile: user.profile
-        },
-        token: jwtToken
-      }
-    });
-
-  } catch (error) {
-    console.error('Complete registration error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to complete registration',
-      error: error.message
-    });
+  if (!password || !organizationCode) {
+    throw AppError.badRequest('Password and organization code are required');
   }
-};
+
+  // Find user by token
+  const user = await User.findOne({
+    registrationToken: token,
+    isRegistrationComplete: false,
+    registrationExpires: { $gt: new Date() }
+  }).populate('userId');
+
+  if (!user) {
+    throw AppError.notFound('Registration token not found or expired');
+  }
+
+  // Validate organization code
+  if (user.organizationCode !== organizationCode.toUpperCase()) {
+    throw AppError.badRequest('Invalid organization code');
+  }
+
+  // Hash password
+  const hashedPassword = await bcrypt.hash(password, 12);
+
+  // Update user with password and complete registration
+  user.password = hashedPassword;
+  user.authProvider = 'local';
+  user.isRegistrationComplete = true;
+  user.isActive = true;
+  user.isEmailVerified = true;
+  user.registrationToken = undefined;
+  user.registrationExpires = undefined;
+  user.organizationCode = undefined;
+
+  await user.save();
+
+  // Generate JWT token (with tokenVersion for revocation support)
+  const jwtToken = generateToken(user._id, user.userType, user.tokenVersion || 0);
+
+  return sendSuccess(res, {
+    user: {
+      id: user._id,
+      email: user.email,
+      userType: user.userType,
+      isActive: user.isActive,
+      isRegistrationComplete: user.isRegistrationComplete,
+      profile: user.profile
+    },
+    token: jwtToken
+  }, 'Registration completed successfully. User can now login.', HTTP_STATUS.OK);
+});
 
 // Validate organization code
-const validateOrganizationCode = async (req, res) => {
-  try {
-    const { token, organizationCode } = req.body;
+const validateOrganizationCode = asyncWrapper(async (req, res) => {
+  const { token, organizationCode } = req.body;
 
-    if (!token || !organizationCode) {
-      return res.status(400).json({
-        success: false,
-        message: 'Token and organization code are required'
-      });
-    }
-
-    const user = await User.findOne({
-      registrationToken: token,
-      isRegistrationComplete: false,
-      registrationExpires: { $gt: new Date() }
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Registration token not found or expired'
-      });
-    }
-
-    const isValid = user.organizationCode === organizationCode.toUpperCase();
-
-    res.status(200).json({
-      success: true,
-      data: {
-        isValid,
-        message: isValid ? 'Organization code is valid' : 'Invalid organization code'
-      }
-    });
-
-  } catch (error) {
-    console.error('Validate organization code error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to validate organization code',
-      error: error.message
-    });
+  if (!token || !organizationCode) {
+    throw AppError.badRequest('Token and organization code are required');
   }
-};
+
+  const user = await User.findOne({
+    registrationToken: token,
+    isRegistrationComplete: false,
+    registrationExpires: { $gt: new Date() }
+  });
+
+  if (!user) {
+    throw AppError.notFound('Registration token not found or expired');
+  }
+
+  const isValid = user.organizationCode === organizationCode.toUpperCase();
+
+  return sendSuccess(res, {
+    isValid,
+    message: isValid ? 'Organization code is valid' : 'Invalid organization code'
+  }, 'Organization code validation completed', HTTP_STATUS.OK);
+});
 
 // Bulk delete users
-const bulkDeleteUserManagements = async (req, res) => {
-  try {
-    const { userIds } = req.body;
-    
-    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'User IDs are required'
-      });
-    }
-
-    console.log('🗑️ Bulk Delete Users:', { userIds });
-
-    let deletedCount = 0;
-    let failedDeletions = [];
-
-    for (const userId of userIds) {
-      try {
-        // Find the user
-        const user = await User.findById(userId);
-        if (!user) {
-          failedDeletions.push({ userId, error: 'User not found' });
-          continue;
-        }
-
-        // Delete associated profile
-        if (user.userType === 'teacher') {
-          await Teacher.findByIdAndDelete(user.userId);
-        } else if (user.userType === 'student') {
-          await Student.findByIdAndDelete(user.userId);
-        }
-
-        // Delete the user account
-        await User.findByIdAndDelete(userId);
-        deletedCount++;
-
-        console.log(`✅ Deleted user: ${user.email}`);
-      } catch (error) {
-        console.error(`❌ Failed to delete user ${userId}:`, error);
-        failedDeletions.push({ userId, error: error.message });
-      }
-    }
-
-    res.json({
-      success: true,
-      message: `Successfully deleted ${deletedCount} users`,
-      data: {
-        deletedCount,
-        failedDeletions,
-        totalRequested: userIds.length
-      }
-    });
-  } catch (error) {
-    console.error('❌ Bulk delete users error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to bulk delete users',
-      error: error.message
-    });
+const bulkDeleteUserManagements = asyncWrapper(async (req, res) => {
+  const { userIds } = req.body;
+  
+  if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+    throw AppError.badRequest('User IDs are required');
   }
-};
+
+  logger.info('Bulk delete users', { count: userIds.length });
+
+  let deletedCount = 0;
+  let failedDeletions = [];
+
+  for (const userId of userIds) {
+    try {
+      // Find the user
+      const user = await User.findById(userId);
+      if (!user) {
+        failedDeletions.push({ userId, error: 'User not found' });
+        continue;
+      }
+
+      // Delete associated profile
+      if (user.userType === 'teacher') {
+        await Teacher.findByIdAndDelete(user.userId);
+      } else if (user.userType === 'student') {
+        await Student.findByIdAndDelete(user.userId);
+      }
+
+      // Delete the user account
+      await User.findByIdAndDelete(userId);
+      deletedCount++;
+
+      logger.debug('Deleted user', { userId });
+    } catch (error) {
+      logger.error('Failed to delete user', { userId, error: error.message });
+      failedDeletions.push({ userId, error: error.message });
+    }
+  }
+
+  return sendSuccess(res, {
+    deletedCount,
+    failedDeletions,
+    totalRequested: userIds.length
+  }, `Successfully deleted ${deletedCount} users`, HTTP_STATUS.OK);
+});
 
 // Bulk toggle user status
-const bulkToggleUserManagementStatus = async (req, res) => {
-  try {
-    const { userIds, action } = req.body;
-    
-    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'User IDs are required'
-      });
-    }
-
-    if (!action || !['suspend', 'activate'].includes(action)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Valid action (suspend/activate) is required'
-      });
-    }
-
-    console.log('🔄 Bulk Toggle User Status:', { userIds, action });
-
-    let updatedCount = 0;
-    let failedUpdates = [];
-
-    for (const userId of userIds) {
-      try {
-        const user = await User.findById(userId);
-        if (!user) {
-          failedUpdates.push({ userId, error: 'User not found' });
-          continue;
-        }
-
-        // Update user status
-        user.isActive = action === 'activate';
-        await user.save();
-
-        updatedCount++;
-        console.log(`✅ ${action}d user: ${user.email}`);
-      } catch (error) {
-        console.error(`❌ Failed to ${action} user ${userId}:`, error);
-        failedUpdates.push({ userId, error: error.message });
-      }
-    }
-
-    res.json({
-      success: true,
-      message: `Successfully ${action}ed ${updatedCount} users`,
-      data: {
-        updatedCount,
-        failedUpdates,
-        totalRequested: userIds.length,
-        action
-      }
-    });
-  } catch (error) {
-    console.error('❌ Bulk toggle user status error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to bulk toggle user status',
-      error: error.message
-    });
+const bulkToggleUserManagementStatus = asyncWrapper(async (req, res) => {
+  const { userIds, action } = req.body;
+  
+  if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+    throw AppError.badRequest('User IDs are required');
   }
-};
+
+  if (!action || !['suspend', 'activate'].includes(action)) {
+    throw AppError.badRequest('Valid action (suspend/activate) is required');
+  }
+
+  logger.info('Bulk toggle user status', { count: userIds.length, action });
+
+  let updatedCount = 0;
+  let failedUpdates = [];
+
+  for (const userId of userIds) {
+    try {
+      const user = await User.findById(userId);
+      if (!user) {
+        failedUpdates.push({ userId, error: 'User not found' });
+        continue;
+      }
+
+      // Update user status
+      user.isActive = action === 'activate';
+      await user.save();
+
+      updatedCount++;
+      logger.debug('User status updated', { userId, action });
+    } catch (error) {
+      logger.error('Failed to update user status', { userId, action, error: error.message });
+      failedUpdates.push({ userId, error: error.message });
+    }
+  }
+
+  return sendSuccess(res, {
+    updatedCount,
+    failedUpdates,
+    totalRequested: userIds.length,
+    action
+  }, `Successfully ${action}ed ${updatedCount} users`, HTTP_STATUS.OK);
+});
 
 // Remove user from department
-const removeUserFromDepartment = async (req, res) => {
-  try {
-    const { departmentId, userId } = req.params;
-    const organizationId = req.user.organizationId;
+const removeUserFromDepartment = asyncWrapper(async (req, res) => {
+  const { departmentId, userId } = req.params;
+  const organizationId = req.user.organizationId;
 
-    // Verify department exists and belongs to organization
-    const department = await Department.findOne({
-      _id: departmentId,
-      organizationId
+  // Verify department exists and belongs to organization
+  const department = await Department.findOne({
+    _id: departmentId,
+    organizationId
+  });
+
+  if (!department) {
+    throw AppError.notFound('Department not found');
+  }
+
+  // Get user and verify they belong to organization
+  const user = await User.findOne({
+    _id: userId,
+    organizationId
+  });
+
+  if (!user) {
+    throw AppError.notFound('User not found');
+  }
+
+  // Remove user from department based on user type
+  if (user.userType === 'teacher') {
+    await Teacher.findByIdAndUpdate(user.userId, {
+      $unset: { departmentId: 1 }
     });
-
-    if (!department) {
-      return res.status(404).json({
-        success: false,
-        message: 'Department not found'
-      });
-    }
-
-    // Get user and verify they belong to organization
-    const user = await User.findOne({
-      _id: userId,
-      organizationId
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    // Remove user from department based on user type
-    if (user.userType === 'teacher') {
-      await Teacher.findByIdAndUpdate(user.userId, {
-        $unset: { departmentId: 1 }
-      });
-    } else if (user.userType === 'student') {
-      await Student.findByIdAndUpdate(user.userId, {
-        $unset: { departmentId: 1 }
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'User removed from department successfully'
-    });
-
-  } catch (error) {
-    console.error('Remove user from department error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to remove user from department',
-      error: error.message
+  } else if (user.userType === 'student') {
+    await Student.findByIdAndUpdate(user.userId, {
+      $unset: { departmentId: 1 }
     });
   }
-};
+
+  return sendSuccess(res, null, 'User removed from department successfully', HTTP_STATUS.OK);
+});
 
 module.exports = {
   getAllUserManagements,
@@ -2610,6 +915,7 @@ module.exports = {
   getUserManagementStats,
   updateUserManagementRole,
   updateUserRole,
+  bulkUpdateUsers,
   bulkUpdateUserRoles,
   getRoleDistribution,
   getRecentActivity,

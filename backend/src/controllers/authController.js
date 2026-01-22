@@ -1,133 +1,217 @@
-const User = require('../models/User');
-const Organization = require('../models/Organization');
-const Teacher = require('../models/Teacher');
-const Student = require('../models/Student');
+/**
+ * AuthController
+ * HTTP request/response handling for authentication operations
+ * All business logic is delegated to AuthService and UserService
+ */
+
+const AuthService = require('../services/AuthService');
+const UserService = require('../services/UserService');
+const UserRepository = require('../repositories/UserRepository');
+const OrganizationRepository = require('../repositories/OrganizationRepository');
+const TeacherRepository = require('../repositories/TeacherRepository');
+const StudentRepository = require('../repositories/StudentRepository');
+const asyncWrapper = require('../middleware/asyncWrapper');
+const { sendSuccess, sendError } = require('../utils/apiResponse');
 const { generateToken } = require('../middleware/auth');
+const { sendEmailVerification: sendEmailVerificationService } = require('../services/emailService');
 const admin = require('firebase-admin');
+const AppError = require('../utils/AppError');
+const bcrypt = require('bcryptjs');
+const { logger } = require('../utils/logger');
 
 // Login user
-const login = async (req, res) => {
+const login = asyncWrapper(async (req, res) => {
+  const { email, password, userType } = req.body;
+  
+  const result = await AuthService.login(email, password, userType);
+  
+  return sendSuccess(res, {
+    token: result.token,
+    user: result.user,
+    dashboard: result.dashboard,
+    organization: result.organization
+  }, 'Login successful.', 200);
+});
+
+// Get current user profile
+const getProfile = asyncWrapper(async (req, res) => {
+  const user = await UserService.getUserById(req.user.id);
+  
+  // Get user details using model method (preserving existing behavior)
+  const userDetails = await user.getUserDetails();
+  
+  return sendSuccess(res, userDetails, 'Profile retrieved successfully', 200);
+});
+
+// Update user profile
+const updateProfile = asyncWrapper(async (req, res) => {
+  const { firstName, lastName, phoneNumber, countryCode } = req.body;
+  const userId = req.user.id;
+  
+  // Build update data
+  const updateData = {
+    profile: {}
+  };
+  
+  if (firstName) updateData.profile.firstName = firstName;
+  if (lastName) updateData.profile.lastName = lastName;
+  if (phoneNumber) updateData.profile.phoneNumber = phoneNumber;
+  if (countryCode) updateData.profile.countryCode = countryCode;
+  
+  if (firstName && lastName) {
+    updateData.profile.fullName = `${firstName} ${lastName}`;
+  }
+  
+  const updatedUser = await UserService.updateUser(userId, updateData);
+  const userDetails = await updatedUser.getUserDetails();
+  
+  return sendSuccess(res, userDetails, 'Profile updated successfully.', 200);
+});
+
+// Change password
+const changePassword = asyncWrapper(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  const userId = req.user.id;
+  
+  if (!currentPassword || !newPassword) {
+    throw AppError.badRequest('Current password and new password are required.');
+  }
+  
+  // SECURITY: Enforce stronger password requirements (NIST guidelines)
+  if (newPassword.length < 8) {
+    throw AppError.badRequest('New password must be at least 8 characters long.');
+  }
+  
+  // Get user to verify current password
+  const user = await UserRepository.findById(userId);
+  if (!user) {
+    throw AppError.notFound('User not found.');
+  }
+  
+  // Verify current password
+  const isCurrentPasswordValid = await user.comparePassword(currentPassword);
+  if (!isCurrentPasswordValid) {
+    throw AppError.badRequest('Current password is incorrect.');
+  }
+  
+  // Update password
+  await UserRepository.updateById(userId, { password: newPassword });
+  
+  return sendSuccess(res, null, 'Password changed successfully.', 200);
+});
+
+// Logout (client-side token removal, but we can track it)
+const logout = asyncWrapper(async (req, res) => {
+  // Update user's last activity when logging out
+  if (req.user && req.user.id) {
+    try {
+      await UserRepository.updateById(req.user.id, { lastActivity: new Date() });
+      
+      // Also update UserManagement if it exists
+      const UserManagement = require('../models/UserManagement');
+      const userManagement = await UserManagement.findOne({ userId: req.user.id });
+      if (userManagement) {
+        userManagement.lastActivity = new Date();
+        await userManagement.save();
+      }
+    } catch (updateError) {
+      // Don't fail the logout if status update fails
+      logger.error('Error updating user status on logout', { error: updateError.message, stack: updateError.stack, userId: req.user?.id });
+    }
+  }
+  
+  return sendSuccess(res, null, 'Logout successful.', 200);
+});
+
+// Verify token endpoint
+const verifyToken = asyncWrapper(async (req, res) => {
+  // If we reach here, the token is valid (authenticate middleware passed)
+  const user = await UserService.getUserById(req.user.id);
+  const userDetails = await user.getUserDetails();
+  
+  return sendSuccess(res, userDetails, 'Token is valid.', 200);
+});
+
+// Google Sign-In authentication
+const googleSignIn = asyncWrapper(async (req, res) => {
+  const { credential, userType } = req.body;
+  
+  // Validate input
+  if (!credential) {
+    throw AppError.badRequest('Google credential is required.');
+  }
+  
+  if (!userType) {
+    throw AppError.badRequest('User type is required.');
+  }
+  
+  // SECURITY: Verify Google ID token with Firebase Admin SDK
+  let googleEmail;
+  
   try {
-    const { email, password, userType } = req.body;
-    
-    console.log('🔐 Login attempt:', { email, userType: userType || 'not provided', hasPassword: !!password });
-    
-    // Validate input
-    if (!email || !password) {
-      console.log('❌ Login validation failed: Missing email or password');
-      return res.status(400).json({
-        success: false,
-        message: 'Email and password are required.'
-      });
+    // Validate credential format
+    if (!credential || typeof credential !== 'string') {
+      throw AppError.unauthorized('Invalid Google credential format.');
     }
     
-    if (!userType) {
-      console.log('❌ Login validation failed: Missing userType');
-      return res.status(400).json({
-        success: false,
-        message: 'User type is required.'
-      });
+    // SECURITY: Only accept valid Firebase ID tokens
+    const decodedToken = await admin.auth().verifyIdToken(credential);
+    googleEmail = decodedToken.email;
+    
+    if (!googleEmail) {
+      throw AppError.unauthorized('Unable to extract email from Google credential.');
     }
-    
-    // Find user by email and user type
-    console.log('🔍 Searching for user with email:', email.toLowerCase(), 'and userType:', userType);
-    const user = await User.findByEmailAndType(email, userType);
-    
-    if (!user) {
-      console.log('❌ User not found for email:', email, 'and userType:', userType);
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password.'
-      });
-    }
-    
-    console.log('✅ User found:', {
-      id: user._id,
-      email: user.email,
-      userType: user.userType,
-      isActive: user.isActive,
-      isEmailVerified: user.isEmailVerified,
-      authProvider: user.authProvider,
-      firstLogin: user.firstLogin
-    });
-    
-    // Ensure userId is populated for dashboard data
-    await user.populate('userId');
-    
-    // Check if userId is properly populated
-    if (!user.userId) {
-      console.error('User userId is null or not populated:', user._id);
-      return res.status(500).json({
-        success: false,
-        message: 'User data is incomplete. Please contact support.'
-      });
-    }
-    
-    // Check if account is active
-    if (!user.isActive) {
-      console.log('❌ Login failed: Account is deactivated for user:', user._id);
-      return res.status(401).json({
-        success: false,
-        message: 'Account is deactivated. Please contact support.'
-      });
-    }
-    
-    // Check if email is verified (skip for admin-created users with temporary passwords)
-    if (!user.isEmailVerified && user.authProvider !== 'temp_password' && !user.firstLogin) {
-      console.log('❌ Login failed: Email not verified', {
-        isEmailVerified: user.isEmailVerified,
-        authProvider: user.authProvider,
-        firstLogin: user.firstLogin,
-        email: user.email
-      });
-      return res.status(401).json({
-        success: false,
-        message: 'Please verify your email before logging in.'
-      });
-    }
-    
-    // Compare password
-    console.log('🔐 Comparing password for user:', user._id);
-    const isPasswordValid = await user.comparePassword(password);
-    
-    if (!isPasswordValid) {
-      console.log('❌ Login failed: Invalid password for user:', user._id);
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password.'
-      });
-    }
-    
-    console.log('✅ Password validated successfully for user:', user._id);
-    
-    // Update last login (don't change firstLogin here - it should only be changed when setup is completed)
-    user.lastLogin = new Date();
-    await user.save();
-    
-    // Generate JWT token
-    const token = generateToken(user._id, user.userType);
-    
-    // Get user details
-    const userDetails = await user.getUserDetails();
-    
-    // Prepare response based on user type
-    let dashboardData = {};
-    let organizationData = {};
-    let organization = null; // Declare organization variable outside switch
-    
-    switch (user.userType) {
-      case 'organization_admin':
-        // Get full organization data for setup wizard
-        organization = await Organization.findById(user.userId);
-        
-        if (!organization) {
-          console.error('Organization not found for user:', user.userId);
-          return res.status(500).json({
-            success: false,
-            message: 'Organization data not found. Please contact support.'
-          });
-        }
-        
+  } catch (error) {
+    // SECURITY: Don't expose detailed error messages in production
+    const errorMessage = process.env.NODE_ENV === 'development' 
+      ? `Firebase token verification failed: ${error.message}`
+      : 'Invalid or expired Google credential.';
+    throw AppError.unauthorized(errorMessage);
+  }
+  
+  // Find user by email and type
+  const userTypeEmail = `${googleEmail.toLowerCase()}_${userType}`;
+  const user = await UserRepository.findOne(
+    { userTypeEmail },
+    { populate: 'userId' }
+  );
+  
+  if (!user) {
+    throw AppError.unauthorized(`No ${userType} account found with email ${googleEmail}. Please register first.`);
+  }
+  
+  // Check if userId is properly populated
+  if (!user.userId) {
+    throw AppError.internal('User data is incomplete. Please contact support.');
+  }
+  
+  // Check if account is active
+  if (!user.isActive) {
+    throw AppError.unauthorized('Account is deactivated. Please contact support.');
+  }
+  
+  // Check if email is verified (skip for admin-created users with temporary passwords)
+  if (!user.isEmailVerified && user.authProvider !== 'temp_password' && !user.firstLogin) {
+    throw AppError.unauthorized('Email not verified. Please verify your email first.');
+  }
+  
+  // Generate JWT token
+  const token = generateToken(user._id, user.userType, user.tokenVersion || 0);
+  
+  // Get dashboard data based on user type
+  let dashboardData = null;
+  let organizationData = null;
+  
+  try {
+    if (user.userType === 'organization_admin') {
+      // Get organization dashboard data
+      let organizationId = user.userId;
+      if (user.userId && user.userId._id) {
+        organizationId = user.userId._id;
+      }
+      
+      const organization = await OrganizationRepository.findById(organizationId);
+      if (organization) {
         organizationData = {
           id: organization._id,
           name: organization.name,
@@ -163,823 +247,295 @@ const login = async (req, res) => {
           role: 'Organization Admin',
           setupCompleted: organization.setupCompleted || false
         };
-        break;
-        
-      case 'sub_admin':
+      }
+    } else if (user.userType === 'teacher') {
+      // Get teacher dashboard data
+      const teacher = await TeacherRepository.findById(user.userId);
+      if (teacher) {
         dashboardData = {
-          organizationId: user.userId.organizationId,
-          organizationName: user.userId.organizationName,
-          role: 'Sub Admin'
-        };
-        break;
-        
-      case 'teacher':
-        dashboardData = {
-          teacherId: user.userId._id,
-          organizationId: user.userId.organizationId,
-          organizationName: user.userId.organizationName,
-          subjects: user.userId.subjects,
+          teacherId: teacher._id,
+          organizationId: teacher.organization,
+          organizationName: teacher.organizationName,
+          subjects: teacher.subjects,
           role: 'Teacher'
         };
-        break;
-        
-      case 'student':
+      }
+    } else if (user.userType === 'student') {
+      // Get student dashboard data
+      const student = await StudentRepository.findById(user.userId);
+      if (student) {
         dashboardData = {
-          studentId: user.userId._id,
-          organizationId: user.userId.organizationId,
-          organizationName: user.userId.organizationName,
-          academicLevel: user.userId.academicLevel,
-          grade: user.userId.grade,
+          studentId: student._id,
+          organizationId: student.organization,
+          organizationName: student.organizationName,
+          academicLevel: student.academicLevel,
+          grade: student.grade,
           role: 'Student'
         };
-        break;
-    }
-    
-    res.status(200).json({
-      success: true,
-      message: 'Login successful.',
-      data: {
-        token,
-        user: {
-          id: user._id,
-          email: user.email,
-          userType: user.userType,
-          profile: user.profile,
-          isEmailVerified: user.isEmailVerified,
-          lastLogin: user.lastLogin,
-          firstLogin: user.firstLogin,
-          organizationId: user.userType === 'organization_admin' ? organization._id : user.userId.organizationId
-        },
-        dashboard: dashboardData,
-        organization: organizationData
-      }
-    });
-    
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error during login.'
-    });
-  }
-};
-
-// Get current user profile
-const getProfile = async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id).populate('userId');
-    
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found.'
-      });
-    }
-    
-    const userDetails = await user.getUserDetails();
-    
-    res.status(200).json({
-      success: true,
-      data: userDetails
-    });
-    
-  } catch (error) {
-    console.error('Get profile error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error.'
-    });
-  }
-};
-
-// Update user profile
-const updateProfile = async (req, res) => {
-  try {
-    const { firstName, lastName, phoneNumber, countryCode } = req.body;
-    
-    const user = await User.findById(req.user.id);
-    
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found.'
-      });
-    }
-    
-    // Update profile information
-    if (firstName) user.profile.firstName = firstName;
-    if (lastName) user.profile.lastName = lastName;
-    if (phoneNumber) user.profile.phoneNumber = phoneNumber;
-    if (countryCode) user.profile.countryCode = countryCode;
-    
-    if (firstName && lastName) {
-      user.profile.fullName = `${firstName} ${lastName}`;
-    }
-    
-    await user.save();
-    
-    const userDetails = await user.getUserDetails();
-    
-    res.status(200).json({
-      success: true,
-      message: 'Profile updated successfully.',
-      data: userDetails
-    });
-    
-  } catch (error) {
-    console.error('Update profile error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error.'
-    });
-  }
-};
-
-// Change password
-const changePassword = async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-    
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({
-        success: false,
-        message: 'Current password and new password are required.'
-      });
-    }
-    
-    if (newPassword.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: 'New password must be at least 6 characters long.'
-      });
-    }
-    
-    const user = await User.findById(req.user.id);
-    
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found.'
-      });
-    }
-    
-    // Verify current password
-    const isCurrentPasswordValid = await user.comparePassword(currentPassword);
-    
-    if (!isCurrentPasswordValid) {
-      return res.status(400).json({
-        success: false,
-        message: 'Current password is incorrect.'
-      });
-    }
-    
-    // Update password
-    user.password = newPassword;
-    await user.save();
-    
-    res.status(200).json({
-      success: true,
-      message: 'Password changed successfully.'
-    });
-    
-  } catch (error) {
-    console.error('Change password error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error.'
-    });
-  }
-};
-
-// Logout (client-side token removal, but we can track it)
-const logout = async (req, res) => {
-  try {
-    // Update user's last activity and status when logging out
-    if (req.user && req.user.id) {
-      try {
-        const user = await User.findById(req.user.id);
-        if (user) {
-          // Update last activity to current time (this will make them appear offline)
-          user.lastActivity = new Date();
-          await user.save();
-          
-          // Also update UserManagement if it exists
-          const UserManagement = require('../models/UserManagement');
-          const userManagement = await UserManagement.findOne({ userId: req.user.id });
-          if (userManagement) {
-            userManagement.lastActivity = new Date();
-            await userManagement.save();
-          }
-        }
-      } catch (updateError) {
-        console.error('Error updating user status on logout:', updateError);
-        // Don't fail the logout if status update fails
       }
     }
-    
-    res.status(200).json({
-      success: true,
-      message: 'Logout successful.'
-    });
-    
-  } catch (error) {
-    console.error('Logout error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error.'
-    });
+  } catch (dashboardError) {
+    // Continue with login even if dashboard data fails
+    logger.error('Error fetching dashboard data', { error: dashboardError.message, stack: dashboardError.stack, userId: req.user?.id });
   }
-};
-
-// Verify token endpoint
-const verifyToken = async (req, res) => {
-  try {
-    // If we reach here, the token is valid (authenticate middleware passed)
-    const user = await User.findById(req.user.id).populate('userId');
-    
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found.'
-      });
-    }
-    
-    const userDetails = await user.getUserDetails();
-    
-    res.status(200).json({
-      success: true,
-      message: 'Token is valid.',
-      data: userDetails
-    });
-    
-  } catch (error) {
-    console.error('Verify token error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error.'
-    });
-  }
-};
-
-// Google Sign-In authentication
-const googleSignIn = async (req, res) => {
-  try {
-    const { credential, userType } = req.body;
-    
-    // Validate input
-    if (!credential) {
-      return res.status(400).json({
-        success: false,
-        message: 'Google credential is required.'
-      });
-    }
-    
-    if (!userType) {
-      return res.status(400).json({
-        success: false,
-        message: 'User type is required.'
-      });
-    }
-    
-    // Verify Google ID token (with fallback for mock tokens)
-    let googleEmail;
-    
-    try {
-      // Check if it's a test token or Firebase ID token
-      if (credential === 'test-firebase-token') {
-        // It's a test token, use a test email
-        googleEmail = 'test@example.com';
-        console.log('Using test Firebase token:', googleEmail);
-      } else if (credential.split('.').length !== 3) {
-        // It's a mock credential (base64 encoded JSON), decode it directly
-        const mockPayload = JSON.parse(atob(credential));
-        googleEmail = mockPayload.email;
-        console.log('Using mock Google credential for testing:', googleEmail);
-      } else {
-        // It's a Firebase ID token, verify it
-        const decodedToken = await admin.auth().verifyIdToken(credential);
-        googleEmail = decodedToken.email;
-        console.log('Using Firebase ID token:', googleEmail);
-      }
-    } catch (error) {
-      console.error('Firebase token verification failed:', error);
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid Firebase token.'
-      });
-    }
-    
-    console.log('Google Sign-In attempt:', { email: googleEmail, userType });
-    
-    // Find user by email and user type
-    console.log('🔍 Searching for user with email:', googleEmail, 'and type:', userType);
-    const user = await User.findByEmailAndType(googleEmail, userType);
-    console.log('🔍 Found user:', user ? { 
-      id: user._id, 
-      email: user.email, 
-      userType: user.userType, 
-      userId: user.userId,
-      userModel: user.userModel,
-      userTypeEmail: user.userTypeEmail,
-      rawUserId: user.userId ? user.userId.toString() : 'null'
-    } : 'No user found');
-    
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: `No ${userType} account found with email ${googleEmail}. Please register first.`
-      });
-    }
-    
-    // userId should already be populated by findByEmailAndType method
-    
-    // Check if userId is properly populated
-    if (!user.userId) {
-      console.error('User userId is null or not populated:', user._id);
-      return res.status(500).json({
-        success: false,
-        message: 'User data is incomplete. Please contact support.'
-      });
-    }
-    
-    // Check if account is active
-    if (!user.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'Account is deactivated. Please contact support.'
-      });
-    }
-    
-    // Check if email is verified (skip for admin-created users with temporary passwords)
-    if (!user.isEmailVerified && user.authProvider !== 'temp_password' && !user.firstLogin) {
-      return res.status(401).json({
-        success: false,
-        message: 'Email not verified. Please verify your email first.'
-      });
-    }
-    
-    // Generate JWT token
-    const token = generateToken(user._id, user.userType);
-    
-    // Get dashboard data based on user type
-    let dashboardData = null;
-    let organizationData = null;
-    
-    try {
-      if (user.userType === 'organization_admin') {
-        // Get organization dashboard data
-        console.log('🔍 Looking for organization with userId:', user.userId);
-        console.log('🔍 UserId type:', typeof user.userId, 'UserId value:', user.userId);
-        console.log('🔍 UserModel:', user.userModel);
-        console.log('🔍 Full user object:', JSON.stringify(user, null, 2));
-        
-        // Check if userId is populated or just an ObjectId
-        let organizationId = user.userId;
-        if (user.userId && user.userId._id) {
-          organizationId = user.userId._id;
-          console.log('🔍 UserId is populated, using _id:', organizationId);
-        } else {
-          console.log('🔍 UserId is not populated, using raw value:', organizationId);
-        }
-        
-        console.log('🔍 Final organizationId to search:', organizationId);
-        const organization = await Organization.findById(organizationId);
-        console.log('🔍 Found organization:', organization ? { id: organization._id, name: organization.name } : 'No organization found');
-        
-        // Also try to find all organizations to debug
-        const allOrgs = await Organization.find({});
-        console.log('🔍 All organizations in database:', allOrgs.map(org => ({ id: org._id, name: org.name })));
-        if (organization) {
-          organizationData = {
-            id: organization._id,
-            name: organization.name,
-            orgCode: organization.orgCode,
-            email: organization.email,
-            phone: organization.phone,
-            website: organization.website,
-            description: organization.description,
-            address: organization.address,
-            foundedYear: organization.foundedYear,
-            logo: organization.logo,
-            departments: organization.departments || [],
-            adminPermissions: organization.adminPermissions || {},
-            securitySettings: organization.securitySettings || {},
-            notificationSettings: organization.notificationSettings || {},
-            subAdmins: organization.subAdmins || [],
-            setupCompleted: organization.setupCompleted || false,
-            setupCompletedAt: organization.setupCompletedAt,
-            setupSkipped: organization.setupSkipped || false,
-            country: organization.country,
-            state: organization.state,
-            city: organization.city,
-            pincode: organization.pincode,
-            studentStrength: organization.studentStrength,
-            isGovernmentRecognized: organization.isGovernmentRecognized,
-            institutionStructure: organization.institutionStructure
-          };
-          
-          // Get organization statistics
-          const totalTeachers = await Teacher.countDocuments({ organizationId: organization._id });
-          const totalStudents = await Student.countDocuments({ organizationId: organization._id });
-          const totalUsers = await User.countDocuments({ userId: organization._id, userType: 'organization_admin' });
-          
-          dashboardData = {
-            organizationId: organization._id,
-            organizationName: organization.name,
-            organizationCode: organization.orgCode,
-            role: 'Organization Admin',
-            setupCompleted: organization.setupCompleted || false
-          };
-        }
-      } else if (user.userType === 'teacher') {
-        // Get teacher dashboard data
-        const teacher = await Teacher.findById(user.userId);
-        if (teacher) {
-          const totalStudents = await Student.countDocuments({ 
-            organizationId: teacher.organizationId,
-            assignedTeachers: user._id 
-          });
-          
-          dashboardData = {
-            teacherId: teacher._id,
-            organizationId: teacher.organizationId,
-            organizationName: teacher.organizationName,
-            subjects: teacher.subjects,
-            role: 'Teacher'
-          };
-        }
-      } else if (user.userType === 'student') {
-        // Get student dashboard data
-        const student = await Student.findById(user.userId);
-        if (student) {
-          dashboardData = {
-            studentId: student._id,
-            organizationId: student.organizationId,
-            organizationName: student.organizationName,
-            academicLevel: student.academicLevel,
-            grade: student.grade,
-            role: 'Student'
-          };
-        }
-      }
-    } catch (dashboardError) {
-      console.error('Error fetching dashboard data:', dashboardError);
-      // Continue with login even if dashboard data fails
-    }
-    
-    // Update last login
-    user.lastLogin = new Date();
-    await user.save();
-    
-    console.log('Google Sign-In successful:', { email: googleEmail, userType });
-    
-    const responseData = {
-      success: true,
-      message: 'Google Sign-In successful',
-      data: {
-        token,
-        user: {
-          id: user._id,
-          email: user.email,
-          userType: user.userType,
-          profile: user.profile,
-          isEmailVerified: user.isEmailVerified,
-          lastLogin: user.lastLogin,
-          firstLogin: user.firstLogin,
-          organizationId: user.userType === 'organization_admin' ? 
-            (user.userId && user.userId._id ? user.userId._id : user.userId) : 
-            (dashboardData?.organizationId || null)
-        },
-        dashboard: dashboardData,
-        organization: organizationData
-      }
-    };
-    
-    console.log('🔍 Google Sign-In response data:', {
-      user: responseData.data.user,
-      hasDashboard: !!responseData.data.dashboard,
-      hasOrganization: !!responseData.data.organization
-    });
-    
-    res.json(responseData);
-    
-  } catch (error) {
-    console.error('Google Sign-In error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Google Sign-In failed. Please try again.'
-    });
-  }
-};
+  
+  // Update last login
+  await UserRepository.updateById(user._id, { lastLogin: new Date() });
+  
+  return sendSuccess(res, {
+    token,
+    user: {
+      id: user._id,
+      email: user.email,
+      userType: user.userType,
+      profile: user.profile,
+      isEmailVerified: user.isEmailVerified,
+      lastLogin: user.lastLogin,
+      firstLogin: user.firstLogin,
+      organizationId: user.userType === 'organization_admin' ? 
+        (user.userId && user.userId._id ? user.userId._id : user.userId) : 
+        (dashboardData?.organizationId || null)
+    },
+    dashboard: dashboardData,
+    organization: organizationData
+  }, 'Google Sign-In successful', 200);
+});
 
 // Complete first-time login (change password and update profile)
-const completeFirstTimeLogin = async (req, res) => {
-  try {
-    const { newPassword, confirmPassword, profileData } = req.body;
-    const userId = req.user.id;
-
-    console.log('🔍 CompleteFirstTimeLogin - User ID:', userId);
-    console.log('🔍 CompleteFirstTimeLogin - Request user:', req.user);
-
-    // Validate input
-    if (!newPassword || !confirmPassword) {
-      return res.status(400).json({
-        success: false,
-        message: 'New password and confirmation are required'
-      });
-    }
-
-    if (newPassword !== confirmPassword) {
-      return res.status(400).json({
-        success: false,
-        message: 'Passwords do not match'
-      });
-    }
-
-    if (newPassword.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must be at least 6 characters long'
-      });
-    }
-
-    // Find the user
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    // Check if this is actually a first-time login
-    if (!user.firstLogin) {
-      return res.status(400).json({
-        success: false,
-        message: 'This is not a first-time login'
-      });
-    }
-
-    // Hash the new password
-    const bcrypt = require('bcryptjs');
-    const hashedPassword = await bcrypt.hash(newPassword, 12);
-
-    // Update user with new password and mark first login as complete
-    user.password = hashedPassword;
-    user.firstLogin = false;
-    user.authProvider = 'local'; // Change from temp_password to local after first login
-    
-    // Update profile data if provided
-    if (profileData) {
-      if (profileData.firstName) user.profile.firstName = profileData.firstName;
-      if (profileData.lastName) user.profile.lastName = profileData.lastName;
-      if (profileData.phone) user.profile.phone = profileData.phone;
-      if (profileData.department) user.profile.department = profileData.department;
-      if (profileData.address) user.profile.address = profileData.address;
-    }
-
-    await user.save();
-
-    // Update the associated Teacher or Student record if needed
-    if (user.userType === 'teacher' && user.userId) {
-      const teacher = await Teacher.findById(user.userId);
-      if (teacher && profileData) {
-        if (profileData.firstName && profileData.lastName) {
-          teacher.fullName = `${profileData.firstName} ${profileData.lastName}`;
-        }
-        if (profileData.phone) teacher.phoneNumber = profileData.phone;
-        if (profileData.department) teacher.department = profileData.department;
-        if (profileData.subjects) teacher.subjects = profileData.subjects;
-        if (profileData.experienceLevel) teacher.experienceLevel = profileData.experienceLevel;
-        if (profileData.yearsOfExperience) teacher.yearsOfExperience = profileData.yearsOfExperience;
-        await teacher.save();
+const completeFirstTimeLogin = asyncWrapper(async (req, res) => {
+  const { newPassword, confirmPassword, profileData } = req.body;
+  const userId = req.user.id;
+  
+  // Validate input
+  if (!newPassword || !confirmPassword) {
+    throw AppError.badRequest('New password and confirmation are required');
+  }
+  
+  if (newPassword !== confirmPassword) {
+    throw AppError.badRequest('Passwords do not match');
+  }
+  
+  // SECURITY: Enforce stronger password requirements (NIST guidelines)
+  if (newPassword.length < 8) {
+    throw AppError.badRequest('Password must be at least 8 characters long.');
+  }
+  
+  // Find the user
+  const user = await UserRepository.findById(userId);
+  if (!user) {
+    throw AppError.notFound('User not found');
+  }
+  
+  // IMPORTANT: Organization admins do NOT require first-time login setup
+  // They bypass password/profile setup wizards entirely
+  if (user.userType === 'organization_admin') {
+    throw AppError.badRequest('Organization admins do not require first-time login setup');
+  }
+  
+  // Check if this is actually a first-time login
+  if (!user.firstLogin) {
+    throw AppError.badRequest('This is not a first-time login');
+  }
+  
+  // Hash the new password
+  const hashedPassword = await bcrypt.hash(newPassword, 12);
+  
+  // Build update data
+  const updateData = {
+    password: hashedPassword,
+    firstLogin: false,
+    authProvider: 'local' // Change from temp_password to local after first login
+  };
+  
+  // Update profile data if provided
+  if (profileData) {
+    updateData.profile = user.profile || {};
+    if (profileData.firstName) updateData.profile.firstName = profileData.firstName;
+    if (profileData.lastName) updateData.profile.lastName = profileData.lastName;
+    if (profileData.phone) updateData.profile.phone = profileData.phone;
+    if (profileData.department) updateData.profile.department = profileData.department;
+    if (profileData.address) updateData.profile.address = profileData.address;
+  }
+  
+  // Update user
+  await UserRepository.updateById(userId, updateData);
+  
+  // Update the associated Teacher or Student record if needed
+  if (user.userType === 'teacher' && user.userId) {
+    const teacher = await TeacherRepository.findById(user.userId);
+    if (teacher && profileData) {
+      const teacherUpdate = {};
+      if (profileData.firstName && profileData.lastName) {
+        teacherUpdate.fullName = `${profileData.firstName} ${profileData.lastName}`;
       }
-    } else if (user.userType === 'student' && user.userId) {
-      const student = await Student.findById(user.userId);
-      if (student && profileData) {
-        // Update basic information
-        if (profileData.firstName && profileData.lastName) {
-          student.fullName = `${profileData.firstName} ${profileData.lastName}`;
-        }
-        // Update department
-        if (profileData.department) {
-          student.department = profileData.department;
-          // Try to find and link to Department ID if exists in same organization
-          if (student.organizationId && profileData.department) {
-            const Department = require('../models/Department');
-            const department = await Department.findOne({ 
-              name: profileData.department, 
-              organizationId: student.organizationId,
-              status: 'active'
-            });
-            if (department) {
-              student.departmentId = department._id;
-            }
+      if (profileData.phone) teacherUpdate.phoneNumber = profileData.phone;
+      if (profileData.department) teacherUpdate.department = profileData.department;
+      if (profileData.subjects) teacherUpdate.subjects = profileData.subjects;
+      if (profileData.experienceLevel) teacherUpdate.experienceLevel = profileData.experienceLevel;
+      if (profileData.yearsOfExperience) teacherUpdate.yearsOfExperience = profileData.yearsOfExperience;
+      
+      if (Object.keys(teacherUpdate).length > 0) {
+        await TeacherRepository.updateById(user.userId, teacherUpdate);
+      }
+    }
+  } else if (user.userType === 'student' && user.userId) {
+    const student = await StudentRepository.findById(user.userId);
+    if (student && profileData) {
+      const studentUpdate = {};
+      if (profileData.firstName && profileData.lastName) {
+        studentUpdate.fullName = `${profileData.firstName} ${profileData.lastName}`;
+      }
+      if (profileData.department) {
+        studentUpdate.department = profileData.department;
+        // Try to find and link to Department ID if exists in same organization
+        if (student.organization && profileData.department) {
+          const Department = require('../models/Department');
+          const department = await Department.findOne({ 
+            name: profileData.department, 
+            organizationId: student.organization,
+            status: 'active'
+          });
+          if (department) {
+            studentUpdate.departmentId = department._id;
           }
         }
-        // Update academic information
-        if (profileData.academicYear) student.academicYear = profileData.academicYear;
-        if (profileData.grade) student.grade = profileData.grade;
-        if (profileData.section) student.section = profileData.section;
-        // Update additional profile fields
-        if (profileData.dateOfBirth) student.dateOfBirth = profileData.dateOfBirth;
-        if (profileData.gender) student.gender = profileData.gender;
-        if (profileData.country) student.country = profileData.country;
-        if (profileData.city) student.city = profileData.city;
-        if (profileData.pincode) student.pincode = profileData.pincode;
-        if (profileData.rollNumber) student.rollNumber = profileData.rollNumber;
-        
-        await student.save();
-        
-        // Update user profile in parent User model as well
-        if (user.profile) {
-          user.profile.firstName = profileData.firstName || user.profile.firstName;
-          user.profile.lastName = profileData.lastName || user.profile.lastName;
-          user.profile.department = profileData.department || user.profile.department;
-          user.profile.academicYear = profileData.academicYear || user.profile.academicYear;
-          await user.save();
-        }
+      }
+      if (profileData.academicYear) studentUpdate.academicYear = profileData.academicYear;
+      if (profileData.grade) studentUpdate.grade = profileData.grade;
+      if (profileData.section) studentUpdate.section = profileData.section;
+      if (profileData.dateOfBirth) studentUpdate.dateOfBirth = profileData.dateOfBirth;
+      if (profileData.gender) studentUpdate.gender = profileData.gender;
+      if (profileData.country) studentUpdate.country = profileData.country;
+      if (profileData.city) studentUpdate.city = profileData.city;
+      if (profileData.pincode) studentUpdate.pincode = profileData.pincode;
+      if (profileData.rollNumber) studentUpdate.rollNumber = profileData.rollNumber;
+      
+      if (Object.keys(studentUpdate).length > 0) {
+        await StudentRepository.updateById(user.userId, studentUpdate);
+      }
+      
+      // Update user profile in parent User model as well
+      if (profileData.firstName || profileData.lastName || profileData.department || profileData.academicYear) {
+        const userProfileUpdate = { profile: user.profile || {} };
+        if (profileData.firstName) userProfileUpdate.profile.firstName = profileData.firstName;
+        if (profileData.lastName) userProfileUpdate.profile.lastName = profileData.lastName;
+        if (profileData.department) userProfileUpdate.profile.department = profileData.department;
+        if (profileData.academicYear) userProfileUpdate.profile.academicYear = profileData.academicYear;
+        await UserRepository.updateById(userId, userProfileUpdate);
       }
     }
-
-    console.log(`✅ First-time login completed for user: ${user.email}`);
-
-    res.status(200).json({
-      success: true,
-      message: 'First-time login completed successfully',
-      data: {
-        user: {
-          id: user._id,
-          email: user.email,
-          userType: user.userType,
-          firstLogin: user.firstLogin,
-          profile: user.profile
-        }
-      }
-    });
-
-  } catch (error) {
-    console.error('Complete first-time login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to complete first-time login',
-      error: error.message
-    });
   }
-};
+  
+  // Get updated user
+  const updatedUser = await UserRepository.findById(userId);
+  
+  return sendSuccess(res, {
+    user: {
+      id: updatedUser._id,
+      email: updatedUser.email,
+      userType: updatedUser.userType,
+      firstLogin: updatedUser.firstLogin,
+      profile: updatedUser.profile
+    }
+  }, 'First-time login completed successfully', 200);
+});
 
 // Send email verification with OTP
-const sendEmailVerification = async (req, res) => {
-  try {
-    const userId = req.user.id; // Use req.user.id instead of req.user.userId
-    
-    // Find user
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    // Check if email is already verified
-    // For students in first-time login, always allow email verification
-    if (user.isEmailVerified && !(user.userType === 'student' && user.firstLogin)) {
-      return res.status(200).json({
-        success: true,
-        message: 'Email is already verified',
-        data: {
-          expiresIn: 0 // No expiration since already verified
-        }
-      });
-    }
-
-    // Generate 6-digit OTP
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    // Update user with OTP
-    user.emailVerificationToken = otpCode;
-    user.emailVerificationExpires = otpExpires;
-    await user.save();
-
-    // Send verification email with OTP
-    const { sendEmailVerification } = require('../services/emailService');
-    
-    // Check if email service is configured
-    const hasEmailConfig = process.env.EMAIL_USER && 
-                          process.env.EMAIL_PASS &&
-                          process.env.EMAIL_USER !== 'your-gmail@gmail.com' &&
-                          process.env.EMAIL_PASS !== 'your-app-password';
-    
-    if (!hasEmailConfig) {
-      console.log('⚠️ Email service not configured, skipping email send');
-      // For development/testing, we'll just log the OTP
-      console.log(`🔐 Email verification OTP for ${user.email}: ${otpCode}`);
-    } else {
-      const emailResult = await sendEmailVerification(
-        user.email,
-        user.profile?.firstName || 'User',
-        otpCode
-      );
-
-      if (!emailResult.success) {
-        throw new Error(emailResult.error || 'Failed to send verification email');
-      }
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Verification OTP sent successfully',
-      data: {
-        expiresIn: 10 * 60 * 1000 // 10 minutes in milliseconds
-      }
-    });
-
-  } catch (error) {
-    console.error('Send email verification error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send verification email',
-      error: error.message
-    });
+const sendEmailVerification = asyncWrapper(async (req, res) => {
+  const userId = req.user.id;
+  
+  // Find user
+  const user = await UserRepository.findById(userId);
+  if (!user) {
+    throw AppError.notFound('User not found');
   }
-};
+  
+  // Check if email is already verified
+  // For students in first-time login, always allow email verification
+  if (user.isEmailVerified && !(user.userType === 'student' && user.firstLogin)) {
+    return sendSuccess(res, {
+      expiresIn: 0 // No expiration since already verified
+    }, 'Email is already verified', 200);
+  }
+  
+  // Generate 6-digit OTP
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+  
+  // Update user with OTP
+  await UserRepository.updateById(userId, {
+    emailVerificationToken: otpCode,
+    emailVerificationExpires: otpExpires
+  });
+  
+  // Send verification email with OTP
+  // Check if email service is configured
+  const hasEmailConfig = process.env.EMAIL_USER && 
+                        process.env.EMAIL_PASS &&
+                        process.env.EMAIL_USER !== 'your-gmail@gmail.com' &&
+                        process.env.EMAIL_PASS !== 'your-app-password';
+  
+  if (hasEmailConfig) {
+    const emailResult = await sendEmailVerificationService(
+      user.email,
+      user.profile?.firstName || 'User',
+      otpCode
+    );
+    
+    if (!emailResult.success) {
+      throw AppError.internal(emailResult.error || 'Failed to send verification email');
+    }
+  }
+  
+  return sendSuccess(res, {
+    expiresIn: 10 * 60 * 1000 // 10 minutes in milliseconds
+  }, 'Verification OTP sent successfully', 200);
+});
 
 // Verify email with OTP
-const verifyEmailWithOTP = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { otp } = req.body;
-    
-    if (!otp) {
-      return res.status(400).json({
-        success: false,
-        message: 'OTP is required'
-      });
-    }
-    
-    // Find user
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-
-    // Check if email is already verified
-    // For students in first-time login, allow verification even if marked as verified
-    if (user.isEmailVerified && !(user.userType === 'student' && user.firstLogin)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is already verified'
-      });
-    }
-
-    // Check if OTP exists and is not expired
-    if (!user.emailVerificationToken || !user.emailVerificationExpires) {
-      return res.status(400).json({
-        success: false,
-        message: 'No verification OTP found. Please request a new one.'
-      });
-    }
-
-    if (new Date() > user.emailVerificationExpires) {
-      return res.status(400).json({
-        success: false,
-        message: 'OTP has expired. Please request a new one.'
-      });
-    }
-
-    // Verify OTP
-    if (user.emailVerificationToken !== otp) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid OTP. Please check and try again.'
-      });
-    }
-
-    // Mark email as verified
-    user.isEmailVerified = true;
-    user.emailVerificationToken = undefined;
-    user.emailVerificationExpires = undefined;
-    await user.save();
-
-    res.status(200).json({
-      success: true,
-      message: 'Email verified successfully'
-    });
-
-  } catch (error) {
-    console.error('Verify email OTP error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to verify email',
-      error: error.message
-    });
+const verifyEmailWithOTP = asyncWrapper(async (req, res) => {
+  const userId = req.user.id;
+  const { otp } = req.body;
+  
+  if (!otp) {
+    throw AppError.badRequest('OTP is required');
   }
-};
+  
+  // Find user
+  const user = await UserRepository.findById(userId);
+  if (!user) {
+    throw AppError.notFound('User not found');
+  }
+  
+  // Check if email is already verified
+  // For students in first-time login, allow verification even if marked as verified
+  if (user.isEmailVerified && !(user.userType === 'student' && user.firstLogin)) {
+    throw AppError.badRequest('Email is already verified');
+  }
+  
+  // Check if OTP exists and is not expired
+  if (!user.emailVerificationToken || !user.emailVerificationExpires) {
+    throw AppError.badRequest('No verification OTP found. Please request a new one.');
+  }
+  
+  if (new Date() > user.emailVerificationExpires) {
+    throw AppError.badRequest('OTP has expired. Please request a new one.');
+  }
+  
+  // Verify OTP
+  if (user.emailVerificationToken !== otp) {
+    throw AppError.badRequest('Invalid OTP. Please check and try again.');
+  }
+  
+  // Mark email as verified
+  await UserRepository.updateById(userId, {
+    isEmailVerified: true,
+    emailVerificationToken: undefined,
+    emailVerificationExpires: undefined
+  });
+  
+  return sendSuccess(res, null, 'Email verified successfully', 200);
+});
 
 module.exports = {
   login,

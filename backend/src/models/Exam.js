@@ -63,15 +63,18 @@ const examSchema = new mongoose.Schema({
   },
   startTime: {
     type: String,
-    required: true
+    required: true,
+    trim: true
   },
   endTime: {
     type: String,
-    required: false
+    required: false,
+    trim: true
   },
   duration: {
     type: Number, // in minutes
-    required: true
+    required: true,
+    min: 0
   },
   
   // Exam configuration
@@ -79,6 +82,11 @@ const examSchema = new mongoose.Schema({
     type: Number,
     required: true,
     min: 1
+  },
+  questionsAdded: {
+    type: Number,
+    default: 0,
+    min: 0
   },
   totalMarks: {
     type: Number,
@@ -116,7 +124,8 @@ const examSchema = new mongoose.Schema({
   },
   lateSubmissionPenalty: {
     type: Number,
-    default: 0 // percentage penalty
+    default: 0, // percentage penalty
+    min: 0
   },
   
   // Question selection
@@ -158,13 +167,15 @@ const examSchema = new mongoose.Schema({
       max: 100
     },
     grade: {
-      type: String
+      type: String,
+      trim: true
     },
     submittedAt: {
       type: Date
     },
     timeSpent: {
-      type: Number // in minutes
+      type: Number, // in minutes
+      min: 0
     },
     answers: [{
       questionId: {
@@ -173,7 +184,10 @@ const examSchema = new mongoose.Schema({
       },
       selectedAnswer: String,
       isCorrect: Boolean,
-      marksObtained: Number
+      marksObtained: {
+        type: Number,
+        min: 0
+      }
     }]
   }],
   
@@ -192,7 +206,8 @@ const examSchema = new mongoose.Schema({
   },
   completionRate: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   
   // Settings
@@ -236,6 +251,10 @@ examSchema.index({ class: 1 });
 examSchema.index({ scheduledDate: 1 });
 examSchema.index({ status: 1 });
 examSchema.index({ examType: 1 });
+examSchema.index({ organizationId: 1, status: 1 }); // Composite for org + status queries
+examSchema.index({ organizationId: 1, scheduledDate: 1 }); // Composite for org + date queries
+examSchema.index({ createdAt: -1 }); // For sorting by newest
+examSchema.index({ 'enrolledStudents.studentId': 1 }); // For student exam lookups
 
 // Virtual for total enrolled students
 examSchema.virtual('totalEnrolledStudents').get(function() {
@@ -338,7 +357,7 @@ examSchema.statics.getExamsByOrganization = function(organizationId, filters = {
 // Static method to get exam statistics
 examSchema.statics.getExamStatistics = function(organizationId) {
   return this.aggregate([
-    { $match: { organizationId: mongoose.Types.ObjectId(organizationId) } },
+    { $match: { organizationId: new mongoose.Types.ObjectId(organizationId) } },
     {
       $group: {
         _id: null,

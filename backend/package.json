@@ -52,7 +52,8 @@
     "nodemailer": "^6.9.7",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
-    "twilio": "^5.9.0"
+    "twilio": "^5.9.0",
+    "winston": "^3.11.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",

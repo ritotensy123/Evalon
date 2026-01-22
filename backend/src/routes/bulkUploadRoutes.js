@@ -8,7 +8,7 @@ router.get('/template/teacher', auth.authenticate, async (req, res) => {
   try {
     await bulkUploadController.generateTeacherTemplate(req, res);
   } catch (error) {
-    console.error('Template generation error:', error);
+    logger.error('[BULK_UPLOAD] Template generation error', { error: error.message });
     res.status(500).json({
       success: false,
       message: 'Failed to generate template'
@@ -21,7 +21,7 @@ router.post('/teachers', auth.authenticate, async (req, res) => {
   try {
     await bulkUploadController.bulkCreateTeachers(req, res);
   } catch (error) {
-    console.error('Bulk creation error:', error);
+    logger.error('[BULK_UPLOAD] Bulk creation error', { error: error.message });
     res.status(500).json({
       success: false,
       message: 'Failed to create teachers'

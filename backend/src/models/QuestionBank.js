@@ -47,22 +47,24 @@ const questionBankSchema = new mongoose.Schema({
   // Question bank statistics
   totalQuestions: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   questionsByType: {
-    multiple_choice: { type: Number, default: 0 },
-    subjective: { type: Number, default: 0 },
-    true_false: { type: Number, default: 0 },
-    numeric: { type: Number, default: 0 }
+    multiple_choice: { type: Number, default: 0, min: 0 },
+    subjective: { type: Number, default: 0, min: 0 },
+    true_false: { type: Number, default: 0, min: 0 },
+    numeric: { type: Number, default: 0, min: 0 }
   },
   questionsByDifficulty: {
-    easy: { type: Number, default: 0 },
-    medium: { type: Number, default: 0 },
-    hard: { type: Number, default: 0 }
+    easy: { type: Number, default: 0, min: 0 },
+    medium: { type: Number, default: 0, min: 0 },
+    hard: { type: Number, default: 0, min: 0 }
   },
   totalMarks: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   
   // Status and metadata
@@ -79,7 +81,8 @@ const questionBankSchema = new mongoose.Schema({
   // Usage tracking
   usageCount: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   lastUsed: {
     type: Date

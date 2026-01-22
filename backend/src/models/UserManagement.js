@@ -84,7 +84,8 @@ const userManagementSchema = new mongoose.Schema({
   },
   loginCount: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   
   // Additional information
@@ -142,13 +143,16 @@ const userManagementSchema = new mongoose.Schema({
   },
   sessionDuration: {
     type: Number,
-    default: 0 // in minutes
+    default: 0, // in minutes
+    min: 0
   },
   deviceInfo: {
-    type: String
+    type: String,
+    trim: true
   },
   location: {
-    type: String
+    type: String,
+    trim: true
   }
 }, {
   timestamps: true,
@@ -236,7 +240,7 @@ userManagementSchema.methods.updateActivity = function() {
 // Method to get user statistics
 userManagementSchema.statics.getUserStats = function(organizationId) {
   return this.aggregate([
-    { $match: { organizationId: mongoose.Types.ObjectId(organizationId) } },
+    { $match: { organizationId: new mongoose.Types.ObjectId(organizationId) } },
     {
       $group: {
         _id: null,
@@ -258,7 +262,7 @@ userManagementSchema.statics.getUserStats = function(organizationId) {
 // Method to get role distribution
 userManagementSchema.statics.getRoleDistribution = function(organizationId) {
   return this.aggregate([
-    { $match: { organizationId: mongoose.Types.ObjectId(organizationId) } },
+    { $match: { organizationId: new mongoose.Types.ObjectId(organizationId) } },
     {
       $group: {
         _id: '$role',

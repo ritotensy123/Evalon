@@ -1,5 +1,6 @@
 const UserManagement = require('../models/UserManagement');
 const Organization = require('../models/Organization');
+const { logger } = require('../utils/logger');
 
 // Define role permissions
 const ROLE_PERMISSIONS = {
@@ -74,7 +75,7 @@ const getUserPermissions = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get user permissions error:', error);
+    logger.error('Get user permissions error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       message: 'Failed to get user permissions',
@@ -120,7 +121,7 @@ const checkUserPermission = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Check user permission error:', error);
+    logger.error('Check user permission error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       message: 'Failed to check user permission',
@@ -141,7 +142,7 @@ const getAllRolePermissions = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get all role permissions error:', error);
+    logger.error('Get all role permissions error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       message: 'Failed to get role permissions',
@@ -182,7 +183,7 @@ const updateRolePermissions = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Update role permissions error:', error);
+    logger.error('Update role permissions error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       message: 'Failed to update role permissions',
@@ -216,7 +217,7 @@ const getUsersByRole = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get users by role error:', error);
+    logger.error('Get users by role error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       message: 'Failed to get users by role',
@@ -241,7 +242,7 @@ const getRoleDistribution = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get role distribution error:', error);
+    logger.error('Get role distribution error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       message: 'Failed to get role distribution',
@@ -285,7 +286,7 @@ const requirePermission = (resource, action) => {
       next();
 
     } catch (error) {
-      console.error('Permission check error:', error);
+      logger.error('Permission check error', { error: error.message, stack: error.stack });
       res.status(500).json({
         success: false,
         message: 'Failed to check permissions',

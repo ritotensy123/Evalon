@@ -35,11 +35,29 @@ const studentSchema = new mongoose.Schema({
   studentId: {
     type: String,
     unique: true,
-    required: true
+    required: true,
+    trim: true
+  },
+  studentCode: {
+    type: String,
+    trim: true
   },
   grade: {
     type: String,
-    required: true
+    required: true,
+    trim: true
+  },
+  academicYear: {
+    type: String,
+    trim: true
+  },
+  section: {
+    type: String,
+    trim: true
+  },
+  rollNumber: {
+    type: String,
+    trim: true
   },
   department: {
     type: mongoose.Schema.Types.ObjectId,
@@ -123,5 +141,8 @@ studentSchema.index({ studentId: 1 });
 studentSchema.index({ organization: 1 });
 studentSchema.index({ department: 1 });
 studentSchema.index({ status: 1 });
+studentSchema.index({ organization: 1, status: 1 }); // Composite for org + status queries
+studentSchema.index({ organization: 1, department: 1 }); // Composite for org + department queries
+studentSchema.index({ createdAt: -1 }); // For sorting by newest
 
 module.exports = mongoose.model('Student', studentSchema);

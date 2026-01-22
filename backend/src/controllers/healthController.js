@@ -1,99 +1,81 @@
-const { performDatabaseHealthCheck, autoFixDataIssues } = require('../utils/databaseHealth');
-const { authenticate } = require('../middleware/auth');
+const HealthService = require('../services/HealthService');
+const asyncWrapper = require('../middleware/asyncWrapper');
+const { sendSuccess } = require('../utils/apiResponse');
+const AppError = require('../utils/AppError');
+
+// Track server start time for uptime calculation
+const serverStartTime = Date.now();
+HealthService.setServerStartTime(serverStartTime);
 
 /**
- * Health check endpoint for database and system status
+ * Basic health check endpoint for load balancers and Kubernetes probes
+ * Returns minimal info for quick health verification
  */
-const getHealthStatus = async (req, res) => {
-  try {
-    const healthReport = await performDatabaseHealthCheck();
-    
-    res.json({
-      success: true,
-      data: healthReport,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Health check failed:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Health check failed',
-      error: error.message
-    });
+const getBasicHealth = asyncWrapper(async (req, res) => {
+  const health = await HealthService.getBasicHealth();
+
+  if (!health.success) {
+    return sendSuccess(res, health, health.message || 'Unhealthy', 503);
   }
-};
+
+  return sendSuccess(res, health, 'OK', 200);
+});
+
+/**
+ * Detailed health check endpoint for database and system status
+ */
+const getHealthStatus = asyncWrapper(async (req, res) => {
+  const health = await HealthService.getHealthStatus();
+
+  return sendSuccess(res, health, 'OK', 200);
+});
 
 /**
  * Auto-fix data issues endpoint (admin only)
  */
-const fixDataIssues = async (req, res) => {
-  try {
-    // Only allow organization admins to run auto-fixes
-    if (req.user.userType !== 'organization_admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Only organization administrators can run data fixes.'
-      });
-    }
-
-    const fixes = await autoFixDataIssues();
-    
-    res.json({
-      success: true,
-      message: 'Data fixes completed',
-      fixes: fixes,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Auto-fix failed:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Auto-fix failed',
-      error: error.message
-    });
+const fixDataIssues = asyncWrapper(async (req, res) => {
+  // Only allow organization admins to run auto-fixes
+  if (req.user.userType !== 'organization_admin') {
+    throw AppError.forbidden('Access denied. Only organization administrators can run data fixes.');
   }
-};
+
+  const fixes = await HealthService.autoFixDataIssues();
+
+  return sendSuccess(res, {
+    fixes: fixes,
+    timestamp: new Date().toISOString()
+  }, 'Data fixes completed', 200);
+});
 
 /**
  * Database connection info endpoint
  */
-const getDatabaseInfo = async (req, res) => {
-  try {
-    const mongoose = require('mongoose');
-    
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database not connected'
-      });
-    }
+const getDatabaseInfo = asyncWrapper(async (req, res) => {
+  const connectionStatus = await HealthService.getConnectionStatus();
 
-    const dbInfo = {
-      connected: true,
-      host: mongoose.connection.host,
-      port: mongoose.connection.port,
-      database: mongoose.connection.db.databaseName,
-      readyState: mongoose.connection.readyState,
-      collections: await mongoose.connection.db.listCollections().toArray()
-    };
-
-    res.json({
-      success: true,
-      data: dbInfo
-    });
-  } catch (error) {
-    console.error('Database info failed:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get database info',
-      error: error.message
-    });
+  if (!connectionStatus.isConnected) {
+    throw AppError.serviceUnavailable('Database not connected');
   }
-};
+
+  const dbStats = await HealthService.getDatabaseStats();
+  const collections = await HealthService.listCollections();
+
+  const dbInfo = {
+    connected: true,
+    host: connectionStatus.host,
+    port: connectionStatus.port,
+    database: connectionStatus.databaseName,
+    readyState: connectionStatus.readyState,
+    stats: dbStats,
+    collections: collections
+  };
+
+  return sendSuccess(res, dbInfo, 'OK', 200);
+});
 
 module.exports = {
+  getBasicHealth,
   getHealthStatus,
   fixDataIssues,
   getDatabaseInfo
 };
-

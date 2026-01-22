@@ -2,7 +2,9 @@ const Teacher = require('../models/Teacher');
 const Organization = require('../models/Organization');
 const User = require('../models/User');
 const { createUserFromRegistration } = require('../utils/createUserFromRegistration');
-const { sendEmailOTP, sendPhoneOTP, verifyEmailOTP, verifyPhoneOTP } = require('./otpController');
+// REMOVED: Email and Mobile OTP imports removed - OTP verification not required for teachers
+// (similar to organization registration flow)
+// const { sendEmailOTP, verifyEmailOTP } = require('./otpController');
 const { generateToken, store, retrieve, update, remove } = require('../utils/tempStorage');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -42,7 +44,8 @@ const registerStep1 = async (req, res) => {
     const isOrgCreatedUser = !!existingUser;
 
     // Validate required fields only for standalone registrations
-    if (!isOrgCreatedUser && (!fullName || !phoneNumber || !emailAddress || !country || !city || !pincode)) {
+    // NOTE: phoneNumber is optional (mobile OTP verification removed, similar to organization registration)
+    if (!isOrgCreatedUser && (!fullName || !emailAddress || !country || !city || !pincode)) {
       console.log('❌ Missing required fields for standalone registration:', {
         fullName: !!fullName,
         phoneNumber: !!phoneNumber,
@@ -58,8 +61,9 @@ const registerStep1 = async (req, res) => {
     }
 
     // Check if teacher already exists
+    // NOTE: Teacher model uses 'email' field (not 'emailAddress')
     const existingTeacher = await Teacher.findOne({
-      emailAddress: emailAddress.toLowerCase()
+      email: emailAddress.toLowerCase()
     });
 
     if (existingTeacher && isOrgCreatedUser) {
@@ -160,7 +164,8 @@ const registerStep1 = async (req, res) => {
   }
 };
 
-// Register teacher step 2 (professional details)
+// Register teacher step 2 (professional details + password)
+// MIRRORS: Organization registerStep2 - stores password hash in temp storage
 const registerStep2 = async (req, res) => {
   try {
     const {
@@ -170,6 +175,8 @@ const registerStep2 = async (req, res) => {
       experienceLevel,
       currentInstitution,
       yearsOfExperience,
+      password,
+      confirmPassword,
       registrationToken
     } = req.body;
 
@@ -181,6 +188,26 @@ const registerStep2 = async (req, res) => {
       });
     }
 
+    // Password is required when saving step 2 (before final registration)
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password is required'
+      });
+    }
+    if (!confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password confirmation is required'
+      });
+    }
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Passwords do not match'
+      });
+    }
+
     // Retrieve step 1 data using registration token
     const step1Data = retrieve(registrationToken);
     if (!step1Data) {
@@ -189,6 +216,10 @@ const registerStep2 = async (req, res) => {
         message: 'Registration session not found or expired'
       });
     }
+
+    // Hash password (required at this step) - MIRRORS Organization step 2
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Store step 2 data
     const step2Data = {
@@ -202,6 +233,10 @@ const registerStep2 = async (req, res) => {
       timestamp: new Date()
     };
 
+    // SECURITY: Only store the hashed password, never the raw password
+    // The User model will accept the pre-hashed password with proper handling
+    step2Data.hashedPassword = hashedPassword;
+
     // Update stored data with step 2 information
     const updatedData = {
       ...step1Data,
@@ -214,7 +249,7 @@ const registerStep2 = async (req, res) => {
       message: 'Professional details saved successfully',
       data: {
         step: 2,
-        nextStep: 'organization_link',
+        nextStep: 'complete_registration',
         registrationToken
       }
     });
@@ -229,65 +264,13 @@ const registerStep2 = async (req, res) => {
   }
 };
 
-// Register teacher step 3 (organization link)
+// Register teacher step 3 (complete registration)
+// MIRRORS: Organization completeRegistration - final commit that saves to DB
 const registerStep3 = async (req, res) => {
   try {
     const {
-      registrationToken
-    } = req.body;
-
-    // Retrieve registration data
-    console.log('🔍 Step 3 - Looking for registration token:', registrationToken);
-    const registrationData = retrieve(registrationToken);
-    console.log('🔍 Step 3 - Retrieved data:', registrationData ? 'Found' : 'Not found');
-    if (!registrationData) {
-      return res.status(400).json({
-        success: false,
-        message: 'Registration session not found or expired'
-      });
-    }
-
-    // Set affiliation type to freelance by default
-    registrationData.affiliationType = 'freelance';
-    registrationData.isOrganizationValid = false;
-    registrationData.organizationName = '';
-    registrationData.associationStatus = 'freelance';
-
-    // Update the stored data
-    update(registrationToken, registrationData);
-
-    console.log('✅ Step 3 - Freelance teacher setup completed');
-
-    res.status(200).json({
-      success: true,
-      message: 'Freelance teacher setup completed',
-      data: {
-        affiliationType: 'freelance',
-        isOrganizationValid: false,
-        organizationName: '',
-        associationStatus: 'freelance'
-      }
-    });
-
-  } catch (error) {
-    console.error('Teacher registration step 3 error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to complete freelance teacher setup',
-      error: error.message
-    });
-  }
-};
-
-// Complete teacher registration (step 4)
-const registerStep4 = async (req, res) => {
-  try {
-    const {
-      password,
-      confirmPassword,
-      emailVerified = false,
-      phoneVerified = false,
-      registrationToken
+      registrationToken,
+      emailVerified = false // Email verification removed - always false
     } = req.body;
 
     if (!registrationToken) {
@@ -306,50 +289,167 @@ const registerStep4 = async (req, res) => {
       });
     }
 
-    // Validate password for all freelance registrations
-    if (!password || !confirmPassword) {
+    // Check if all required data is present
+    if (!registrationData.fullName || !registrationData.emailAddress) {
       return res.status(400).json({
         success: false,
-        message: 'Password and confirm password are required'
+        message: 'Incomplete registration data'
       });
     }
 
-    if (password !== confirmPassword) {
+    // Password is required for final registration (should be hashed in step 2)
+    if (!registrationData.hashedPassword) {
       return res.status(400).json({
         success: false,
-        message: 'Passwords do not match'
+        message: 'Password is required to complete registration'
       });
     }
 
-    // Keep password plain - let User model handle hashing
+    // Check if teacher with this email already exists
+    const existingTeacher = await Teacher.findOne({ 
+      email: registrationData.emailAddress.toLowerCase() 
+    });
+    if (existingTeacher) {
+      return res.status(400).json({
+        success: false,
+        message: 'Teacher with this email already exists'
+      });
+    }
 
-    // Create new teacher record for freelance registration
-    console.log('🔄 Creating freelance teacher record');
+    // Prepare teacher data
+    const nameParts = registrationData.fullName.split(' ');
+    const firstName = nameParts[0] || registrationData.fullName;
+    const lastName = nameParts.slice(1).join(' ') || '';
     
+    // Generate employeeId for freelance teacher
+    const employeeId = `TEA-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    
+    // Find or create a default "Freelance" organization for standalone teachers
+    // This is required by the Teacher model (organization field is required)
+    let freelanceOrg = null;
+    try {
+      freelanceOrg = await Organization.findOne({ 
+        orgCode: 'FREELANCE-DEFAULT'
+      });
+      
+      if (!freelanceOrg) {
+        // Create a default organization for freelance teachers
+        const freelanceEmail = `freelance-${Date.now()}@evalon.system`;
+        freelanceOrg = new Organization({
+          name: 'Freelance Teachers',
+          orgCode: 'FREELANCE-DEFAULT',
+          email: freelanceEmail,
+          phone: '+0000000000',
+          institutionStructure: 'single',
+          foundedYear: new Date().getFullYear(),
+          status: 'active',
+          isGovernmentRecognized: false,
+          emailVerified: false,
+          phoneVerified: false,
+          adminName: 'System Administrator',
+          adminEmail: freelanceEmail,
+          adminPhone: '+0000000000',
+          timeZone: 'Asia/Kolkata'
+        });
+        await freelanceOrg.save();
+        console.log('✅ Created default Freelance organization:', freelanceOrg._id);
+      }
+    } catch (orgError) {
+      console.error('❌ Error creating/finding Freelance organization:', orgError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to setup organization for teacher',
+        error: orgError.message
+      });
+    }
+
+    // Find a system user for createdBy field (required by Teacher model)
+    let systemUser = null;
+    try {
+      systemUser = await User.findOne({ 
+        userType: 'organization_admin',
+        isActive: true
+      }).limit(1);
+      
+      if (!systemUser) {
+        const orgAdminUser = await User.findOne({
+          userType: 'organization_admin',
+          userId: freelanceOrg._id,
+          userModel: 'Organization'
+        });
+        
+        if (orgAdminUser) {
+          systemUser = orgAdminUser;
+        }
+      }
+
+      if (!systemUser) {
+        return res.status(500).json({
+          success: false,
+          message: 'System configuration error: No admin user found. Please contact support.',
+          error: 'Missing system user for teacher creation'
+        });
+      }
+    } catch (userFindError) {
+      console.error('❌ Error finding system user:', userFindError);
+      return res.status(500).json({
+        success: false,
+        message: 'System configuration error',
+        error: userFindError.message
+      });
+    }
+
+    // CREATE TEACHER RECORD FIRST (before user, since user needs teacher._id)
     const teacherData = {
-      fullName: registrationData.fullName,
-      emailAddress: registrationData.emailAddress,
-      phoneNumber: registrationData.phoneNumber,
-      countryCode: registrationData.countryCode,
-      country: registrationData.country,
-      city: registrationData.city,
-      pincode: registrationData.pincode,
+      firstName: firstName,
+      lastName: lastName,
+      email: registrationData.emailAddress.toLowerCase(),
+      phone: registrationData.phoneNumber ? `${registrationData.countryCode || ''}${registrationData.phoneNumber}` : '',
+      employeeId: employeeId,
+      teacherRole: registrationData.role || 'teacher',
       subjects: registrationData.subjects || [],
-      role: registrationData.role || 'teacher',
-      affiliationType: 'freelance',
-      experienceLevel: registrationData.experienceLevel || 'beginner',
-      currentInstitution: registrationData.currentInstitution || '',
-      yearsOfExperience: registrationData.yearsOfExperience || '',
+      experience: registrationData.experienceLevel || '0-2 years',
       status: 'active',
-      emailVerified: emailVerified,
-      phoneVerified: phoneVerified
+      organization: freelanceOrg._id,
+      createdBy: systemUser._id
     };
 
-    const teacher = new Teacher(teacherData);
-    await teacher.save();
+    console.log('🔄 Creating teacher record...');
+    
+    let teacher;
+    try {
+      teacher = new Teacher(teacherData);
+      const savedTeacher = await teacher.save();
+      console.log('✅ Teacher saved to database successfully. Teacher ID:', savedTeacher._id);
+      
+      // Verify the save by querying the database
+      const verifyTeacher = await Teacher.findById(savedTeacher._id);
+      if (!verifyTeacher) {
+        console.error("❌ CRITICAL: Teacher save appeared successful but document not found in DB!");
+        return res.status(500).json({
+          success: false,
+          message: 'Teacher save verification failed',
+          error: 'Document not found after save'
+        });
+      }
+      console.log("✅ Verified: Teacher document exists in database:", verifyTeacher._id);
+      
+      teacher = savedTeacher;
+    } catch (teacherSaveError) {
+      console.error('❌ Error saving teacher to database:', teacherSaveError);
+      return res.status(500).json({
+        success: false,
+        message: 'Teacher registration failed',
+        error: teacherSaveError.message,
+        details: teacherSaveError.errors || {}
+      });
+    }
 
-    // Create or update user record
-    let teacherUser = null;
+    // CREATE USER RECORD FOR AUTHENTICATION
+    // MIRRORS: Organization completeRegistration - uses pre-hashed password
+    console.log('🔧 Creating teacher user...');
+    
+    let teacherUser;
     try {
       const userTypeEmail = `${registrationData.emailAddress.toLowerCase()}_teacher`;
       
@@ -364,92 +464,112 @@ const registerStep4 = async (req, res) => {
         existingUser.isActive = true;
         existingUser.isRegistrationComplete = true;
         existingUser.firstLogin = false;
-        existingUser.authProvider = 'local'; // Set auth provider for password login
-        existingUser.isEmailVerified = true; // Ensure email is verified
+        existingUser.authProvider = 'local';
+        existingUser.isEmailVerified = false;
         existingUser.profile = {
-          firstName: registrationData.fullName.split(' ')[0] || registrationData.fullName,
-          lastName: registrationData.fullName.split(' ').slice(1).join(' ') || ''
+          firstName: firstName,
+          lastName: lastName
         };
         
-        // Set plain password - let User model handle hashing
-        existingUser.password = password;
+        // SECURITY: Pass the pre-hashed password - User model detects bcrypt hashes and skips re-hashing
+        existingUser.password = registrationData.hashedPassword;
         
         teacherUser = await existingUser.save();
         console.log('✅ Existing teacher user updated:', teacherUser._id);
       } else {
-        // Create new user
+        // Create new user with teacher ID
+        // SECURITY: Pass the pre-hashed password - User model detects bcrypt hashes and skips re-hashing
         teacherUser = await createUserFromRegistration({
           email: registrationData.emailAddress.toLowerCase(),
-          password: password,
+          password: registrationData.hashedPassword, // Already hashed - User model will detect this
           userType: 'teacher',
           userId: teacher._id,
           userModel: 'Teacher',
           profile: {
-            firstName: registrationData.fullName.split(' ')[0] || registrationData.fullName,
-            lastName: registrationData.fullName.split(' ').slice(1).join(' ') || ''
+            firstName: firstName,
+            lastName: lastName
           }
         });
         console.log('✅ New teacher user created:', teacherUser._id);
       }
     } catch (userError) {
       console.error('❌ Error creating/updating teacher user:', userError);
+      // Teacher is already saved, but user creation failed
+      // This is a critical error - user won't be able to login
       return res.status(500).json({
         success: false,
-        message: 'Failed to create teacher user',
-        error: userError.message
+        message: 'Failed to create teacher user account',
+        error: userError.message,
+        note: 'Teacher record was created but user account creation failed. Please contact support.'
       });
     }
 
+    // Update teacher's createdBy to point to the actual user
+    if (teacher.createdBy.toString() !== teacherUser._id.toString()) {
+      try {
+        teacher.createdBy = teacherUser._id;
+        await teacher.save();
+        console.log('✅ Updated teacher createdBy to user ID:', teacherUser._id);
+      } catch (updateError) {
+        console.error('❌ Error updating teacher createdBy field:', updateError);
+        // Non-critical - teacher already exists
+      }
+    }
+
     // Generate JWT token
-    const token = jwt.sign(
-      { 
-        userId: teacherUser._id, 
-        email: teacherUser.email, 
-        userType: teacherUser.userType,
-        teacherId: teacher._id
-      },
-      process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
-      { expiresIn: '7d' }
-    );
+    const { generateToken } = require('../middleware/auth');
+    const token = generateToken(teacherUser._id, 'teacher', teacherUser.tokenVersion || 0);
 
     // Clean up temporary data
     remove(registrationToken);
 
-    res.status(200).json({
+    // Final verification before response
+    const finalVerify = await Teacher.findById(teacher._id);
+    if (!finalVerify) {
+      console.error("❌ CRITICAL: Teacher not found before sending success response!");
+      return res.status(500).json({
+        success: false,
+        message: 'Teacher registration verification failed',
+        error: 'Document not found in database'
+      });
+    }
+    console.log("✅ Final verification passed - Teacher exists:", finalVerify._id);
+
+    // RESPONSE SENT ONLY AFTER SUCCESSFUL SAVE AND VERIFICATION
+    // MIRRORS: Organization completeRegistration response structure
+    return res.status(200).json({
       success: true,
-      message: 'Freelance teacher registration completed successfully!',
+      message: 'Teacher registered successfully!',
       data: {
         teacher: {
           id: teacher._id,
-          fullName: teacher.fullName,
-          emailAddress: teacher.emailAddress,
+          fullName: `${teacher.firstName} ${teacher.lastName}`,
+          email: teacher.email,
           subjects: teacher.subjects,
-          role: teacher.role,
-          affiliationType: teacher.affiliationType,
+          role: teacher.teacherRole,
           status: teacher.status
         },
         user: {
           id: teacherUser._id,
-          name: teacherUser.profile?.firstName + ' ' + teacherUser.profile?.lastName,
+          name: `${firstName} ${lastName}`,
           email: teacherUser.email,
           userType: 'teacher',
-              emailVerified: teacherUser.isEmailVerified,
-              phoneVerified: teacherUser.phoneVerified
-            },
-            token,
-            nextSteps: [
-              'Complete your profile setup',
-              'Start creating assessments',
-              'Connect with students'
-            ]
-          }
-        });
+          emailVerified
+        },
+        token,
+        nextSteps: [
+          'Complete your profile setup',
+          'Start creating assessments',
+          'Connect with students'
+        ]
+      }
+    });
 
   } catch (error) {
-    console.error('Teacher registration step 4 error:', error);
-    res.status(500).json({
+    console.error('Teacher registration step 3 error:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Failed to complete teacher registration',
+      message: 'Teacher registration failed',
       error: error.message
     });
   }
@@ -461,8 +581,9 @@ const registerTeacher = async (req, res) => {
     const teacherData = req.body;
 
     // Check if teacher already exists
+    // NOTE: Teacher model uses 'email' field (not 'emailAddress')
     const existingTeacher = await Teacher.findOne({
-      emailAddress: teacherData.emailAddress.toLowerCase()
+      email: (teacherData.emailAddress || teacherData.email || '').toLowerCase()
     });
 
     if (existingTeacher) {
@@ -521,11 +642,11 @@ const registerTeacher = async (req, res) => {
       data: {
         teacher: {
           id: teacher._id,
-          fullName: teacher.fullName,
-          emailAddress: teacher.emailAddress,
+          fullName: `${teacher.firstName} ${teacher.lastName}`,
+          email: teacher.email, // Teacher model uses 'email' field
           subjects: teacher.subjects,
-          role: teacher.role,
-          organizationName: teacher.organizationName
+          role: teacher.teacherRole,
+          organizationName: teacher.organizationName || 'Freelance'
         }
       }
     });
@@ -559,13 +680,13 @@ const getTeacherById = async (req, res) => {
       data: {
         teacher: {
           id: teacher._id,
-          fullName: teacher.fullName,
-          emailAddress: teacher.emailAddress,
-          phoneNumber: teacher.phoneNumber,
+          fullName: `${teacher.firstName} ${teacher.lastName}`,
+          email: teacher.email, // Teacher model uses 'email' field
+          phone: teacher.phone, // Teacher model uses 'phone' field
           subjects: teacher.subjects,
-          role: teacher.role,
-          organizationName: teacher.organizationName,
-          yearsOfExperience: teacher.yearsOfExperience,
+          role: teacher.teacherRole, // Teacher model uses 'teacherRole' field
+          organization: teacher.organization,
+          experience: teacher.experience,
           status: teacher.status
         }
       }
@@ -622,7 +743,7 @@ const updateTeacher = async (req, res) => {
     const updateData = req.body;
 
     // Remove sensitive fields
-    delete updateData.emailAddress;
+    delete updateData.email; // Teacher model uses 'email' field
     delete updateData.password;
 
     const teacher = await Teacher.findByIdAndUpdate(
@@ -644,11 +765,11 @@ const updateTeacher = async (req, res) => {
       data: {
         teacher: {
           id: teacher._id,
-          fullName: teacher.fullName,
-          emailAddress: teacher.emailAddress,
+          fullName: `${teacher.firstName} ${teacher.lastName}`,
+          email: teacher.email, // Teacher model uses 'email' field
           subjects: teacher.subjects,
-          role: teacher.role,
-          organizationName: teacher.organizationName,
+          role: teacher.teacherRole, // Teacher model uses 'teacherRole' field
+          organization: teacher.organization,
           status: teacher.status
         }
       }
@@ -697,325 +818,21 @@ const deleteTeacher = async (req, res) => {
   }
 };
 
-// Send Email OTP for Teacher Registration
-const sendEmailOTPForTeacher = async (req, res) => {
-  try {
-    const { emailAddress, registrationToken } = req.body;
+// REMOVED: sendEmailOTPForTeacher - Email OTP verification removed from teacher flow
+// (similar to organization registration flow where email OTP was removed)
+// Teachers can register and login using email + password only, without email OTP verification.
 
-    if (!emailAddress) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email address is required'
-      });
-    }
+// REMOVED: sendPhoneOTPForTeacher - Mobile OTP verification removed from teacher flow
+// (similar to organization registration flow where phone OTP was removed)
+// Teachers can register and login using email + password only, without mobile OTP verification.
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(emailAddress)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please enter a valid email address'
-      });
-    }
+// REMOVED: verifyEmailOTPForTeacher - Email OTP verification removed from teacher flow
+// (similar to organization registration flow where email OTP was removed)
+// Teachers can register and login using email + password only, without email OTP verification.
 
-    // If registration token is provided, validate it exists
-    if (registrationToken) {
-      const registrationData = retrieve(registrationToken);
-      if (!registrationData) {
-        return res.status(400).json({
-          success: false,
-          message: 'Registration session not found or expired'
-        });
-      }
-      
-      // Use email from registration data
-      const emailToVerify = registrationData.emailAddress || emailAddress;
-      
-      // Check if this is an org-created user
-      const existingUser = await User.findOne({
-        email: emailToVerify.toLowerCase(),
-        userType: 'teacher',
-        authProvider: 'pending_registration',
-        isRegistrationComplete: false
-      });
-      
-      // If it's not an org-created user, check if email already exists
-      if (!existingUser) {
-        const existingTeacher = await Teacher.findOne({ 
-          emailAddress: emailToVerify.toLowerCase() 
-        });
-        
-        if (existingTeacher) {
-          return res.status(400).json({
-            success: false,
-            message: 'Email address already registered'
-          });
-        }
-      }
-
-      // Send OTP using centralized controller
-      const result = await sendEmailOTP(emailToVerify, 'teacher_registration');
-      
-      if (result.success) {
-        res.json({
-          success: true,
-          message: 'Email OTP sent successfully',
-          data: {
-            email: emailToVerify,
-            message: 'Please check your email for the OTP code'
-          }
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          message: result.message || 'Failed to send email OTP'
-        });
-      }
-    } else {
-      // Fallback for direct email verification without registration token
-      const existingTeacher = await Teacher.findOne({ 
-        emailAddress: emailAddress.toLowerCase() 
-      });
-      
-      if (existingTeacher) {
-        return res.status(400).json({
-          success: false,
-          message: 'Email address already registered'
-        });
-      }
-
-      // Send OTP using centralized controller
-      const result = await sendEmailOTP(emailAddress, 'teacher_registration');
-      
-      if (result.success) {
-        res.json({
-          success: true,
-          message: 'Email OTP sent successfully',
-          data: {
-            email: emailAddress,
-            message: 'Please check your email for the OTP code'
-          }
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          message: result.message || 'Failed to send email OTP'
-        });
-      }
-    }
-
-  } catch (error) {
-    console.error('Error in sendEmailOTPForTeacher:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send email OTP',
-      error: error.message
-    });
-  }
-};
-
-// Send Phone OTP for Teacher Registration
-const sendPhoneOTPForTeacher = async (req, res) => {
-  try {
-    const { phoneNumber, countryCode, registrationToken } = req.body;
-
-    if (!phoneNumber || !countryCode) {
-      return res.status(400).json({
-        success: false,
-        message: 'Phone number and country code are required'
-      });
-    }
-
-    // Validate phone number format
-    const phoneRegex = /^[0-9]{10}$/;
-    if (!phoneRegex.test(phoneNumber)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please enter a valid 10-digit phone number'
-      });
-    }
-
-    const fullPhoneNumber = `${countryCode}${phoneNumber}`;
-
-    // If registration token is provided, validate it exists
-    if (registrationToken) {
-      const registrationData = retrieve(registrationToken);
-      if (!registrationData) {
-        return res.status(400).json({
-          success: false,
-          message: 'Registration session not found or expired'
-        });
-      }
-      
-      // Use phone from registration data if available
-      const phoneToVerify = `${registrationData.countryCode || countryCode}${registrationData.phoneNumber || phoneNumber}`;
-      
-      // Check if this is an org-created user
-      const existingUser = await User.findOne({
-        email: registrationData.emailAddress?.toLowerCase(),
-        userType: 'teacher',
-        authProvider: 'pending_registration',
-        isRegistrationComplete: false
-      });
-      
-      // If it's not an org-created user, check if phone already exists
-      if (!existingUser) {
-        const existingTeacher = await Teacher.findOne({ 
-          phoneNumber: phoneToVerify 
-        });
-        
-        if (existingTeacher) {
-          return res.status(400).json({
-            success: false,
-            message: 'Phone number already registered'
-          });
-        }
-      }
-
-      // Send OTP using centralized controller
-      const result = await sendPhoneOTP(phoneToVerify, 'teacher_registration');
-      
-      if (result.success) {
-        res.json({
-          success: true,
-          message: 'Phone OTP sent successfully',
-          data: {
-            phone: phoneToVerify,
-            message: 'Please check your phone for the OTP code'
-          }
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          message: result.message || 'Failed to send phone OTP'
-        });
-      }
-    } else {
-      // Fallback for direct phone verification without registration token
-      const existingTeacher = await Teacher.findOne({ 
-        phoneNumber: fullPhoneNumber 
-      });
-      
-      if (existingTeacher) {
-        return res.status(400).json({
-          success: false,
-          message: 'Phone number already registered'
-        });
-      }
-
-      // Send OTP using centralized controller
-      const result = await sendPhoneOTP(fullPhoneNumber, 'teacher_registration');
-      
-      if (result.success) {
-        res.json({
-          success: true,
-          message: 'Phone OTP sent successfully',
-          data: {
-            phone: fullPhoneNumber,
-            message: 'Please check your phone for the OTP code'
-          }
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          message: result.message || 'Failed to send phone OTP'
-        });
-      }
-    }
-
-  } catch (error) {
-    console.error('Error in sendPhoneOTPForTeacher:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send phone OTP',
-      error: error.message
-    });
-  }
-};
-
-// Verify Email OTP for Teacher Registration
-const verifyEmailOTPForTeacher = async (req, res) => {
-  try {
-    const { emailOTP, emailAddress } = req.body;
-
-    if (!emailOTP || !emailAddress) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email OTP and email address are required'
-      });
-    }
-
-    // Verify OTP using centralized controller
-    const result = await verifyEmailOTP(emailAddress, emailOTP, 'teacher_registration');
-    
-    if (result.success) {
-      res.json({
-        success: true,
-        message: 'Email OTP verified successfully',
-        data: {
-          email: emailAddress,
-          verified: true
-        }
-      });
-    } else {
-      res.status(400).json({
-        success: false,
-        message: result.message || 'Invalid or expired OTP'
-      });
-    }
-
-  } catch (error) {
-    console.error('Error in verifyEmailOTPForTeacher:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to verify email OTP',
-      error: error.message
-    });
-  }
-};
-
-// Verify Phone OTP for Teacher Registration
-const verifyPhoneOTPForTeacher = async (req, res) => {
-  try {
-    const { phoneOTP, phoneNumber, countryCode } = req.body;
-
-    if (!phoneOTP || !phoneNumber || !countryCode) {
-      return res.status(400).json({
-        success: false,
-        message: 'Phone OTP, phone number and country code are required'
-      });
-    }
-
-    const fullPhoneNumber = `${countryCode}${phoneNumber}`;
-
-    // Verify OTP using centralized controller
-    const result = await verifyPhoneOTP(fullPhoneNumber, phoneOTP, 'teacher_registration');
-    
-    if (result.success) {
-      res.json({
-        success: true,
-        message: 'Phone OTP verified successfully',
-        data: {
-          phone: fullPhoneNumber,
-          verified: true
-        }
-      });
-    } else {
-      res.status(400).json({
-        success: false,
-        message: result.message || 'Invalid or expired OTP'
-      });
-    }
-
-  } catch (error) {
-    console.error('Error in verifyPhoneOTPForTeacher:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to verify phone OTP',
-      error: error.message
-    });
-  }
-};
+// REMOVED: verifyPhoneOTPForTeacher - Mobile OTP verification removed from teacher flow
+// (similar to organization registration flow where phone OTP was removed)
+// Teachers can register and login using email + password only, without mobile OTP verification.
 
 // Assign teacher to department
 const assignToDepartment = async (req, res) => {
@@ -1126,8 +943,7 @@ module.exports = {
   // Multi-step registration functions
   registerStep1,
   registerStep2,
-  registerStep3,
-  registerStep4,
+  registerStep3, // FINAL COMMIT - Saves teacher to database
   // Legacy single-step registration
   registerTeacher,
   // CRUD operations
@@ -1135,11 +951,11 @@ module.exports = {
   getAllTeachers,
   updateTeacher,
   deleteTeacher,
-  // OTP functions
-  sendEmailOTPForTeacher,
-  sendPhoneOTPForTeacher,
-  verifyEmailOTPForTeacher,
-  verifyPhoneOTPForTeacher,
+  // REMOVED: Email and Mobile OTP functions removed from teacher flow (similar to organization registration)
+  // sendEmailOTPForTeacher,
+  // verifyEmailOTPForTeacher,
+  // sendPhoneOTPForTeacher,
+  // verifyPhoneOTPForTeacher,
   // Department assignment
   assignToDepartment,
   removeFromDepartment

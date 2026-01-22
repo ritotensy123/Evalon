@@ -48,17 +48,24 @@ const questionSchema = new mongoose.Schema({
   // Question content
   questionText: {
     type: String,
-    required: true
+    required: true,
+    trim: true
   },
   
   // Options for multiple choice questions
   options: [{
-    text: String,
+    text: {
+      type: String,
+      trim: true
+    },
     isCorrect: {
       type: Boolean,
       default: false
     },
-    explanation: String
+    explanation: {
+      type: String,
+      trim: true
+    }
   }],
   
   // Correct answer (for non-multiple choice questions)
@@ -81,7 +88,8 @@ const questionSchema = new mongoose.Schema({
   },
   timeLimit: {
     type: Number, // in seconds
-    default: 60
+    default: 60,
+    min: 0
   },
   difficulty: {
     type: String,
@@ -116,15 +124,18 @@ const questionSchema = new mongoose.Schema({
   // Usage statistics
   usageCount: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   successRate: {
     type: Number,
-    default: 0
+    default: 0,
+    min: 0
   },
   averageTimeSpent: {
     type: Number,
-    default: 0 // in seconds
+    default: 0, // in seconds
+    min: 0
   },
   
   // Question validation
@@ -156,10 +167,22 @@ const questionSchema = new mongoose.Schema({
       type: String,
       enum: ['image', 'video', 'audio', 'document']
     },
-    url: String,
-    filename: String,
-    size: Number,
-    mimeType: String
+    url: {
+      type: String,
+      trim: true
+    },
+    filename: {
+      type: String,
+      trim: true
+    },
+    size: {
+      type: Number,
+      min: 0
+    },
+    mimeType: {
+      type: String,
+      trim: true
+    }
   }],
   
   // Question settings
@@ -180,15 +203,18 @@ const questionSchema = new mongoose.Schema({
   analytics: {
     totalAttempts: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
     correctAttempts: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
     averageScore: {
       type: Number,
-      default: 0
+      default: 0,
+      min: 0
     },
     difficultyRating: {
       type: Number,
@@ -216,6 +242,12 @@ const questionSchema = new mongoose.Schema({
 // Indexes for better performance
 questionSchema.index({ organizationId: 1 });
 questionSchema.index({ createdBy: 1 });
+questionSchema.index({ subjectId: 1 });
+questionSchema.index({ status: 1 });
+questionSchema.index({ organizationId: 1, status: 1 }); // Composite for filtering by org and status
+questionSchema.index({ organizationId: 1, subjectId: 1 }); // Composite for org + subject queries
+questionSchema.index({ createdAt: -1 }); // For sorting by newest
+questionSchema.index({ usageCount: -1 }); // For popular questions
 questionSchema.index({ subject: 1 });
 questionSchema.index({ category: 1 });
 questionSchema.index({ questionType: 1 });
@@ -348,7 +380,7 @@ questionSchema.statics.searchQuestions = function(organizationId, searchParams) 
 // Static method to get question statistics
 questionSchema.statics.getQuestionStatistics = function(organizationId) {
   return this.aggregate([
-    { $match: { organizationId: mongoose.Types.ObjectId(organizationId) } },
+    { $match: { organizationId: new mongoose.Types.ObjectId(organizationId) } },
     {
       $group: {
         _id: null,

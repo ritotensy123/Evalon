@@ -2,6 +2,9 @@ const User = require('../models/User');
 const Teacher = require('../models/Teacher');
 const Organization = require('../models/Organization');
 const crypto = require('crypto');
+const { sendSuccess, sendError } = require('../utils/apiResponse');
+const { HTTP_STATUS } = require('../constants');
+const { logger } = require('../utils/logger');
 
 // Generate CSV template for teacher bulk upload
 const generateTeacherTemplate = async (req, res) => {
@@ -59,11 +62,8 @@ const generateTeacherTemplate = async (req, res) => {
     res.send(csvContent);
 
   } catch (error) {
-    console.error('Template generation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to generate template'
-    });
+    logger.error('Template generation error', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Failed to generate template', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
@@ -78,18 +78,12 @@ const bulkCreateTeachers = async (req, res) => {
     // Get organization info from the requesting user
     const requestingUser = await User.findById(req.user.id);
     if (!requestingUser) {
-      return res.status(404).json({
-        success: false,
-        message: 'Requesting user not found'
-      });
+      return sendError(res, new Error('Requesting user not found'), 'Requesting user not found', HTTP_STATUS.NOT_FOUND);
     }
 
     const organization = await Organization.findById(requestingUser.organizationId);
     if (!organization) {
-      return res.status(404).json({
-        success: false,
-        message: 'Organization not found'
-      });
+      return sendError(res, new Error('Organization not found'), 'Organization not found', HTTP_STATUS.NOT_FOUND);
     }
 
     // Process each teacher
@@ -158,7 +152,7 @@ const bulkCreateTeachers = async (req, res) => {
         successCount++;
 
       } catch (error) {
-        console.error(`Error creating teacher ${teacherData.email}:`, error);
+        logger.error(`Error creating teacher`, { email: teacherData.email, error: error.message });
         
         results.push({
           email: teacherData.email,
@@ -173,21 +167,15 @@ const bulkCreateTeachers = async (req, res) => {
       }
     }
 
-    res.json({
-      success: true,
-      message: `Bulk teacher creation completed. ${successCount} successful, ${failureCount} failed.`,
+    sendSuccess(res, {
       successCount,
       failureCount,
       results
-    });
+    }, `Bulk teacher creation completed. ${successCount} successful, ${failureCount} failed.`, HTTP_STATUS.OK);
 
   } catch (error) {
-    console.error('Bulk teacher creation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create teachers',
-      error: error.message
-    });
+    logger.error('Bulk teacher creation error', { error: error.message, stack: error.stack });
+    sendError(res, error, 'Failed to create teachers', HTTP_STATUS.INTERNAL_SERVER_ERROR);
   }
 };
 
