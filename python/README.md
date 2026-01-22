@@ -127,3 +127,4 @@ curl -X POST http://localhost:5002/api/detect-faces \
 - [ ] Suspicious activity classification (using trained CNN model)
 - [ ] Real-time video streaming support
 - [ ] Performance optimization for multiple concurrent requests
+
