@@ -1,6 +1,7 @@
-const Question = require('../models/Question');
-const QuestionBank = require('../models/QuestionBank');
-const Exam = require('../models/Exam');
+const QuestionRepository = require('../repositories/QuestionRepository');
+const QuestionBankRepository = require('../repositories/QuestionBankRepository');
+const ExamRepository = require('../repositories/ExamRepository');
+const { logger } = require('../utils/logger');
 
 class QuestionBankService {
   /**
@@ -20,28 +21,31 @@ class QuestionBankService {
         shuffleOptions = true
       } = options;
 
-      console.log(`🔄 Syncing questions from bank ${questionBankId} to exam ${examId}`);
+      logger.info('[QUESTION_BANK_SERVICE] Syncing questions from bank to exam', { questionBankId, examId, totalQuestions });
 
       // Get question bank
-      const questionBank = await QuestionBank.findById(questionBankId)
-        .populate('questions')
-        .lean();
-
+      const questionBank = await QuestionBankRepository.findById(questionBankId, {
+        populate: 'questions'
+      });
+      
       if (!questionBank) {
         throw new Error('Question bank not found');
       }
+      
+      // Convert to plain object for manipulation
+      const questionBankObj = questionBank.toObject ? questionBank.toObject() : questionBank;
 
       // Filter questions based on criteria
-      let availableQuestions = questionBank.questions.filter(q => 
+      let availableQuestions = (questionBankObj.questions || []).filter(q => 
         questionTypes.includes(q.questionType) &&
         difficulties.includes(q.difficulty) &&
         q.status === 'active'
       );
 
-      console.log(`📚 Found ${availableQuestions.length} available questions in bank`);
+      logger.info('[QUESTION_BANK_SERVICE] Found available questions in bank', { count: availableQuestions.length, questionBankId });
 
       if (availableQuestions.length < totalQuestions) {
-        console.warn(`⚠️ Not enough questions in bank. Available: ${availableQuestions.length}, Required: ${totalQuestions}`);
+        logger.warn('[QUESTION_BANK_SERVICE] Not enough questions in bank', { available: availableQuestions.length, required: totalQuestions, questionBankId });
       }
 
       // Shuffle questions if requested
@@ -62,19 +66,21 @@ class QuestionBankService {
       }
 
       // Update exam with selected questions
-      const exam = await Exam.findById(examId);
+      const exam = await ExamRepository.findById(examId);
       if (!exam) {
         throw new Error('Exam not found');
       }
 
       // Update exam questions
-      exam.questions = selectedQuestions.map(q => q._id);
-      exam.totalQuestions = selectedQuestions.length;
-      exam.totalMarks = selectedQuestions.reduce((sum, q) => sum + (q.marks || 1), 0);
-      exam.questionBankId = questionBankId;
-      exam.questionSelection = 'random';
+      const updateData = {
+        questions: selectedQuestions.map(q => q._id || q),
+        totalQuestions: selectedQuestions.length,
+        totalMarks: selectedQuestions.reduce((sum, q) => sum + (q.marks || 1), 0),
+        questionBankId: questionBankId,
+        questionSelection: 'random'
+      };
 
-      await exam.save();
+      await ExamRepository.updateById(examId, updateData);
 
       console.log(`✅ Synced ${selectedQuestions.length} questions to exam ${examId}`);
 
@@ -109,28 +115,31 @@ class QuestionBankService {
     try {
       console.log(`🎲 Generating shuffled questions for student ${studentId} in exam ${examId}`);
 
-      const exam = await Exam.findById(examId)
-        .populate('questions')
-        .lean();
-
+      const exam = await ExamRepository.findById(examId, {
+        populate: 'questions'
+      });
+      
       if (!exam) {
         throw new Error('Exam not found');
       }
+      
+      // Convert to plain object for manipulation
+      const examObj = exam.toObject ? exam.toObject() : exam;
 
-      if (!exam.questions || exam.questions.length === 0) {
+      if (!examObj.questions || examObj.questions.length === 0) {
         throw new Error('No questions found in exam');
       }
 
       // Create a deep copy of questions to avoid modifying original
-      let studentQuestions = JSON.parse(JSON.stringify(exam.questions));
+      let studentQuestions = JSON.parse(JSON.stringify(examObj.questions));
 
       // Shuffle questions using student ID as seed for consistency
       studentQuestions = this.shuffleArrayWithSeed(studentQuestions, studentId);
 
       // Respect exam's totalQuestions setting
-      if (exam.totalQuestions && studentQuestions.length > exam.totalQuestions) {
-        console.log(`📝 Limiting questions to exam's totalQuestions: ${exam.totalQuestions} (available: ${studentQuestions.length})`);
-        studentQuestions = studentQuestions.slice(0, exam.totalQuestions);
+      if (examObj.totalQuestions && studentQuestions.length > examObj.totalQuestions) {
+        console.log(`📝 Limiting questions to exam's totalQuestions: ${examObj.totalQuestions} (available: ${studentQuestions.length})`);
+        studentQuestions = studentQuestions.slice(0, examObj.totalQuestions);
       }
 
       // Shuffle options for each multiple choice question
@@ -167,7 +176,7 @@ class QuestionBankService {
       console.log(`🔄 Updating question bank ${questionBankId} and syncing to active exams`);
 
       // Find all active exams using this question bank
-      const activeExams = await Exam.find({
+      const activeExams = await ExamRepository.findAll({
         questionBankId: questionBankId,
         status: { $in: ['scheduled', 'active'] }
       });
@@ -222,15 +231,18 @@ class QuestionBankService {
    */
   async getQuestionBankStats(questionBankId) {
     try {
-      const questionBank = await QuestionBank.findById(questionBankId)
-        .populate('questions')
-        .lean();
-
+      const questionBank = await QuestionBankRepository.findById(questionBankId, {
+        populate: 'questions'
+      });
+      
       if (!questionBank) {
         throw new Error('Question bank not found');
       }
+      
+      // Convert to plain object for manipulation
+      const questionBankObj = questionBank.toObject ? questionBank.toObject() : questionBank;
 
-      const questions = questionBank.questions;
+      const questions = questionBankObj.questions || [];
       
       const stats = {
         totalQuestions: questions.length,
@@ -343,9 +355,9 @@ class QuestionBankService {
         maxMarks = 100
       } = requirements;
 
-      const questionBank = await QuestionBank.findById(questionBankId)
-        .populate('questions')
-        .lean();
+      const questionBank = await QuestionBankRepository.findById(questionBankId, {
+        populate: 'questions'
+      });
 
       if (!questionBank) {
         return {
@@ -353,8 +365,11 @@ class QuestionBankService {
           error: 'Question bank not found'
         };
       }
+      
+      // Convert to plain object for manipulation
+      const questionBankObj = questionBank.toObject ? questionBank.toObject() : questionBank;
 
-      const questions = questionBank.questions.filter(q => 
+      const questions = (questionBankObj.questions || []).filter(q => 
         questionTypes.includes(q.questionType) &&
         difficulties.includes(q.difficulty) &&
         q.status === 'active' &&
@@ -398,6 +413,439 @@ class QuestionBankService {
 
     } catch (error) {
       console.error('❌ Error validating question bank:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new question bank
+   * @param {Object} questionBankData - Question bank data
+   * @param {string} userId - Creator user ID
+   * @param {string} organizationId - Organization ID
+   * @returns {Promise<Object>} Created question bank
+   */
+  async createQuestionBank(questionBankData, userId, organizationId) {
+    try {
+      if (!questionBankData.name || !questionBankData.subject || !questionBankData.class) {
+        throw new Error('Question bank name, subject, and class are required');
+      }
+
+      if (!userId) {
+        throw new Error('User ID is required');
+      }
+
+      if (!organizationId) {
+        throw new Error('Organization ID is required');
+      }
+
+      const data = {
+        ...questionBankData,
+        organizationId,
+        createdBy: userId,
+        status: questionBankData.status || 'draft',
+        questions: [],
+        totalQuestions: 0,
+        questionsByType: {},
+        questionsByDifficulty: {},
+        totalMarks: 0
+      };
+
+      return await QuestionBankRepository.create(data);
+    } catch (error) {
+      console.error('❌ Error creating question bank:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get question bank by ID
+   * @param {string} questionBankId - Question bank ID
+   * @param {string} organizationId - Organization ID (for authorization)
+   * @returns {Promise<Object>} Question bank
+   */
+  async getQuestionBankById(questionBankId, organizationId = null) {
+    try {
+      const questionBank = await QuestionBankRepository.findById(questionBankId, {
+        populate: [
+          { path: 'createdBy', select: 'profile.firstName profile.lastName email' },
+          {
+            path: 'questions',
+            populate: {
+              path: 'createdBy',
+              select: 'profile.firstName profile.lastName email'
+            }
+          }
+        ]
+      });
+
+      if (!questionBank) {
+        throw new Error('Question bank not found');
+      }
+
+      if (organizationId && questionBank.organizationId?.toString() !== organizationId.toString()) {
+        throw new Error('Access denied: Question bank does not belong to this organization');
+      }
+
+      return questionBank;
+    } catch (error) {
+      console.error('❌ Error getting question bank:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * List question banks by organization
+   * @param {string} organizationId - Organization ID
+   * @param {Object} filters - Filter options
+   * @param {Object} pagination - Pagination options
+   * @returns {Promise<Object>} { questionBanks, total, pagination }
+   */
+  async listQuestionBanks(organizationId, filters = {}, pagination = { page: 1, limit: 10 }) {
+    try {
+      const filter = { organizationId };
+
+      if (filters.subject) filter.subject = filters.subject;
+      if (filters.class) filter.class = filters.class;
+      if (filters.status) filter.status = filters.status;
+      if (filters.search) {
+        filter.$or = [
+          { name: { $regex: filters.search, $options: 'i' } },
+          { description: { $regex: filters.search, $options: 'i' } }
+        ];
+      }
+
+      const page = parseInt(pagination.page) || 1;
+      const limit = parseInt(pagination.limit) || 10;
+      const skip = (page - 1) * limit;
+
+      const questionBanks = await QuestionBankRepository.findAll(filter, {
+        populate: { path: 'createdBy', select: 'profile.firstName profile.lastName email' },
+        sort: { createdAt: -1 },
+        limit,
+        skip
+      });
+
+      const total = await QuestionBankRepository.count(filter);
+
+      return {
+        questionBanks,
+        total,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(total / limit),
+          totalQuestionBanks: total,
+          hasNext: page < Math.ceil(total / limit),
+          hasPrev: page > 1
+        }
+      };
+    } catch (error) {
+      console.error('❌ Error listing question banks:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update question bank
+   * @param {string} questionBankId - Question bank ID
+   * @param {Object} updateData - Update data
+   * @param {string} organizationId - Organization ID (for authorization)
+   * @returns {Promise<Object>} Updated question bank
+   */
+  async updateQuestionBank(questionBankId, updateData, organizationId = null) {
+    try {
+      const questionBank = await QuestionBankRepository.findById(questionBankId);
+
+      if (!questionBank) {
+        throw new Error('Question bank not found');
+      }
+
+      if (organizationId && questionBank.organizationId?.toString() !== organizationId.toString()) {
+        throw new Error('Access denied: Question bank does not belong to this organization');
+      }
+
+      // Prevent organizationId changes
+      if (updateData.organizationId) {
+        delete updateData.organizationId;
+      }
+
+      return await QuestionBankRepository.updateById(questionBankId, updateData);
+    } catch (error) {
+      console.error('❌ Error updating question bank:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete question bank
+   * @param {string} questionBankId - Question bank ID
+   * @param {string} organizationId - Organization ID (for authorization)
+   * @returns {Promise<Object>} Deletion result
+   */
+  async deleteQuestionBank(questionBankId, organizationId = null) {
+    try {
+      const questionBank = await QuestionBankRepository.findById(questionBankId);
+
+      if (!questionBank) {
+        throw new Error('Question bank not found');
+      }
+
+      if (organizationId && questionBank.organizationId?.toString() !== organizationId.toString()) {
+        throw new Error('Access denied: Question bank does not belong to this organization');
+      }
+
+      // Check if question bank is used in any exams
+      const examsUsingBank = await ExamRepository.findAll({ questionBankId });
+      if (examsUsingBank.length > 0) {
+        throw new Error('Cannot delete question bank as it is being used in exams');
+      }
+
+      // Delete all questions in this bank
+      await QuestionRepository.deleteMany({ questionBankId });
+
+      await QuestionBankRepository.deleteById(questionBankId);
+
+      return {
+        success: true,
+        message: 'Question bank deleted successfully'
+      };
+    } catch (error) {
+      console.error('❌ Error deleting question bank:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Add questions to question bank
+   * @param {string} questionBankId - Question bank ID
+   * @param {Array} questionsData - Array of question data
+   * @param {string} userId - Creator user ID
+   * @param {string} organizationId - Organization ID (for authorization)
+   * @returns {Promise<Object>} Created questions
+   */
+  async addQuestionsToBank(questionBankId, questionsData, userId, organizationId = null) {
+    try {
+      const questionBank = await QuestionBankRepository.findById(questionBankId);
+
+      if (!questionBank) {
+        throw new Error('Question bank not found');
+      }
+
+      if (organizationId && questionBank.organizationId?.toString() !== organizationId.toString()) {
+        throw new Error('Access denied: Question bank does not belong to this organization');
+      }
+
+      const createdQuestions = [];
+      const questionIds = [];
+
+      for (const questionData of questionsData) {
+        const question = await QuestionRepository.create({
+          ...questionData,
+          questionBankId,
+          organizationId: questionBank.organizationId,
+          createdBy: userId
+        });
+        createdQuestions.push(question);
+        questionIds.push(question._id);
+      }
+
+      // Update question bank with new questions
+      await QuestionBankRepository.updateById(questionBankId, {
+        $push: { questions: { $each: questionIds } }
+      });
+
+      // Update statistics
+      await this.updateQuestionBankStatistics(questionBankId);
+
+      return { questions: createdQuestions };
+    } catch (error) {
+      console.error('❌ Error adding questions to bank:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get questions in a question bank
+   * @param {string} questionBankId - Question bank ID
+   * @param {string} organizationId - Organization ID (for authorization)
+   * @returns {Promise<Array>} Questions
+   */
+  async getQuestionsInBank(questionBankId, organizationId = null) {
+    try {
+      const questionBank = await QuestionBankRepository.findById(questionBankId);
+
+      if (!questionBank) {
+        throw new Error('Question bank not found');
+      }
+
+      if (organizationId && questionBank.organizationId?.toString() !== organizationId.toString()) {
+        throw new Error('Access denied: Question bank does not belong to this organization');
+      }
+
+      return await QuestionRepository.findAll(
+        { questionBankId },
+        {
+          populate: { path: 'createdBy', select: 'profile.firstName profile.lastName email' },
+          sort: { createdAt: 1 }
+        }
+      );
+    } catch (error) {
+      console.error('❌ Error getting questions in bank:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove question from question bank
+   * @param {string} questionBankId - Question bank ID
+   * @param {string} questionId - Question ID
+   * @param {string} organizationId - Organization ID (for authorization)
+   * @returns {Promise<Object>} Deletion result
+   */
+  async removeQuestionFromBank(questionBankId, questionId, organizationId = null) {
+    try {
+      const questionBank = await QuestionBankRepository.findById(questionBankId);
+
+      if (!questionBank) {
+        throw new Error('Question bank not found');
+      }
+
+      if (organizationId && questionBank.organizationId?.toString() !== organizationId.toString()) {
+        throw new Error('Access denied: Question bank does not belong to this organization');
+      }
+
+      const question = await QuestionRepository.findOne({
+        _id: questionId,
+        questionBankId
+      });
+
+      if (!question) {
+        throw new Error('Question not found in this question bank');
+      }
+
+      await QuestionRepository.deleteById(questionId);
+
+      await QuestionBankRepository.updateById(questionBankId, {
+        $pull: { questions: questionId }
+      });
+
+      await this.updateQuestionBankStatistics(questionBankId);
+
+      return {
+        success: true,
+        message: 'Question removed from question bank successfully'
+      };
+    } catch (error) {
+      console.error('❌ Error removing question from bank:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update question bank statistics
+   * @param {string} questionBankId - Question bank ID
+   * @returns {Promise<Object>} Updated statistics
+   */
+  async updateQuestionBankStatistics(questionBankId) {
+    try {
+      const questions = await QuestionRepository.findAll({ questionBankId });
+
+      const stats = {
+        totalQuestions: questions.length,
+        questionsByType: {},
+        questionsByDifficulty: {},
+        totalMarks: 0
+      };
+
+      // Initialize counters
+      ['multiple_choice', 'subjective', 'true_false', 'numeric'].forEach(type => {
+        stats.questionsByType[type] = 0;
+      });
+      ['easy', 'medium', 'hard'].forEach(difficulty => {
+        stats.questionsByDifficulty[difficulty] = 0;
+      });
+
+      // Calculate statistics
+      questions.forEach(question => {
+        stats.questionsByType[question.questionType] =
+          (stats.questionsByType[question.questionType] || 0) + 1;
+        stats.questionsByDifficulty[question.difficulty] =
+          (stats.questionsByDifficulty[question.difficulty] || 0) + 1;
+        stats.totalMarks += question.marks || 0;
+      });
+
+      await QuestionBankRepository.updateById(questionBankId, stats);
+
+      return stats;
+    } catch (error) {
+      console.error('❌ Error updating question bank statistics:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Duplicate question bank
+   * @param {string} questionBankId - Question bank ID
+   * @param {string} userId - Creator user ID
+   * @param {string} organizationId - Organization ID (for authorization)
+   * @returns {Promise<Object>} Duplicated question bank
+   */
+  async duplicateQuestionBank(questionBankId, userId, organizationId = null) {
+    try {
+      const originalBank = await QuestionBankRepository.findById(questionBankId, {
+        populate: 'questions'
+      });
+
+      if (!originalBank) {
+        throw new Error('Question bank not found');
+      }
+
+      if (organizationId && originalBank.organizationId?.toString() !== organizationId.toString()) {
+        throw new Error('Access denied: Question bank does not belong to this organization');
+      }
+
+      const originalBankObj = originalBank.toObject ? originalBank.toObject() : originalBank;
+
+      // Create duplicate question bank
+      const duplicateBank = await QuestionBankRepository.create({
+        ...originalBankObj,
+        _id: undefined,
+        name: `${originalBankObj.name} (Copy)`,
+        questions: [],
+        totalQuestions: 0,
+        questionsByType: {},
+        questionsByDifficulty: {},
+        totalMarks: 0,
+        usageCount: 0,
+        lastUsed: null,
+        createdBy: userId
+      });
+
+      // Duplicate questions
+      const originalQuestions = await QuestionRepository.findAll({ questionBankId });
+      const questionIds = [];
+
+      for (const question of originalQuestions) {
+        const questionObj = question.toObject ? question.toObject() : question;
+        const duplicateQuestion = await QuestionRepository.create({
+          ...questionObj,
+          _id: undefined,
+          questionBankId: duplicateBank._id,
+          createdBy: userId
+        });
+        questionIds.push(duplicateQuestion._id);
+      }
+
+      // Update duplicate bank with questions
+      await QuestionBankRepository.updateById(duplicateBank._id, {
+        questions: questionIds
+      });
+
+      // Update statistics
+      await this.updateQuestionBankStatistics(duplicateBank._id);
+
+      return duplicateBank;
+    } catch (error) {
+      console.error('❌ Error duplicating question bank:', error);
       throw error;
     }
   }

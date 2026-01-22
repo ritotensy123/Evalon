@@ -1,9 +1,13 @@
 const nodemailer = require('nodemailer');
 require('dotenv').config();
+const { config } = require('../config/server');
+const { logger } = require('../utils/logger');
 
 // Email transporter configuration
 const emailTransporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.EMAIL_PORT) || 587,
+  secure: false, // true for 465, false for other ports
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
@@ -13,9 +17,9 @@ const emailTransporter = nodemailer.createTransport({
 // Verify email transporter connection
 emailTransporter.verify((error, success) => {
   if (error) {
-    console.error('❌ Email transporter verification failed:', error);
+    logger.error('[EMAIL_SERVICE] Email transporter verification failed', { error: error.message });
   } else {
-    console.log('📧 Email transporter ready to send emails');
+    logger.info('[EMAIL_SERVICE] Email transporter ready to send emails');
   }
 });
 
@@ -125,7 +129,7 @@ const sendTemporaryCredentialsEmail = async (email, fullName, tempPassword, user
             </div>
             
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/login" 
+              <a href="${config.FRONTEND_URL}/login" 
                  style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                         color: white; 
                         padding: 15px 30px; 
@@ -234,8 +238,80 @@ const sendEmailVerification = async (email, fullName, otpCode) => {
   }
 };
 
+// Send invitation email
+const sendInvitationEmail = async (email, invitationLink, role, organizationName) => {
+  try {
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Your Evalon Account Invitation',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="margin: 0; font-size: 28px;">Welcome to Evalon!</h1>
+            <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">You've been invited to join ${organizationName || 'our platform'}</p>
+          </div>
+          
+          <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+            <h2 style="color: #333; margin-top: 0;">Your Evalon Account Invitation</h2>
+            <p style="color: #666; line-height: 1.6;">
+              You have been invited to join <strong>${organizationName || 'Evalon'}</strong> as a <strong>${role}</strong>. 
+              Click the link below to set your password and activate your account.
+            </p>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${invitationLink}" 
+                 style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                        color: white; 
+                        padding: 15px 30px; 
+                        text-decoration: none; 
+                        border-radius: 25px; 
+                        font-weight: bold; 
+                        display: inline-block;
+                        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+                Accept Invitation
+              </a>
+            </div>
+            
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p style="margin: 0; color: #856404; font-size: 14px;">
+                <strong>Important:</strong> This invitation link will expire in 7 days. 
+                If you don't accept the invitation within this time, please contact your administrator.
+              </p>
+            </div>
+            
+            <div style="background: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <h4 style="color: #0c5460; margin-top: 0;">What's Next?</h4>
+              <ul style="color: #0c5460; margin: 0; padding-left: 20px;">
+                <li>Click the "Accept Invitation" button above</li>
+                <li>Set a secure password for your account</li>
+                <li>Complete your profile information</li>
+                <li>Start using Evalon's features</li>
+              </ul>
+            </div>
+            
+            <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+            
+            <p style="color: #666; font-size: 14px; text-align: center; margin: 0;">
+              If you didn't expect this email, please ignore it. This invitation is unique to you and should not be shared.
+            </p>
+          </div>
+        </div>
+      `
+    };
+
+    const result = await emailTransporter.sendMail(mailOptions);
+    console.log('📧 Invitation email sent successfully:', result.messageId);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('❌ Failed to send invitation email:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   sendRegistrationEmail,
   sendTemporaryCredentialsEmail,
-  sendEmailVerification
+  sendEmailVerification,
+  sendInvitationEmail
 };
