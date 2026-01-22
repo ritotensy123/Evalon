@@ -1,0 +1,31 @@
+{
+  "name": "evalon-audit-ledger-prototype",
+  "version": "0.1.0",
+  "description": "PROTOTYPE: Blockchain-style audit ledger for AI proctoring platform (NOT FOR PRODUCTION)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "demo": "node src/demo.js"
+  },
+  "keywords": [
+    "audit",
+    "ledger",
+    "blockchain",
+    "prototype",
+    "proctoring"
+  ],
+  "author": "Evalon Team",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "uuid": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "private": true,
+  "prototype": true,
+  "_WARNING": "This is a PROTOTYPE service. NOT connected to production systems."
+}
