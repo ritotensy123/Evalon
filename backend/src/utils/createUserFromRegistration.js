@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Organization = require('../models/Organization');
 const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
+const { logger } = require('./logger');
 
 /**
  * Create a User record from existing registration data
@@ -11,7 +12,7 @@ const createUserFromRegistration = async (userData) => {
   try {
     const { email, password, userType, userId, userModel, profile } = userData;
     
-    console.log('🔧 Creating user from registration:', {
+    logger.info('[CREATE_USER] Creating user from registration', {
       email: email.toLowerCase(),
       userType,
       hasPassword: !!password,
@@ -35,15 +36,11 @@ const createUserFromRegistration = async (userData) => {
       profile
     });
     
-    console.log(`✅ User created successfully: ${user.email} (${user.userType})`, {
-      userId: user._id,
-      authProvider: user.authProvider,
-      hasPassword: !!user.password
-    });
+    logger.info('[CREATE_USER] User created successfully', { userId: user._id, userType: user.userType });
     return user;
     
   } catch (error) {
-    console.error('❌ Error creating user from registration:', error);
+    logger.error('[CREATE_USER] Error creating user from registration', { error: error.message, stack: error.stack });
     throw error;
   }
 };
@@ -58,7 +55,7 @@ const createOrganizationAdminUser = async (organizationId, adminData) => {
       throw new Error('Organization not found');
     }
     
-    console.log('🔧 Creating organization admin user:', {
+    logger.info('[CREATE_USER] Creating organization admin user', {
       organizationId,
       email: adminData.emailAddress,
       hasPassword: !!adminData.password,
@@ -77,12 +74,15 @@ const createOrganizationAdminUser = async (organizationId, adminData) => {
         fullName: `${adminData.firstName} ${adminData.lastName}`,
         phoneNumber: adminData.phoneNumber,
         countryCode: adminData.countryCode
-      }
+      },
+      // IMPORTANT: Organization admins do NOT require first-time login setup
+      // They bypass password/profile setup wizards
+      firstLogin: false
     };
     
     const user = await createUserFromRegistration(userData);
     
-    console.log('✅ Organization admin user created successfully:', {
+    logger.info('[CREATE_USER] Organization admin user created successfully', {
       userId: user._id,
       email: user.email,
       userType: user.userType,

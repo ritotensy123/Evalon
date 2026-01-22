@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { logger } = require('./logger');
 const User = require('../models/User');
 const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
@@ -28,31 +29,50 @@ const performDatabaseHealthCheck = async () => {
     }
 
     const currentDb = mongoose.connection.db.databaseName;
-    console.log(`🔍 Database Health Check - Connected to: ${currentDb}`);
+    logger.info(`Database Health Check - Connected to: ${currentDb}`);
 
-    // 2. Validate expected database name
-    if (currentDb !== 'evalon') {
-      healthReport.warnings.push(`Connected to unexpected database: ${currentDb}. Expected: evalon`);
+    // 2. Validate expected database name - ENFORCED: MUST be 'evalon'
+    const REQUIRED_DB_NAME = 'evalon';
+    if (currentDb !== REQUIRED_DB_NAME) {
+      healthReport.status = 'unhealthy';
+      healthReport.issues.push(`CRITICAL: Connected to wrong database: ${currentDb}. Expected: ${REQUIRED_DB_NAME}. Only 'evalon' database is allowed.`);
     }
 
     // 3. Check collections exist
     const collections = await mongoose.connection.db.listCollections().toArray();
     const collectionNames = collections.map(c => c.name);
-    const expectedCollections = ['users', 'teachers', 'students', 'organizations', 'subjects', 'departments'];
+    const expectedCollections = [
+      'users', 'teachers', 'students', 'organizations', 
+      'subjects', 'departments', 'exams', 'questions', 
+      'questionbanks', 'examsessions', 'examactivitylogs',
+      'usermanagements', 'invitations'
+    ];
     
     for (const expectedCollection of expectedCollections) {
       if (!collectionNames.includes(expectedCollection)) {
         healthReport.warnings.push(`Missing expected collection: ${expectedCollection}`);
       }
     }
+    
+    // 4. Validate indexes on critical collections
+    await validateIndexes(healthReport, collections);
 
-    // 4. Check data counts
+    // 5. Check data counts
+    const Exam = require('../models/Exam');
+    const ExamSession = require('../models/ExamSession');
+    const Question = require('../models/Question');
+    const QuestionBank = require('../models/QuestionBank');
+    
     const userCount = await User.countDocuments();
     const teacherCount = await Teacher.countDocuments();
     const studentCount = await Student.countDocuments();
     const orgCount = await Organization.countDocuments();
     const subjectCount = await Subject.countDocuments();
     const deptCount = await Department.countDocuments();
+    const examCount = await Exam.countDocuments();
+    const examSessionCount = await ExamSession.countDocuments();
+    const questionCount = await Question.countDocuments();
+    const questionBankCount = await QuestionBank.countDocuments();
 
     healthReport.stats = {
       users: userCount,
@@ -60,22 +80,29 @@ const performDatabaseHealthCheck = async () => {
       students: studentCount,
       organizations: orgCount,
       subjects: subjectCount,
-      departments: deptCount
+      departments: deptCount,
+      exams: examCount,
+      examSessions: examSessionCount,
+      questions: questionCount,
+      questionBanks: questionBankCount
     };
 
-    // 5. Check for data consistency issues
+    // 6. Check connection pool status
+    await checkConnectionPool(healthReport);
+
+    // 7. Check for data consistency issues
     await checkDataConsistency(healthReport);
 
-    // 6. Check for orphaned records
+    // 8. Check for orphaned records
     await checkOrphanedRecords(healthReport);
 
-    console.log('✅ Database health check completed:', healthReport);
+    logger.info('Database health check completed', { status: healthReport.status, stats: healthReport.stats });
     return healthReport;
 
   } catch (error) {
     healthReport.status = 'unhealthy';
     healthReport.issues.push(`Health check failed: ${error.message}`);
-    console.error('❌ Database health check failed:', error);
+    logger.error('Database health check failed', { error: error.message, stack: error.stack });
     return healthReport;
   }
 };
@@ -128,6 +155,79 @@ const checkDataConsistency = async (healthReport) => {
 
   } catch (error) {
     healthReport.warnings.push(`Data consistency check failed: ${error.message}`);
+  }
+};
+
+/**
+ * Validate indexes on critical collections
+ */
+const validateIndexes = async (healthReport, collections) => {
+  try {
+    const db = mongoose.connection.db;
+    const criticalIndexes = {
+      users: ['email', 'organizationId', 'userType'],
+      teachers: ['email', 'organization'],
+      students: ['email', 'studentId', 'organization'],
+      organizations: ['email', 'orgCode'],
+      exams: ['organizationId', 'createdBy', 'status'],
+      questions: ['organizationId', 'subjectId', 'createdBy'],
+      examsessions: ['examId', 'studentId', 'status'],
+    };
+
+    for (const [collectionName, expectedFields] of Object.entries(criticalIndexes)) {
+      const collection = collections.find(c => c.name === collectionName);
+      if (!collection) continue;
+
+      try {
+        const indexes = await db.collection(collectionName).indexes();
+        const indexFields = indexes.map(idx => {
+          const keys = Object.keys(idx.key || {});
+          return keys.length === 1 ? keys[0] : keys.join('_');
+        });
+
+        for (const field of expectedFields) {
+          if (!indexFields.some(idx => idx.includes(field))) {
+            healthReport.warnings.push(`Missing index on ${collectionName}.${field}`);
+          }
+        }
+      } catch (error) {
+        healthReport.warnings.push(`Failed to check indexes for ${collectionName}: ${error.message}`);
+      }
+    }
+  } catch (error) {
+    healthReport.warnings.push(`Index validation failed: ${error.message}`);
+  }
+};
+
+/**
+ * Check connection pool status
+ */
+const checkConnectionPool = async (healthReport) => {
+  try {
+    const connection = mongoose.connection;
+    const poolStats = {
+      readyState: connection.readyState,
+      host: connection.host,
+      port: connection.port,
+      name: connection.name,
+    };
+
+    // Get connection pool stats if available
+    if (connection.db && connection.db.serverConfig) {
+      const serverConfig = connection.db.serverConfig;
+      poolStats.poolSize = serverConfig.poolSize || 'N/A';
+      poolStats.maxPoolSize = serverConfig.options?.maxPoolSize || 'N/A';
+    }
+
+    healthReport.connectionPool = poolStats;
+
+    // Check if connection is healthy
+    if (connection.readyState !== 1) {
+      healthReport.status = 'unhealthy';
+      healthReport.issues.push(`Database connection state is ${connection.readyState} (expected 1)`);
+    }
+  } catch (error) {
+    healthReport.warnings.push(`Connection pool check failed: ${error.message}`);
   }
 };
 
@@ -198,11 +298,11 @@ const autoFixDataIssues = async () => {
       }
     }
 
-    console.log('🔧 Auto-fixes applied:', fixes);
+    logger.info('Auto-fixes applied', { fixes });
     return fixes;
 
   } catch (error) {
-    console.error('❌ Auto-fix failed:', error);
+    logger.error('Auto-fix failed', { error: error.message, stack: error.stack });
     return [];
   }
 };
@@ -211,6 +311,8 @@ module.exports = {
   performDatabaseHealthCheck,
   checkDataConsistency,
   checkOrphanedRecords,
-  autoFixDataIssues
+  autoFixDataIssues,
+  validateIndexes,
+  checkConnectionPool
 };
 
