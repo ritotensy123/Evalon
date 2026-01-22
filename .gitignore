@@ -1,0 +1,211 @@
+# =============================================================================
+# EVALON PROJECT - ROOT .gitignore
+# =============================================================================
+# This file ensures sensitive data, build artifacts, and temporary files
+# are not committed to version control.
+# =============================================================================
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
+node_modules/
+jspm_packages/
+bower_components/
+
+# Python virtual environments
+venv/
+.venv/
+ENV/
+env/
+.Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# =============================================================================
+# ENVIRONMENT FILES (Keep .example templates)
+# =============================================================================
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+!.env.example
+!env.template
+
+# =============================================================================
+# CREDENTIALS & SECRETS (CRITICAL - NEVER COMMIT)
+# =============================================================================
+# Firebase credentials
+*firebase*.json
+!firebase.json
+firebase-adminsdk*.json
+*-firebase-adminsdk-*.json
+
+# Google OAuth credentials
+client_secret*.json
+oauth*.json
+credentials*.json
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# API keys file
+api-keys.json
+secrets.json
+
+# =============================================================================
+# BUILD OUTPUTS
+# =============================================================================
+# Frontend builds
+frontend/build/
+frontend/dist/
+.next/
+out/
+
+# Backend builds
+backend/dist/
+backend/build/
+
+# Python builds
+*.so
+*.whl
+
+# =============================================================================
+# LOGS
+# =============================================================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+backend/*.log
+*_startup.log
+
+# =============================================================================
+# TEST & COVERAGE
+# =============================================================================
+coverage/
+.nyc_output/
+*.lcov
+htmlcov/
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+nosetests.xml
+test-results/
+playwright-report/
+test-report/
+junit.xml
+
+# =============================================================================
+# RUNTIME DATA
+# =============================================================================
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# =============================================================================
+# CACHE
+# =============================================================================
+.cache/
+.parcel-cache/
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+*.tsbuildinfo
+.eslintcache
+.npm/
+.yarn/
+.pnp.*
+
+# Vite
+.vite/
+
+# =============================================================================
+# IDE & EDITORS
+# =============================================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+.project
+.classpath
+.settings/
+*.code-workspace
+
+# =============================================================================
+# OS GENERATED
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# =============================================================================
+# UPLOADS & USER DATA
+# =============================================================================
+uploads/
+!uploads/.gitkeep
+temp/
+tmp/
+
+# =============================================================================
+# MISCELLANEOUS
+# =============================================================================
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Debug files
+cookies.txt
+
+# Git log exports (shouldn't be in repo)
+git_log*.txt
+
+# Lock files (optional - some projects commit these)
+# package-lock.json
+# yarn.lock
+
+# Large ML models (consider Git LFS instead)
+# *.h5
+# *.pkl
+# *.model
+
+# =============================================================================
+# PROJECT SPECIFIC
+# =============================================================================
+# Reference materials (move to docs if needed)
+reference ui/
+
+# Session-specific reports (keep important docs only)
+# Uncomment to ignore session reports:
+# *_REPORT.md
+# *_SUMMARY.md
+# *_BLUEPRINT.md
