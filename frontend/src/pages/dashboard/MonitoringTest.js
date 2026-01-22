@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import realtimeSocketService from '../../services/realtimeSocketService';
 import { clearAuthToken, getAuthToken, isTokenValid, getTokenInfo } from '../../utils/tokenHelper';
+import { SOCKET_ENDPOINTS } from '../../config/apiConfig';
 
 const MonitoringTest = () => {
   const [isConnected, setIsConnected] = useState(false);
@@ -69,41 +70,10 @@ const MonitoringTest = () => {
   };
 
   const testStudentEvent = async () => {
-    try {
-      addLog('🎓 Sending test student event...');
-      const response = await fetch('http://localhost:5004/api/student-event', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          event: 'student_joined',
-          data: {
-            examId: examId,
-            sessionId: 'test-session-' + Date.now(),
-            student: {
-              name: 'Test Student',
-              email: 'test@example.com'
-            },
-            status: 'active',
-            progress: {
-              currentQuestion: 1,
-              totalQuestions: 10,
-              answeredQuestions: 0
-            },
-            timestamp: new Date().toISOString()
-          }
-        })
-      });
-
-      if (response.ok) {
-        addLog('✅ Test student event sent successfully');
-      } else {
-        addLog('❌ Failed to send test student event');
-      }
-    } catch (error) {
-      addLog(`❌ Error sending test student event: ${error.message}`);
-    }
+    // NOTE: Student event now handled via Socket.IO, not REST.
+    // Use realtimeSocketService.joinExamSession() or socket.emit() for event-based communication.
+    addLog('⚠️ Student events are now handled via Socket.IO, not REST endpoints');
+    addLog('💡 Use realtimeSocketService methods instead (e.g., joinExamSession, submitAnswer, etc.)');
   };
 
   const handleLogout = () => {
@@ -139,38 +109,24 @@ const MonitoringTest = () => {
   };
 
   const debugTokenWithServer = async () => {
+    // SECURITY: Debug endpoint removed for production safety
+    // Token debugging should be done through server logs or local inspection only
     const token = getAuthToken();
     if (!token) {
       addLog('❌ No auth token found');
       return;
     }
-
-    try {
-      addLog('🔍 Sending token to monitoring server for debugging...');
-      const response = await fetch('http://localhost:5004/api/debug-token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ token }),
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        addLog('✅ Server successfully decoded token');
-        addLog(`👤 User found: ${data.userFound ? 'Yes' : 'No'}`);
-        if (data.user) {
-          addLog(`👤 User details: ${data.user.userType} (${data.user.email})`);
-        }
-        addLog(`🔍 Decoded payload: ${JSON.stringify(data.decoded)}`);
-      } else {
-        addLog(`❌ Server failed to decode token: ${data.error}`);
-        addLog(`💡 Your token was signed with the old JWT secret`);
-        addLog(`💡 Solution: Click "Logout & Clear Token" and log in again`);
-      }
-    } catch (error) {
-      addLog(`❌ Error debugging token: ${error.message}`);
+    
+    // Use local token inspection instead of server debug endpoint
+    const tokenData = getTokenInfo(token);
+    if (tokenData) {
+      addLog('🔍 Local token inspection:');
+      addLog(`👤 User: ${tokenData.userType} (${tokenData.userId})`);
+      addLog(`⏰ Expires: ${tokenData.expiresAt}`);
+      addLog(`✅ Valid: ${tokenData.valid ? 'Yes' : 'No'}`);
+    } else {
+      addLog('❌ Token is malformed or corrupted');
+      addLog('💡 Solution: Click "Logout & Clear Token" and log in again');
     }
   };
 

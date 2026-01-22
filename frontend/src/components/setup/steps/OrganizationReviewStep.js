@@ -42,6 +42,7 @@ const OrganizationReviewStep = ({ data, onDataChange, onNext, onPrevious, isFirs
 
   return (
     <div className="max-w-2xl mx-auto">
+      {/* PHASE 6: Merged Welcome + Setup - removed redundant organization info display */}
       {/* Header */}
       <div className="text-center mb-8">
         <div className="flex items-center justify-center mb-4">
@@ -53,23 +54,8 @@ const OrganizationReviewStep = ({ data, onDataChange, onNext, onPrevious, isFirs
           Organization Setup
         </h2>
         <p className="text-gray-600">
-          Add your departments to get started
+          Add your departments to organize your institution
         </p>
-      </div>
-
-      {/* Organization Info */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 mb-8">
-        <h3 className="font-semibold text-gray-900 mb-3">{organizationData?.name}</h3>
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <span className="text-gray-500">Code:</span>
-            <p className="font-medium">{organizationData?.orgCode}</p>
-          </div>
-          <div>
-            <span className="text-gray-500">Email:</span>
-            <p className="font-medium">{organizationData?.email}</p>
-          </div>
-        </div>
       </div>
 
       {/* Departments */}

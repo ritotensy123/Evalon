@@ -70,7 +70,7 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
       'PL': '🇵🇱', 'CZ': '🇨🇿', 'HU': '🇭🇺', 'PT': '🇵🇹', 'GR': '🇬🇷',
       'IE': '🇮🇪', 'NZ': '🇳🇿', 'ZA': '🇿🇦', 'EG': '🇪🇬', 'NG': '🇳🇬',
       'KE': '🇰🇪', 'GH': '🇬🇭', 'MA': '🇲🇦', 'TN': '🇹🇳', 'DZ': '🇩🇿',
-      'SA': '🇸🇦', 'AE': '🇦🇪', 'QA': '🇶🇦', 'KW': '🇰🇼', 'BH': '🇧🇭',
+      'SA': '🇸🇦', 'QA': '🇶🇦', 'KW': '🇰🇼', 'BH': '🇧🇭',
       'OM': '🇴🇲', 'JO': '🇯🇴', 'LB': '🇱🇧', 'SY': '🇸🇾', 'IQ': '🇮🇶',
       'IR': '🇮🇷', 'TR': '🇹🇷', 'IL': '🇮🇱', 'PK': '🇵🇰', 'BD': '🇧🇩',
       'LK': '🇱🇰', 'MV': '🇲🇻', 'NP': '🇳🇵', 'BT': '🇧🇹', 'MM': '🇲🇲',
@@ -92,8 +92,7 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
       'ME': '🇲🇪', 'BA': '🇧🇦', 'HR': '🇭🇷', 'SI': '🇸🇮', 'SK': '🇸🇰',
       'LU': '🇱🇺', 'LI': '🇱🇮', 'MC': '🇲🇨', 'AD': '🇦🇩', 'SM': '🇸🇲',
       'VA': '🇻🇦', 'MT': '🇲🇹', 'CY': '🇨🇾', 'AL': '🇦🇱', 'MK': '🇲🇰',
-      'XK': '🇽🇰', 'YU': '🇷🇸', 'CS': '🇷🇸', 'SU': '🇷🇺', 'DD': '🇩🇪',
-      'YU': '🇷🇸', 'CS': '🇷🇸', 'SU': '🇷🇺', 'DD': '🇩🇪'
+      'XK': '🇽🇰', 'YU': '🇷🇸', 'CS': '🇷🇸', 'SU': '🇷🇺', 'DD': '🇩🇪'
     };
     return flagMap[countryCode] || '🏳️';
   };

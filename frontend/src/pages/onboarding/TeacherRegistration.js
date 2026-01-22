@@ -23,8 +23,8 @@ import {
 import { COLORS, BORDER_RADIUS, GRADIENTS } from '../../theme/constants';
 import Step1BasicDetails from '../../components/registration/TeacherForm/Step1BasicDetails';
 import Step2ProfessionalDetails from '../../components/registration/TeacherForm/Step2ProfessionalDetails';
-import Step3OrganizationLink from '../../components/registration/TeacherForm/Step3OrganizationLink';
-import Step4SecurityVerification from '../../components/registration/TeacherForm/Step4SecurityVerification';
+// REMOVED: Step4SecurityVerification - Registration completes at Step 3 (similar to organization registration)
+import Step3CompleteRegistration from '../../components/registration/TeacherForm/Step3CompleteRegistration';
 import { teacherAPI, healthAPI } from '../../services/api';
 import '../../styles/registration/organisation.css';
 
@@ -64,9 +64,9 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
     isOrganizationValid: false,
     associationStatus: '', // 'verified' | 'pending' | 'not_found'
     
-    // Step 4: Security Verification
-    emailVerified: false,
-    phoneVerified: false,
+    // Step 3: Complete Registration (password fields)
+    // REMOVED: Step 4 - Registration completes at Step 3
+    // REMOVED: emailVerified, phoneVerified - No OTP verification required
     password: '',
     confirmPassword: '',
   });
@@ -122,6 +122,8 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
     }
   }, [showSuccess, onNavigateToLogin]);
 
+  // REMOVED: Step 4 (Security Verification) - Registration completes at Step 3
+  // (similar to organization registration flow)
   const steps = [
     { 
       label: 'Basic Details', 
@@ -136,22 +138,17 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
       subtitle: "Tell us about your expertise and experience"
     },
     { 
-      label: 'Organization Link', 
-      icon: <School />,
-      title: "Link to your institution",
-      subtitle: "Connect with your educational organization"
-    },
-    { 
-      label: 'Security Verification', 
+      label: 'Complete Registration', 
       icon: <Security />,
       title: "Secure your account",
-      subtitle: "Verify your email and phone number"
+      subtitle: "Create your password to complete registration"
     },
   ];
 
   const handleNext = async () => {
-    if (activeStep === steps.length - 1) {
-      // If this is the last step, submit the form
+    // REMOVED: Step 4 - Registration completes at Step 3 (index 2)
+    if (activeStep === 2) {
+      // Step 3 is the final step - complete registration
       await handleSubmit();
     } else if (validateStep(activeStep)) {
       // Save current step data to backend
@@ -217,7 +214,7 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
     switch (step) {
       case 0: // Basic Details
         if (!formData.fullName.trim()) errors.fullName = 'Full Name Is Required';
-        if (!formData.phoneNumber.trim()) errors.phoneNumber = 'Phone Number Is Required';
+        // REMOVED: phoneNumber validation - Mobile OTP verification removed, phone is optional (similar to organization registration)
         if (!formData.emailAddress.trim()) errors.emailAddress = 'Email Address Is Required';
         if (!/\S+@\S+\.\S+/.test(formData.emailAddress)) errors.emailAddress = 'Please Enter A Valid Email';
         if (!formData.country) errors.country = 'Country Is Required';
@@ -233,20 +230,13 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
           if (!formData.experienceLevel) errors.experienceLevel = 'Experience Level Is Required';
         }
         break;
-      case 2: // Organization Link
-        // Skip validation if user is freelance
-        if (formData.affiliationType === 'organization') {
-          if (!formData.organizationCode.trim()) errors.organizationCode = 'Organization Code Is Required';
-          if (!formData.isOrganizationValid) errors.organizationCode = 'Please Enter A Valid Organization Code';
-        }
-        break;
-      case 3: // Security Verification
-        // Require OTP verification before proceeding
-        if (!formData.emailVerified) errors.emailVerified = 'Please Verify Your Email';
-        if (!formData.phoneVerified) errors.phoneVerified = 'Please Verify Your Phone Number';
+      case 2: // Complete Registration (Step 3 - final step)
+        // REMOVED: OTP validation - No email/phone OTP required (similar to organization registration)
         if (!formData.password.trim()) errors.password = 'Password Is Required';
         if (!formData.confirmPassword.trim()) errors.confirmPassword = 'Confirm Password Is Required';
         if (formData.password !== formData.confirmPassword) errors.confirmPassword = 'Passwords Do Not Match';
+        // Password strength validation
+        if (formData.password.length < 8) errors.password = 'Password must be at least 8 characters';
         break;
       default:
         break;
@@ -262,7 +252,7 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
   };
 
   const getTotalSteps = () => {
-    return 4; // Always 4 steps for teachers
+    return 3; // REMOVED: Step 4 - Registration completes at Step 3 (similar to organization registration)
   };
 
   const getStepLabel = (stepIndex) => {
@@ -305,22 +295,18 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
             registrationToken: tokenToUseStep2
           });
           break;
-        case 2: // Organization Link
-          // Use the token from window if state is not updated yet
+        case 2: // Complete Registration (Step 3 - final step)
+          // REMOVED: Step 4 - Registration completes here with password
+          // (similar to organization registration flow)
           const tokenToUse = registrationToken || window.currentRegistrationToken;
-          console.log('🔍 Frontend - Step 3 - Using registration token:', tokenToUse);
+          console.log('🔍 Frontend - Step 3 (Final) - Completing registration with token:', tokenToUse);
+          
+          // Complete registration with password at Step 3 (no Step 4)
           response = await teacherAPI.registerStep3({
-            organizationCode: formData.organizationCode,
+            password: formData.password,
+            confirmPassword: formData.confirmPassword,
             registrationToken: tokenToUse
           });
-          // Update organization validation status
-          if (response.success && response.data.isOrganizationValid !== undefined) {
-            setFormData(prev => ({
-              ...prev,
-              isOrganizationValid: response.data.isOrganizationValid,
-              associationStatus: response.data.isOrganizationValid ? 'verified' : 'not_found'
-            }));
-          }
           break;
         default:
           throw new Error('Invalid step');
@@ -350,6 +336,7 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
   };
 
   const handleSubmit = async () => {
+    // REMOVED: Step 4 - Registration completes at Step 3
     // Validate the current step before submitting
     if (!validateStep(activeStep)) {
       return; // Don't submit if validation fails
@@ -359,14 +346,15 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
     
     try {
       // Use the token from window if state is not updated yet
-      const tokenToUseStep4 = registrationToken || window.currentRegistrationToken;
-      console.log('🔍 Frontend - Step 4 - Using registration token:', tokenToUseStep4);
-      const result = await teacherAPI.registerStep4({
+      const tokenToUse = registrationToken || window.currentRegistrationToken;
+      console.log('🔍 Frontend - Step 3 (Final) - Completing registration with token:', tokenToUse);
+      
+      // Complete registration with password at Step 3 (no Step 4)
+      // REMOVED: registerStep4 - Registration now completes at Step 3
+      const result = await teacherAPI.registerStep3({
         password: formData.password,
         confirmPassword: formData.confirmPassword,
-        emailVerified: formData.emailVerified || false,
-        phoneVerified: formData.phoneVerified || false,
-        registrationToken: tokenToUseStep4
+        registrationToken: tokenToUse
       });
       
       if (result.success) {
@@ -381,6 +369,11 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
           localStorage.setItem('userType', 'teacher');
           localStorage.setItem('teacherId', result.data.teacher.id);
         }
+        
+        // Redirect to login or dashboard after successful registration
+        setTimeout(() => {
+          window.location.href = '/teacher/login';
+        }, 2000);
       } else {
         throw new Error(result.message || 'Registration failed');
       }
@@ -422,17 +415,9 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
           />
         );
       case 2:
+        // REMOVED: Step 4 - Step 3 now includes password fields for final registration
         return (
-          <Step3OrganizationLink
-            formData={formData}
-            formErrors={formErrors}
-            onFormChange={handleFormChange}
-            registrationToken={registrationToken}
-          />
-        );
-      case 3:
-        return (
-          <Step4SecurityVerification
+          <Step3CompleteRegistration
             formData={formData}
             formErrors={formErrors}
             onFormChange={handleFormChange}
@@ -901,7 +886,8 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
                 Back
               </Button>
               
-              {activeStep === 3 ? (
+              {/* REMOVED: Step 4 - Step 3 (index 2) is now the final step */}
+              {activeStep === 2 ? (
                 <Button
                   variant="contained"
                   onClick={handleNext}
@@ -927,7 +913,7 @@ const TeacherRegistration = ({ onNavigateToLanding, onNavigateToLogin }) => {
                     transition: 'all 0.2s ease',
                   }}
                 >
-                  {isSubmitting ? 'Submitting...' : 'Submit'}
+                  {isSubmitting ? 'Submitting...' : 'Complete Registration'}
                 </Button>
               ) : (
                 <Button

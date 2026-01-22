@@ -1,12 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, Button, Typography, Paper, Chip, CircularProgress, Alert } from '@mui/material';
+import { 
+  Box, Button, Typography, Paper, Chip, CircularProgress, Alert, 
+  Tabs, Tab, TextField, LinearProgress, Dialog, DialogTitle, 
+  DialogContent, DialogActions, Table, TableBody, TableCell, 
+  TableContainer, TableHead, TableRow, IconButton, Grid, Card, 
+  CardContent, Divider, Accordion, AccordionSummary, AccordionDetails
+} from '@mui/material';
+import { ExpandMore as ExpandMoreIcon, PlayArrow, Stop, Refresh, Delete, Visibility, Publish, SwitchLeft } from '@mui/icons-material';
 import AIProctoringService from '../services/aiProctoringService';
+import AIModelService from '../services/aiModelService';
+
+/**
+ * CREDIBILITY SCORE CONSTANTS
+ * These match the backend for consistent scoring display
+ */
+const CREDIBILITY_INITIAL = 100.0;
+const CREDIBILITY_MIN = 0.0;
+const CREDIBILITY_MAX = 100.0;
+const SCORE_HISTORY_MAX_SIZE = 30; // Sliding window size for score history
 
 const AIModelTestPage = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [cameraStream, setCameraStream] = useState(null);
   const [currentClassification, setCurrentClassification] = useState(null);
-  const [credibilityScore, setCredibilityScore] = useState(0);
+  // FIX: Start with proper initial credibility score
+  const [credibilityScore, setCredibilityScore] = useState(CREDIBILITY_INITIAL);
   const [totalFrames, setTotalFrames] = useState(0);
   const [events, setEvents] = useState([]);
   const [serviceAvailable, setServiceAvailable] = useState(false);
@@ -18,6 +36,7 @@ const AIModelTestPage = () => {
   const canvasRef = useRef(null);
   const intervalRef = useRef(null);
   const frameCountRef = useRef(0);
+  // FIX: Score history is now managed by backend, we just display the returned score
   const scoreHistoryRef = useRef([]);
   const lastFaceDetectedRef = useRef(Date.now());
   const lastActivityRef = useRef(Date.now());
@@ -26,10 +45,40 @@ const AIModelTestPage = () => {
   const microphoneRef = useRef(null);
   const activityCheckRef = useRef(null);
   const isProcessingFrameRef = useRef(false); // Prevent concurrent frame processing
+  const sessionIdRef = useRef(`session_${Date.now()}`); // Unique session ID
+  
+  // Model training state
+  const [activeTab, setActiveTab] = useState(0);
+  const [models, setModels] = useState([]);
+  const [activeModelId, setActiveModelId] = useState(null);
+  const [selectedModel, setSelectedModel] = useState(null);
+  const [showTrainingForm, setShowTrainingForm] = useState(false);
+  const [trainingConfig, setTrainingConfig] = useState({
+    name: '',
+    description: '',
+    epochs: 30,
+    batchSize: 32,
+    learningRate: 0.001,
+    validationSplit: 0.2,
+    datasetPath: '/content/Dataset'
+  });
+  const [trainingProgress, setTrainingProgress] = useState(null);
+  const [isTraining, setIsTraining] = useState(false);
+  const trainingProgressIntervalRef = useRef(null);
 
   // Check service availability on mount
   useEffect(() => {
     checkServiceAvailability();
+    loadModels();
+  }, []);
+  
+  // Cleanup training progress polling
+  useEffect(() => {
+    return () => {
+      if (trainingProgressIntervalRef.current) {
+        clearInterval(trainingProgressIntervalRef.current);
+      }
+    };
   }, []);
 
   // Cleanup on unmount
@@ -56,6 +105,21 @@ const AIModelTestPage = () => {
   const startMonitoring = async () => {
     try {
       setIsLoading(true);
+      
+      // Generate new session ID for this monitoring session
+      sessionIdRef.current = `session_${Date.now()}`;
+      
+      // FIX: Reset backend session state to prevent accumulation bugs
+      try {
+        await fetch(`${await getAIServiceUrl()}/api/reset-session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionIdRef.current })
+        });
+        console.log('✅ Backend session reset');
+      } catch (e) {
+        console.warn('Could not reset backend session:', e);
+      }
       
       // Request camera access
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -96,10 +160,10 @@ const AIModelTestPage = () => {
         });
       }
 
-      // Start classification loop (every 2 seconds)
+      // FIX: Reset all state with proper initial values
       frameCountRef.current = 0;
-      scoreHistoryRef.current = [];
-      setCredibilityScore(0);
+      scoreHistoryRef.current = []; // Cleared, but we now use backend score
+      setCredibilityScore(CREDIBILITY_INITIAL); // Start at 100, not 0
       setTotalFrames(0);
       setEvents([]);
       setCurrentClassification(null);
@@ -112,14 +176,15 @@ const AIModelTestPage = () => {
       // Wait a bit for video to be ready
       await new Promise(resolve => setTimeout(resolve, 300));
       
-      // Start classification loop (every 300ms for FAST multiple face detection)
+      // Start classification loop (every 500ms for balanced detection)
+      // FIX: 300ms was too aggressive and could cause duplicate processing
       intervalRef.current = setInterval(async () => {
         try {
           await classifyFrame();
         } catch (error) {
           console.error('❌ Error in classifyFrame:', error);
         }
-      }, 300); // Reduced from 2000ms to 300ms for faster detection (3.3 FPS → ~33 FPS equivalent processing)
+      }, 500); // Changed from 300ms to 500ms for more stable processing
       
       // Classify immediately
       setTimeout(async () => {
@@ -128,7 +193,7 @@ const AIModelTestPage = () => {
         } catch (error) {
           console.error('❌ Error in initial classifyFrame:', error);
         }
-      }, 200); // Reduced from 1000ms to 200ms for faster initial detection
+      }, 200);
 
       setIsMonitoring(true);
       setIsLoading(false);
@@ -137,6 +202,25 @@ const AIModelTestPage = () => {
       alert('Failed to access camera. Please ensure camera permissions are granted.');
       setIsLoading(false);
     }
+  };
+  
+  // Helper to get AI service URL (matches AIProctoringService logic)
+  const getAIServiceUrl = async () => {
+    // Try to use the service URL from config
+    const baseUrl = 'http://localhost';
+    const ports = [5002, 5003, 5004, 5005, 5006, 5007, 5008, 5009, 5010, 5011, 5012];
+    
+    for (const port of ports) {
+      try {
+        const response = await fetch(`${baseUrl}:${port}/health`, { method: 'GET' });
+        if (response.ok) {
+          return `${baseUrl}:${port}`;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return `${baseUrl}:5002`; // Default fallback
   };
 
   const stopMonitoring = () => {
@@ -274,12 +358,13 @@ const AIModelTestPage = () => {
       // Calculate no_face_duration
       const currentNoFaceDuration = noFaceDuration;
 
-      // Call comprehensive proctoring (non-blocking for fast detection)
+      // Call comprehensive proctoring using TEST endpoint (no auth required for test page)
       const result = await AIProctoringService.comprehensiveProctoring(
         base64Image,
         currentNoFaceDuration,
         isIdle,
-        audioLevel
+        audioLevel,
+        true  // useTestEndpoint = true for AI Model Test page
       );
 
       if (result.success) {
@@ -298,20 +383,37 @@ const AIModelTestPage = () => {
           setNoFaceDuration(duration);
         }
 
-        // Update score
-        scoreHistoryRef.current.push(scoreDelta);
-        const newScore = scoreHistoryRef.current.reduce((sum, delta) => sum + delta, 0);
-        const finalScore = frameCountRef.current > 0 ? newScore / frameCountRef.current : 0;
+        // FIX: Use credibility score from backend (properly managed with EMA)
+        // The backend handles all smoothing, clamping, and accumulation prevention
+        if (result.credibility_score !== undefined) {
+          setCredibilityScore(result.credibility_score);
+        } else {
+          // Fallback: keep local history but with sliding window
+          scoreHistoryRef.current.push(scoreDelta);
+          // FIX: Limit history size to prevent accumulation
+          if (scoreHistoryRef.current.length > SCORE_HISTORY_MAX_SIZE) {
+            scoreHistoryRef.current.shift(); // Remove oldest
+          }
+          // Calculate average over sliding window
+          const sum = scoreHistoryRef.current.reduce((a, b) => a + b, 0);
+          const avgDelta = sum / scoreHistoryRef.current.length;
+          // Convert to 0-100 scale: avgDelta ranges from -2 to +1
+          // Map: -2 -> 0, +1 -> 100 (linear interpolation)
+          const normalizedScore = Math.max(CREDIBILITY_MIN, 
+            Math.min(CREDIBILITY_MAX, ((avgDelta + 2) / 3) * 100));
+          setCredibilityScore(normalizedScore);
+        }
         
-        setCredibilityScore(finalScore);
         setTotalFrames(frameCountRef.current);
 
         // Update current classification with all details
+        // FIX: Include new multi_faces_confirmed field from backend
         setCurrentClassification({
           classification,
           confidence,
           faceCount: result.face_detection.face_count,
           multipleFaces: result.face_detection.multiple_faces,
+          multipleFacesConfirmed: result.face_detection.multiple_faces_confirmed || false,
           probabilities: result.probabilities,
           headPose: result.head_pose,
           phoneDetected: result.phone_detection.detected,
@@ -319,11 +421,16 @@ const AIModelTestPage = () => {
           isIdle: result.idle_detection.is_idle,
           audioLevel: result.audio_monitoring.level,
           noiseDetected: result.audio_monitoring.noise_detected,
-          mlModels: result.ml_models || null  // Add individual model predictions
+          frameNumber: result.frame_number || frameCountRef.current,
         });
 
-        // Add events from result
-        result.events.forEach(event => {
+        // Add events from result - filter to avoid spam
+        // FIX: Only add non-info events or limit info events
+        const significantEvents = result.events.filter(event => 
+          event.severity !== 'info' || event.type !== 'frame_analysis'
+        );
+        
+        significantEvents.forEach(event => {
           const eventObj = {
             id: Date.now() + Math.random(),
             timestamp: new Date().toLocaleTimeString(),
@@ -340,9 +447,11 @@ const AIModelTestPage = () => {
           setEvents(prev => [eventObj, ...prev].slice(0, 50)); // Keep last 50 events
         });
 
-        // Log multiple faces detection immediately for fast feedback
-        if (result.face_detection.multiple_faces) {
-          console.warn(`⚠️ MULTIPLE FACES DETECTED: ${result.face_detection.face_count} faces`);
+        // Log multiple faces detection - differentiate between detected and confirmed
+        if (result.face_detection.multiple_faces_confirmed) {
+          console.warn(`🚨 MULTIPLE FACES CONFIRMED: ${result.face_detection.face_count} faces (persisted)`);
+        } else if (result.face_detection.multiple_faces) {
+          console.log(`⚠️ Multiple faces detected (awaiting confirmation): ${result.face_detection.face_count} faces`);
         }
       } else {
         // Add error event
@@ -422,19 +531,147 @@ const AIModelTestPage = () => {
     }
   };
 
+  // Model management functions
+  const loadModels = async () => {
+    try {
+      const response = await AIModelService.getAllModels();
+      if (response.success) {
+        setModels(response.models || []);
+        setActiveModelId(response.activeModelId);
+      }
+    } catch (error) {
+      console.error('Error loading models:', error);
+    }
+  };
+
+  const handleStartTraining = async () => {
+    try {
+      setIsTraining(true);
+      setTrainingProgress({ status: 'pending', progress: 0 });
+      
+      const response = await AIModelService.startTraining({
+        name: trainingConfig.name,
+        description: trainingConfig.description,
+        trainingConfig: {
+          epochs: trainingConfig.epochs,
+          batchSize: trainingConfig.batchSize,
+          learningRate: trainingConfig.learningRate,
+          validationSplit: trainingConfig.validationSplit,
+          datasetPath: trainingConfig.datasetPath
+        }
+      });
+      
+      if (response.success) {
+        setShowTrainingForm(false);
+        const modelId = response.modelId;
+        
+        // Poll for progress
+        trainingProgressIntervalRef.current = setInterval(async () => {
+          try {
+            const progressResponse = await AIModelService.getTrainingProgress(modelId);
+            if (progressResponse.success) {
+              setTrainingProgress(progressResponse.progress);
+              
+              if (progressResponse.status === 'completed' || progressResponse.status === 'failed') {
+                clearInterval(trainingProgressIntervalRef.current);
+                setIsTraining(false);
+                loadModels(); // Reload models
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching progress:', error);
+          }
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('Error starting training:', error);
+      setIsTraining(false);
+      alert('Failed to start training: ' + error.message);
+    }
+  };
+
+  const handlePublishModel = async (modelId) => {
+    try {
+      const response = await AIModelService.publishModel(modelId);
+      if (response.success) {
+        await loadModels();
+        alert('Model published successfully!');
+      }
+    } catch (error) {
+      console.error('Error publishing model:', error);
+      alert('Failed to publish model: ' + error.message);
+    }
+  };
+
+  const handleSwitchModel = async (modelId) => {
+    try {
+      const response = await AIModelService.switchModel(modelId);
+      if (response.success) {
+        await loadModels();
+        alert('Model switched successfully!');
+      }
+    } catch (error) {
+      console.error('Error switching model:', error);
+      alert('Failed to switch model: ' + error.message);
+    }
+  };
+
+  const handleDeleteModel = async (modelId) => {
+    if (!window.confirm('Are you sure you want to delete this model?')) {
+      return;
+    }
+    
+    try {
+      const response = await AIModelService.deleteModel(modelId);
+      if (response.success) {
+        await loadModels();
+        alert('Model deleted successfully!');
+      }
+    } catch (error) {
+      console.error('Error deleting model:', error);
+      alert('Failed to delete model: ' + error.message);
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'published':
+        return 'success';
+      case 'trained':
+        return 'info';
+      case 'training':
+        return 'warning';
+      case 'draft':
+        return 'default';
+      default:
+        return 'default';
+    }
+  };
+
   return (
     <Box sx={{ p: 3, maxWidth: '1400px', margin: '0 auto' }}>
       <Typography variant="h4" gutterBottom sx={{ mb: 3 }}>
-        AI Suspicious Activity Model Test
+        AI Model Training & Testing Console
       </Typography>
 
-      {!serviceAvailable && (
-        <Alert severity="warning" sx={{ mb: 3 }}>
-          AI service is not available. Please ensure the Python service is running on port 5002-5012.
-        </Alert>
-      )}
+      {/* Tabs */}
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)}>
+          <Tab label="Test Model" />
+          <Tab label="Train & Manage Models" />
+        </Tabs>
+      </Box>
 
-      <Box sx={{ display: 'flex', gap: 3, flexWrap: { xs: 'wrap', lg: 'nowrap' } }}>
+      {/* Tab Panels */}
+      {activeTab === 0 && (
+        <Box>
+          {!serviceAvailable && (
+            <Alert severity="warning" sx={{ mb: 3 }}>
+              AI service is not available. Please ensure the Python service is running on port 5002-5012.
+            </Alert>
+          )}
+
+          <Box sx={{ display: 'flex', gap: 3, flexWrap: { xs: 'wrap', lg: 'nowrap' } }}>
         {/* Left Side - Video Feed */}
         <Paper sx={{ p: 2, flex: 1, minWidth: { xs: '100%', lg: '600px' } }}>
           <Typography variant="h6" gutterBottom>
@@ -469,7 +706,10 @@ const AIModelTestPage = () => {
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   Faces: {currentClassification.faceCount} 
-                  {currentClassification.multipleFaces && ' (Multiple detected!)'}
+                  {currentClassification.multipleFacesConfirmed && 
+                    <span style={{ color: '#f44336', fontWeight: 'bold' }}> (CONFIRMED - Multiple faces!)</span>}
+                  {currentClassification.multipleFaces && !currentClassification.multipleFacesConfirmed && 
+                    <span style={{ color: '#ff9800' }}> (Detected, awaiting confirmation)</span>}
                   {noFaceDuration > 0 && ` | No face: ${noFaceDuration}s`}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
@@ -525,17 +765,38 @@ const AIModelTestPage = () => {
           </Typography>
           
           <Box sx={{ mb: 3 }}>
+            {/* FIX: Score is now 0-100 scale from backend */}
             <Typography variant="h3" sx={{ 
-              color: credibilityScore >= 0.5 ? '#4caf50' : credibilityScore >= 0 ? '#ff9800' : '#f44336',
+              color: credibilityScore >= 70 ? '#4caf50' : credibilityScore >= 40 ? '#ff9800' : '#f44336',
               fontWeight: 'bold'
             }}>
-              {credibilityScore.toFixed(2)}
+              {credibilityScore.toFixed(1)}
             </Typography>
+            {/* Visual progress bar for score */}
+            <Box sx={{ 
+              width: '100%', 
+              height: 10, 
+              bgcolor: 'grey.300', 
+              borderRadius: 1,
+              overflow: 'hidden',
+              mb: 1
+            }}>
+              <Box sx={{
+                width: `${Math.min(100, Math.max(0, credibilityScore))}%`,
+                height: '100%',
+                bgcolor: credibilityScore >= 70 ? '#4caf50' : credibilityScore >= 40 ? '#ff9800' : '#f44336',
+                transition: 'width 0.3s ease-in-out, background-color 0.3s ease-in-out'
+              }} />
+            </Box>
             <Typography variant="body2" color="text.secondary">
               Total Frames: {totalFrames}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Score range: -2.0 to 1.0
+              Score range: 0 (suspicious) to 100 (trusted)
+            </Typography>
+            <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
+              • Uses EMA smoothing for stability
+              • Requires sustained signals to change
             </Typography>
           </Box>
 
@@ -573,116 +834,6 @@ const AIModelTestPage = () => {
                 ))}
               </Box>
 
-              {/* Individual ML Model Predictions - Simple Format */}
-              {currentClassification.mlModels && (
-                <Paper sx={{ mb: 3, p: 2, bgcolor: 'grey.50', border: '2px solid', borderColor: 'primary.main' }}>
-                  <Typography variant="h6" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold' }}>
-                    📊 ML Model Predictions
-                  </Typography>
-                  
-                  <Box sx={{ display: 'grid', gap: 1.5 }}>
-                    {Object.entries(currentClassification.mlModels).map(([modelName, prediction]) => {
-                      const modelDisplayNames = {
-                        'knn': 'KNN',
-                        'naive_bayes': 'Naive Bayes',
-                        'decision_tree': 'Decision Tree',
-                        'svm': 'SVM',
-                        'ensemble': 'Ensemble'
-                      };
-                      
-                      const modelIcons = {
-                        'knn': '🔍',
-                        'naive_bayes': '📊',
-                        'decision_tree': '🌳',
-                        'svm': '⚡',
-                        'ensemble': '🎯'
-                      };
-
-                      return (
-                        <Box 
-                          key={modelName}
-                          sx={{
-                            p: 1.5,
-                            borderRadius: 1,
-                            bgcolor: 'white',
-                            border: '1px solid',
-                            borderColor: prediction.classification === 'normal' ? 'success.main' :
-                                         prediction.classification === 'suspicious' ? 'warning.main' :
-                                         'error.main',
-                            boxShadow: 1
-                          }}
-                        >
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Typography variant="h6" sx={{ fontSize: '1.2rem' }}>
-                                {modelIcons[modelName] || '🤖'}
-                              </Typography>
-                              <Box>
-                                <Typography variant="body1" sx={{ fontWeight: 'bold', fontSize: '0.95rem' }}>
-                                  {modelDisplayNames[modelName] || modelName}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                                  Confidence: {(prediction.confidence * 100).toFixed(1)}%
-                                </Typography>
-                              </Box>
-                            </Box>
-                            <Chip
-                              label={getClassificationLabel(prediction.classification)}
-                              color={getClassificationColor(prediction.classification)}
-                              size="medium"
-                              sx={{ fontWeight: 'bold', fontSize: '0.85rem' }}
-                            />
-                          </Box>
-                          
-                          {/* Simple probability bars */}
-                          <Box sx={{ display: 'flex', gap: 0.5, mt: 1 }}>
-                            {Object.entries(prediction.probabilities || {}).map(([probKey, probValue]) => (
-                              <Box key={probKey} sx={{ flex: 1 }}>
-                                <Typography variant="caption" sx={{ 
-                                  display: 'block', 
-                                  fontSize: '0.65rem',
-                                  fontWeight: 'medium',
-                                  mb: 0.25,
-                                  textTransform: 'capitalize',
-                                  color: getClassificationColor(probKey) === 'success' ? '#4caf50' :
-                                         getClassificationColor(probKey) === 'warning' ? '#ff9800' : '#f44336'
-                                }}>
-                                  {probKey.replace('_', ' ')}
-                                </Typography>
-                                <Box sx={{
-                                  width: '100%',
-                                  height: 6,
-                                  bgcolor: 'grey.300',
-                                  borderRadius: 0.5,
-                                  overflow: 'hidden',
-                                  position: 'relative'
-                                }}>
-                                  <Box sx={{
-                                    width: `${probValue * 100}%`,
-                                    height: '100%',
-                                    bgcolor: getClassificationColor(probKey) === 'success' ? '#4caf50' :
-                                             getClassificationColor(probKey) === 'warning' ? '#ff9800' : '#f44336',
-                                    transition: 'width 0.3s ease'
-                                  }} />
-                                </Box>
-                                <Typography variant="caption" sx={{ 
-                                  fontSize: '0.6rem',
-                                  color: 'text.secondary',
-                                  mt: 0.25,
-                                  display: 'block',
-                                  textAlign: 'center'
-                                }}>
-                                  {(probValue * 100).toFixed(0)}%
-                                </Typography>
-                              </Box>
-                            ))}
-                          </Box>
-                        </Box>
-                      );
-                    })}
-                  </Box>
-                </Paper>
-              )}
             </>
           )}
 
@@ -742,7 +893,246 @@ const AIModelTestPage = () => {
             )}
           </Box>
         </Paper>
-      </Box>
+        </Box>
+        </Box>
+      )}
+
+      {activeTab === 1 && (
+        <Box>
+          <Paper sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Typography variant="h6">AI Model Management</Typography>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => setShowTrainingForm(true)}
+                disabled={isTraining}
+              >
+                Start New Training
+              </Button>
+            </Box>
+
+            {isTraining && trainingProgress && (
+              <Paper sx={{ p: 2, mb: 3, bgcolor: 'background.default' }}>
+                <Typography variant="subtitle1" gutterBottom>
+                  Training Progress: {trainingProgress.status}
+                </Typography>
+                {trainingProgress.progress !== undefined && (
+                  <>
+                    <LinearProgress
+                      variant="determinate"
+                      value={trainingProgress.progress * 100}
+                      sx={{ mb: 1, height: 8, borderRadius: 4 }}
+                    />
+                    <Typography variant="body2" color="text.secondary">
+                      {Math.round(trainingProgress.progress * 100)}% Complete
+                    </Typography>
+                  </>
+                )}
+                {trainingProgress.epoch && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    Epoch: {trainingProgress.epoch}/{trainingProgress.totalEpochs}
+                  </Typography>
+                )}
+                {trainingProgress.loss !== undefined && (
+                  <Typography variant="body2" color="text.secondary">
+                    Loss: {trainingProgress.loss.toFixed(4)}
+                  </Typography>
+                )}
+                {trainingProgress.val_loss !== undefined && (
+                  <Typography variant="body2" color="text.secondary">
+                    Validation Loss: {trainingProgress.val_loss.toFixed(4)}
+                  </Typography>
+                )}
+              </Paper>
+            )}
+
+            <Grid container spacing={3}>
+              {models.map((model) => (
+                <Grid item xs={12} md={6} lg={4} key={model.id}>
+                  <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    <CardContent sx={{ flexGrow: 1 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                        <Typography variant="h6" component="div">
+                          {model.name}
+                        </Typography>
+                        <Chip
+                          label={model.status}
+                          color={getStatusColor(model.status)}
+                          size="small"
+                        />
+                      </Box>
+                      
+                      {model.status === 'published' && (
+                        <Chip
+                          label="Active"
+                          color="success"
+                          size="small"
+                          sx={{ mb: 1 }}
+                          icon={<SwitchLeft />}
+                        />
+                      )}
+
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        {model.description || 'No description'}
+                      </Typography>
+
+                      <Divider sx={{ my: 2 }} />
+
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Created: {new Date(model.createdAt).toLocaleDateString()}
+                      </Typography>
+                      {model.trainedAt && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Trained: {new Date(model.trainedAt).toLocaleDateString()}
+                        </Typography>
+                      )}
+                      {model.accuracy !== undefined && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Accuracy: {(model.accuracy * 100).toFixed(2)}%
+                        </Typography>
+                      )}
+                    </CardContent>
+
+                    <Box sx={{ p: 2, pt: 0, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      {model.status === 'trained' && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="primary"
+                          startIcon={<Publish />}
+                          onClick={() => handlePublishModel(model.id)}
+                          fullWidth
+                        >
+                          Publish
+                        </Button>
+                      )}
+                      {model.status === 'published' && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="info"
+                          startIcon={<SwitchLeft />}
+                          onClick={() => handleSwitchModel(model.id)}
+                          disabled={activeModelId === model.id}
+                          fullWidth
+                        >
+                          {activeModelId === model.id ? 'Currently Active' : 'Switch To'}
+                        </Button>
+                      )}
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        startIcon={<Delete />}
+                        onClick={() => handleDeleteModel(model.id)}
+                        disabled={model.status === 'published'}
+                        fullWidth
+                      >
+                        Delete
+                      </Button>
+                    </Box>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+
+            {models.length === 0 && (
+              <Alert severity="info" sx={{ mt: 3 }}>
+                No models found. Start a new training to create a model.
+              </Alert>
+            )}
+
+            {/* Training Form Dialog */}
+            <Dialog open={showTrainingForm} onClose={() => setShowTrainingForm(false)} maxWidth="md" fullWidth>
+              <DialogTitle>Start Model Training</DialogTitle>
+              <DialogContent>
+                <TextField
+                  fullWidth
+                  label="Model Name"
+                  value={trainingConfig.name}
+                  onChange={(e) => setTrainingConfig({ ...trainingConfig, name: e.target.value })}
+                  margin="normal"
+                  required
+                />
+                <TextField
+                  fullWidth
+                  label="Description"
+                  value={trainingConfig.description}
+                  onChange={(e) => setTrainingConfig({ ...trainingConfig, description: e.target.value })}
+                  margin="normal"
+                  multiline
+                  rows={3}
+                />
+                <Grid container spacing={2} sx={{ mt: 1 }}>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Epochs"
+                      type="number"
+                      value={trainingConfig.epochs}
+                      onChange={(e) => setTrainingConfig({ ...trainingConfig, epochs: parseInt(e.target.value) || 30 })}
+                      margin="normal"
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Batch Size"
+                      type="number"
+                      value={trainingConfig.batchSize}
+                      onChange={(e) => setTrainingConfig({ ...trainingConfig, batchSize: parseInt(e.target.value) || 32 })}
+                      margin="normal"
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Learning Rate"
+                      type="number"
+                      step="0.0001"
+                      value={trainingConfig.learningRate}
+                      onChange={(e) => setTrainingConfig({ ...trainingConfig, learningRate: parseFloat(e.target.value) || 0.001 })}
+                      margin="normal"
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Validation Split"
+                      type="number"
+                      step="0.01"
+                      value={trainingConfig.validationSplit}
+                      onChange={(e) => setTrainingConfig({ ...trainingConfig, validationSplit: parseFloat(e.target.value) || 0.2 })}
+                      margin="normal"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Dataset Path"
+                      value={trainingConfig.datasetPath}
+                      onChange={(e) => setTrainingConfig({ ...trainingConfig, datasetPath: e.target.value })}
+                      margin="normal"
+                    />
+                  </Grid>
+                </Grid>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setShowTrainingForm(false)}>Cancel</Button>
+                <Button
+                  onClick={handleStartTraining}
+                  variant="contained"
+                  color="primary"
+                  disabled={!trainingConfig.name || isTraining}
+                >
+                  Start Training
+                </Button>
+              </DialogActions>
+            </Dialog>
+          </Paper>
+        </Box>
+      )}
     </Box>
   );
 };

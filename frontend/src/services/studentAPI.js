@@ -1,9 +1,8 @@
 import axios from 'axios';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+import { API_ENDPOINTS } from '../config/apiConfig';
 
 const studentAPI = axios.create({
-  baseURL: `${API_BASE_URL}/students`,
+  baseURL: API_ENDPOINTS.STUDENTS,
   headers: {
     'Content-Type': 'application/json',
   },

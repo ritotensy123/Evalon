@@ -26,7 +26,7 @@ import {
   AdminPanelSettings,
   Person,
   CheckCircle,
-  Error,
+  Error as ErrorIcon,
 } from '@mui/icons-material';
 import { COLORS, BORDER_RADIUS, SHADOWS, GRADIENTS } from '../theme/constants';
 import { useAuth } from '../contexts/AuthContext';
@@ -158,8 +158,8 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
     
     if (!formData.password.trim()) {
       errors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      errors.password = 'Password must be at least 6 characters';
+    } else if (formData.password.length < 8) {
+      errors.password = 'Password must be at least 8 characters';
     }
     
     if (Object.keys(errors).length > 0) {
@@ -1066,7 +1066,7 @@ const LoginPage = ({ onNavigateToLanding, onNavigateToRegister, onNavigateToDash
                           <CheckCircle sx={{ fontSize: 20, color: COLORS.SUCCESS }} />
                         )}
                         {emailValidation.isValid === false && (
-                          <Error sx={{ fontSize: 20, color: COLORS.ERROR }} />
+                          <ErrorIcon sx={{ fontSize: 20, color: COLORS.ERROR }} />
                         )}
                       </InputAdornment>
                     ),

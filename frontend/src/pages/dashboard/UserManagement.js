@@ -299,11 +299,31 @@ const UserManagement = () => {
         setShowDeleteConfirmation(false);
         setUserToDelete(null);
       } else {
-        alert(`Failed to delete user: ${response.message}`);
+        const errorMsg = response.message || 'Failed to delete user';
+        console.error('Delete user failed:', response);
+        alert(`Failed to delete user: ${errorMsg}`);
       }
     } catch (error) {
       console.error('Error deleting user:', error);
-      alert(`Failed to delete user: ${error.message || 'Unknown error'}`);
+      // Check multiple possible locations for status code
+      const statusCode = error.response?.status || error.status || error.statusCode;
+      const errorMessage = error.response?.data?.message || 
+                          error.message || 
+                          'Unknown error occurred';
+      
+      // If user not found (404), refresh the list as they may have already been deleted
+      if (statusCode === 404) {
+        // Refresh the users list to remove stale data
+        await fetchUsers(pagination.current, pagination.limit);
+        await fetchUserStats();
+        alert(`User not found. The user may have already been deleted. The list has been refreshed.`);
+      } else {
+        alert(`Failed to delete user${statusCode ? ` (${statusCode})` : ''}: ${errorMessage}`);
+      }
+      
+      // Close modal and reset state
+      setShowDeleteConfirmation(false);
+      setUserToDelete(null);
     }
   };
 

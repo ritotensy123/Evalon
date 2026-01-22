@@ -929,28 +929,27 @@ const StudentManagement = () => {
                 </div>
               </div>
 
-              {/* Simple Subject List */}
+              {/* Subject Performance - Data from backend */}
               <div className="bg-white p-6 rounded-lg border border-gray-200">
                 <h4 className="text-lg font-semibold text-gray-900 mb-4">Subject Performance</h4>
-                <div className="space-y-3">
-                  {[
-                    { subject: 'Mathematics', grade: 'A+', percentage: 95 },
-                    { subject: 'Physics', grade: 'A', percentage: 88 },
-                    { subject: 'Chemistry', grade: 'B+', percentage: 82 },
-                    { subject: 'English', grade: 'A-', percentage: 90 },
-                    { subject: 'History', grade: 'B', percentage: 78 },
-                  ].map((item, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <span className="font-medium text-gray-900">{item.subject}</span>
-                        <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">
-                          {item.grade}
-                        </span>
-                      </div>
-                      <span className="text-sm font-medium text-gray-900">{item.percentage}%</span>
+                {gradeDistribution.length > 0 || departmentDistribution.length > 0 ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray-600 mb-4">
+                      Performance data will be displayed here once students complete exams and assessments.
+                    </p>
+                    <div className="text-center py-4 text-gray-500">
+                      <BookOpen className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                      <p className="text-sm">No performance data available yet</p>
+                      <p className="text-xs text-gray-400 mt-1">Subject performance will appear after exam results are recorded</p>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <BookOpen className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                    <p className="text-sm">No subject performance data</p>
+                    <p className="text-xs text-gray-400 mt-1">Subject performance will appear after students complete exams</p>
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -122,15 +122,15 @@ const Step1BasicDetails = ({ formData, formErrors, onFormChange }) => {
           sx={universalFieldStyle}
         />
 
-        {/* Phone Number */}
+        {/* Phone Number - Optional (Mobile OTP verification removed) */}
         <TextField
           fullWidth
-          label="Phone Number"
+          label="Phone Number (Optional)"
           value={formData.phoneNumber}
           onChange={(e) => onFormChange('phoneNumber', e.target.value)}
           error={!!formErrors.phoneNumber}
-          helperText={formErrors.phoneNumber}
-          placeholder="Enter your phone number"
+          helperText={formErrors.phoneNumber || "Optional - Mobile OTP verification removed"}
+          placeholder="Enter your phone number (optional)"
           InputProps={{
             startAdornment: (
               <FormControl sx={{ minWidth: 90, mr: 1 }}>

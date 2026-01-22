@@ -1,186 +1,27 @@
-import axios from 'axios';
+import { API_BASE_URL, API_SERVER, API_ENDPOINTS } from '../config/apiConfig';
+import { createAxiosInstance } from '../utils/axiosConfig';
 
-// Flag to prevent multiple redirects
-let isRedirecting = false;
+// Create axios instances with standardized configuration
+// All instances include: auth, logging, retry logic, error handling, request IDs
 
-// Utility function to handle token expiration
-const handleTokenExpiration = (apiName) => {
-  if (isRedirecting) {
-    console.log(`Already redirecting due to token expiration, skipping ${apiName}`);
-    return;
-  }
-  
-  console.log(`Token expired or invalid for ${apiName}, clearing auth data`);
-  isRedirecting = true;
-  
-  localStorage.removeItem('authToken');
-  localStorage.removeItem('userData');
-  localStorage.removeItem('dashboardData');
-  localStorage.removeItem('organizationData');
-  
-  // Use setTimeout to allow other API calls to complete
-  setTimeout(() => {
-    window.location.href = '/login';
-  }, 100);
-};
-
-// Create axios instance with base configuration
-const api = axios.create({
-  baseURL: 'http://localhost:5001/api/organizations',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true, // For session handling
-});
-
-// Create separate instances for different API endpoints
-const examApiInstance = axios.create({
-  baseURL: 'http://localhost:5001/api/exams',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
-// Add authentication interceptor for exam API
-examApiInstance.interceptors.request.use(
-  (config) => {
-    console.log(`📝 Exam API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    
-    // Add token to requests if available
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-      console.log('🔑 Exam API: Authorization header set');
-    } else {
-      console.warn('⚠️ Exam API: No auth token found in localStorage');
-    }
-    
-    return config;
-  },
-  (error) => {
-    console.error('❌ Exam API Request Error:', error);
-    return Promise.reject(error);
-  }
+const api = createAxiosInstance(
+  { baseURL: API_ENDPOINTS.ORGANIZATIONS },
+  { apiName: 'Organization API', enableRetry: true, enableLogging: true }
 );
 
-// Add response interceptor for exam API
-examApiInstance.interceptors.response.use(
-  (response) => {
-    console.log(`✅ Exam API Response: ${response.status} ${response.config.url}`);
-    return response;
-  },
-  (error) => {
-    console.error('❌ Exam API Response Error:', error.response?.data || error.message);
-    
-    // Handle token expiration
-    if (error.response?.status === 401) {
-      handleTokenExpiration('exam API');
-    }
-    
-    return Promise.reject(error);
-  }
+const examApiInstance = createAxiosInstance(
+  { baseURL: API_ENDPOINTS.EXAMS },
+  { apiName: 'Exam API', enableRetry: true, enableLogging: true }
 );
 
-const questionApiInstance = axios.create({
-  baseURL: 'http://localhost:5001/api/questions',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
-// Add authentication interceptor for question API
-questionApiInstance.interceptors.request.use(
-  (config) => {
-    console.log(`❓ Question API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    
-    // Add token to requests if available
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    
-    return config;
-  },
-  (error) => {
-    console.error('❌ Question API Request Error:', error);
-    return Promise.reject(error);
-  }
+const questionApiInstance = createAxiosInstance(
+  { baseURL: API_ENDPOINTS.QUESTIONS },
+  { apiName: 'Question API', enableRetry: true, enableLogging: true }
 );
 
-const questionBankApiInstance = axios.create({
-  baseURL: 'http://localhost:5001/api/question-banks',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
-// Add authentication interceptor for question bank API
-questionBankApiInstance.interceptors.request.use(
-  (config) => {
-    console.log(`📚 Question Bank API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    
-    // Add token to requests if available
-    const token = localStorage.getItem('authToken');
-    console.log('🔑 Auth token available:', !!token);
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-      console.log('🔑 Authorization header set');
-    } else {
-      console.warn('⚠️ No auth token found in localStorage');
-    }
-    
-    return config;
-  },
-  (error) => {
-    console.error('❌ Question Bank API Request Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// Add response interceptor for question bank API
-questionBankApiInstance.interceptors.response.use(
-  (response) => {
-    console.log(`✅ Question Bank API Response: ${response.status} ${response.config.url}`);
-    console.log('📚 Question Bank Response data:', response.data);
-    return response;
-  },
-  (error) => {
-    console.error('❌ Question Bank API Response Error:', error.response?.data || error.message);
-    return Promise.reject(error);
-  }
-);
-
-// Request interceptor for logging
-api.interceptors.request.use(
-  (config) => {
-    console.log(`🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    return config;
-  },
-  (error) => {
-    console.error('❌ API Request Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// Response interceptor for error handling
-api.interceptors.response.use(
-  (response) => {
-    console.log(`✅ API Response: ${response.status} ${response.config.url}`);
-    return response;
-  },
-  (error) => {
-    console.error('❌ API Response Error:', error.response?.data || error.message);
-    
-    // Handle token expiration
-    if (error.response?.status === 401) {
-      handleTokenExpiration('main API');
-    }
-    
-    return Promise.reject(error);
-  }
+const questionBankApiInstance = createAxiosInstance(
+  { baseURL: API_ENDPOINTS.QUESTION_BANKS },
+  { apiName: 'Question Bank API', enableRetry: true, enableLogging: true }
 );
 
 // Organization Registration API
@@ -215,7 +56,17 @@ export const organizationAPI = {
     }
   },
 
-  // Get Registration Status
+  // Get Registration Session Status (validates session with backend)
+  getRegistrationSessionStatus: async (registrationToken) => {
+    try {
+      const response = await api.get(`/register/session-status?registrationToken=${registrationToken}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to get registration session status' };
+    }
+  },
+
+  // Get Registration Status (legacy - kept for backward compatibility)
   getRegistrationStatus: async (registrationToken) => {
     try {
       const response = await api.get(`/register/status?registrationToken=${registrationToken}`);
@@ -285,6 +136,26 @@ export const organizationAPI = {
     }
   },
 
+  // Get Organization by ID
+  getOrganizationById: async (organizationId) => {
+    try {
+      const response = await api.get(`/${organizationId}`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to get organization' };
+    }
+  },
+
+  // Update Organization
+  updateOrganization: async (organizationId, organizationData) => {
+    try {
+      const response = await api.put(`/${organizationId}`, organizationData);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to update organization' };
+    }
+  },
+
   // Clear Registration Session
   clearRegistrationSession: async () => {
     try {
@@ -350,24 +221,9 @@ export const organizationAPI = {
 };
 
 // Create separate axios instance for location API
-const locationApi = axios.create({
-  baseURL: 'http://localhost:5001/api',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
-// Request interceptor for location API logging
-locationApi.interceptors.request.use(
-  (config) => {
-    console.log(`🌍 Location API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    return config;
-  },
-  (error) => {
-    console.error('❌ Location API Request Error:', error);
-    return Promise.reject(error);
-  }
+const locationApi = createAxiosInstance(
+  { baseURL: API_ENDPOINTS.LOCATION },
+  { apiName: 'Location API', enableRetry: true, enableLogging: true }
 );
 
 // Response interceptor for location API error handling
@@ -383,36 +239,9 @@ locationApi.interceptors.response.use(
 );
 
 // Create separate axios instance for teacher API
-const teacherApi = axios.create({
-  baseURL: 'http://localhost:5001/api/teachers',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
-// Request interceptor for teacher API logging
-teacherApi.interceptors.request.use(
-  (config) => {
-    console.log(`🚀 Teacher API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    return config;
-  },
-  (error) => {
-    console.error('❌ Teacher API Request Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-// Response interceptor for teacher API error handling
-teacherApi.interceptors.response.use(
-  (response) => {
-    console.log(`✅ Teacher API Response: ${response.status} ${response.config.url}`);
-    return response;
-  },
-  (error) => {
-    console.error('❌ Teacher API Response Error:', error.response?.data || error.message);
-    return Promise.reject(error);
-  }
+const teacherApi = createAxiosInstance(
+  { baseURL: API_ENDPOINTS.TEACHERS },
+  { apiName: 'Teacher API', enableRetry: true, enableLogging: true }
 );
 
 // Location API
@@ -513,10 +342,15 @@ export const otpAPI = {
 
 
 // Health Check API
+const healthAxios = createAxiosInstance(
+  { baseURL: API_SERVER },
+  { apiName: 'Health API', enableRetry: false, enableLogging: false }
+);
+
 export const healthAPI = {
   check: async () => {
     try {
-      const response = await axios.get('http://localhost:5001/health');
+      const response = await healthAxios.get('/health');
       return response.data;
     } catch (error) {
       throw error.response?.data || { message: 'Backend server is not running' };
@@ -525,68 +359,18 @@ export const healthAPI = {
 };
 
 // Teacher Registration API
-const teacherAxios = axios.create({
-  baseURL: 'http://localhost:5001/api/teachers',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
+const teacherAxios = createAxiosInstance(
+  { baseURL: API_ENDPOINTS.TEACHERS },
+  { apiName: 'Teacher API', enableRetry: true, enableLogging: true }
+);
 
 // Student Registration API
-const studentAxios = axios.create({
-  baseURL: 'http://localhost:5001/api/students',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
-// Add interceptors for teacher API
-teacherAxios.interceptors.request.use(
-  (config) => {
-    console.log(`🚀 Teacher API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    return config;
-  },
-  (error) => {
-    console.error('❌ Teacher API Request Error:', error);
-    return Promise.reject(error);
-  }
+const studentAxios = createAxiosInstance(
+  { baseURL: API_ENDPOINTS.STUDENTS },
+  { apiName: 'Student API', enableRetry: true, enableLogging: true }
 );
 
-teacherAxios.interceptors.response.use(
-  (response) => {
-    console.log(`✅ Teacher API Response: ${response.status} ${response.config.url}`);
-    return response;
-  },
-  (error) => {
-    console.error('❌ Teacher API Response Error:', error.response?.data || error.message);
-    return Promise.reject(error);
-  }
-);
-
-// Add interceptors for student API
-studentAxios.interceptors.request.use(
-  (config) => {
-    console.log(`🚀 Student API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    return config;
-  },
-  (error) => {
-    console.error('❌ Student API Request Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-studentAxios.interceptors.response.use(
-  (response) => {
-    console.log(`✅ Student API Response: ${response.status} ${response.config.url}`);
-    return response;
-  },
-  (error) => {
-    console.error('❌ Student API Response Error:', error.response?.data || error.message);
-    return Promise.reject(error);
-  }
-);
+// Note: studentAxios interceptors are now handled by createAxiosInstance
 
 export const teacherAPI = {
   // Step 1: Basic Details
@@ -618,24 +402,11 @@ export const teacherAPI = {
     }
   },
 
-  // Step 3: Organization Link
+  // Step 3: Complete Registration (includes password - registration completes here)
+  // REMOVED: Step 4 - Registration now completes at Step 3 (similar to organization registration)
   registerStep3: async (data) => {
     try {
       const response = await teacherAxios.post('/register/step3', data);
-      return response.data;
-    } catch (error) {
-      const errorData = error.response?.data || { message: 'Failed to link teacher to organization' };
-      const apiError = new Error(errorData.message || 'Failed to link teacher to organization');
-      apiError.response = error.response;
-      apiError.data = errorData;
-      throw apiError;
-    }
-  },
-
-  // Step 4: Security Verification
-  registerStep4: async (data) => {
-    try {
-      const response = await teacherAxios.post('/register/step4', data);
       return response.data;
     } catch (error) {
       const errorData = error.response?.data || { message: 'Failed to complete teacher registration' };
@@ -646,45 +417,52 @@ export const teacherAPI = {
     }
   },
 
-  // Send Email OTP
-  sendEmailOTP: async (data) => {
-    try {
-      const response = await teacherAxios.post('/send-email-otp', data);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to send email OTP' };
-    }
-  },
+  // REMOVED: registerStep4 - Registration now completes at Step 3
+  // (similar to organization registration flow where registration completes at final step)
 
-  // Send Phone OTP
-  sendPhoneOTP: async (data) => {
-    try {
-      const response = await teacherAxios.post('/send-phone-otp', data);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to send phone OTP' };
-    }
-  },
+  // REMOVED: sendEmailOTP - Email OTP verification removed from teacher flow
+  // (similar to organization registration flow where OTP was removed)
+  // sendEmailOTP: async (data) => {
+  //   try {
+  //     const response = await teacherAxios.post('/send-email-otp', data);
+  //     return response.data;
+  //   } catch (error) {
+  //     throw error.response?.data || { message: 'Failed to send email OTP' };
+  //   }
+  // },
 
-  // Verify Email OTP
-  verifyEmailOTP: async (data) => {
-    try {
-      const response = await teacherAxios.post('/verify-email-otp', data);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to verify email OTP' };
-    }
-  },
+  // REMOVED: sendPhoneOTP - Mobile OTP verification removed from teacher flow
+  // (similar to organization registration flow where phone OTP was removed)
+  // sendPhoneOTP: async (data) => {
+  //   try {
+  //     const response = await teacherAxios.post('/send-phone-otp', data);
+  //     return response.data;
+  //   } catch (error) {
+  //     throw error.response?.data || { message: 'Failed to send phone OTP' };
+  //   }
+  // },
 
-  // Verify Phone OTP
-  verifyPhoneOTP: async (data) => {
-    try {
-      const response = await teacherAxios.post('/verify-phone-otp', data);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to verify phone OTP' };
-    }
-  },
+  // REMOVED: verifyEmailOTP - Email OTP verification removed from teacher flow
+  // (similar to organization registration flow where OTP was removed)
+  // verifyEmailOTP: async (data) => {
+  //   try {
+  //     const response = await teacherAxios.post('/verify-email-otp', data);
+  //     return response.data;
+  //   } catch (error) {
+  //     throw error.response?.data || { message: 'Failed to verify email OTP' };
+  //   }
+  // },
+
+  // REMOVED: verifyPhoneOTP - Mobile OTP verification removed from teacher flow
+  // (similar to organization registration flow where phone OTP was removed)
+  // verifyPhoneOTP: async (data) => {
+  //   try {
+  //     const response = await teacherAxios.post('/verify-phone-otp', data);
+  //     return response.data;
+  //   } catch (error) {
+  //     throw error.response?.data || { message: 'Failed to verify phone OTP' };
+  //   }
+  // },
 
   // Get Registration Status
   getRegistrationStatus: async (sessionId) => {
@@ -805,48 +583,9 @@ export const studentAPI = {
 };
 
 // User Management API
-const userManagementApi = axios.create({
-  baseURL: 'http://localhost:5001/api/user-management',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
-// Add interceptors for user management API
-userManagementApi.interceptors.request.use(
-  (config) => {
-    console.log(`👥 User Management API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    
-    // Add token to requests if available
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    
-    return config;
-  },
-  (error) => {
-    console.error('❌ User Management API Request Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-userManagementApi.interceptors.response.use(
-  (response) => {
-    console.log(`✅ User Management API Response: ${response.status} ${response.config.url}`);
-    return response;
-  },
-  (error) => {
-    console.error('❌ User Management API Response Error:', error.response?.data || error.message);
-    
-    // Handle token expiration
-    if (error.response?.status === 401) {
-      handleTokenExpiration('user management API');
-    }
-    
-    return Promise.reject(error);
-  }
+const userManagementApi = createAxiosInstance(
+  { baseURL: API_ENDPOINTS.USER_MANAGEMENT },
+  { apiName: 'User Management API', enableRetry: true, enableLogging: true }
 );
 
 export const userManagementAPI = {
@@ -958,7 +697,15 @@ export const userManagementAPI = {
       const response = await userManagementApi.delete(`/users/${userId}`);
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to delete user' };
+      // Preserve the full error object for better error handling
+      if (error.response) {
+        const apiError = new Error(error.response.data?.message || 'Failed to delete user');
+        apiError.response = error.response;
+        apiError.status = error.response.status;
+        apiError.statusCode = error.response.status;
+        throw apiError;
+      }
+      throw error.response?.data || new Error('Failed to delete user');
     }
   },
 
@@ -1509,42 +1256,12 @@ export const examAPI = {
     } catch (error) {
       throw error.response?.data || { message: 'Failed to assign teachers to exam' };
     }
-  },
-  updateExam: async (examId, examData) => {
-    try {
-      const response = await examApiInstance.put(`/${examId}`, examData);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Failed to update exam' };
-    }
   }
 };
 
-const teacherClassApiInstance = axios.create({
-  baseURL: 'http://localhost:5001/api/teacher-classes',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
-// Add authentication interceptor for teacher class API
-teacherClassApiInstance.interceptors.request.use(
-  (config) => {
-    console.log(`🎓 Teacher Class API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    
-    // Add token to requests if available
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    
-    return config;
-  },
-  (error) => {
-    console.error('❌ Teacher Class API Request Error:', error);
-    return Promise.reject(error);
-  }
+const teacherClassApiInstance = createAxiosInstance(
+  { baseURL: API_ENDPOINTS.TEACHER_CLASSES },
+  { apiName: 'Teacher Class API', enableRetry: true, enableLogging: true }
 );
 
 export const teacherClassAPI = {
@@ -1630,42 +1347,9 @@ export const teacherClassAPI = {
 };
 
 // Department Management API
-const departmentApi = axios.create({
-  baseURL: 'http://localhost:5001/api/departments',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
-// Add interceptors for department API
-departmentApi.interceptors.request.use(
-  (config) => {
-    console.log(`🏢 Department API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    
-    // Add token to requests if available
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    
-    return config;
-  },
-  (error) => {
-    console.error('❌ Department API Request Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-departmentApi.interceptors.response.use(
-  (response) => {
-    console.log(`✅ Department API Response: ${response.status} ${response.config.url}`);
-    return response;
-  },
-  (error) => {
-    console.error('❌ Department API Response Error:', error.response?.data || error.message);
-    return Promise.reject(error);
-  }
+const departmentApi = createAxiosInstance(
+  { baseURL: API_ENDPOINTS.DEPARTMENTS },
+  { apiName: 'Department API', enableRetry: true, enableLogging: true }
 );
 
 export const departmentAPI = {
@@ -1752,48 +1436,9 @@ export const departmentAPI = {
 };
 
 // Subject Management API
-const subjectApi = axios.create({
-  baseURL: 'http://localhost:5001/api/subjects',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
-// Add interceptors for subject API
-subjectApi.interceptors.request.use(
-  (config) => {
-    console.log(`📚 Subject API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    
-    // Add token to requests if available
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    
-    return config;
-  },
-  (error) => {
-    console.error('❌ Subject API Request Error:', error);
-    return Promise.reject(error);
-  }
-);
-
-subjectApi.interceptors.response.use(
-  (response) => {
-    console.log(`✅ Subject API Response: ${response.status} ${response.config.url}`);
-    return response;
-  },
-  (error) => {
-    console.error('❌ Subject API Response Error:', error.response?.data || error.message);
-    
-    // Handle token expiration
-    if (error.response?.status === 401) {
-      handleTokenExpiration('subject API');
-    }
-    
-    return Promise.reject(error);
-  }
+const subjectApi = createAxiosInstance(
+  { baseURL: API_ENDPOINTS.SUBJECTS },
+  { apiName: 'Subject API', enableRetry: true, enableLogging: true }
 );
 
 export const subjectAPI = {

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authService } from '../services/authService';
+import { organizationAPI } from '../services/api';
 
 const AuthContext = createContext();
 
@@ -34,8 +35,64 @@ export const AuthProvider = ({ children }) => {
         if (userData) {
           setUser(userData);
           setDashboardData(dashboardData);
-          // Only set organization data if it's not null and not an empty object
-          setOrganizationData(organizationData && Object.keys(organizationData).length > 0 ? organizationData : null);
+          
+          // CRITICAL: Auto-rehydrate organization data if incomplete
+          let orgData = organizationData && Object.keys(organizationData).length > 0 ? organizationData : null;
+          console.log('🔍 [LOGO DEBUG] Organization data from localStorage:', orgData ? Object.keys(orgData) : 'NULL');
+          console.log('🔍 [LOGO DEBUG] Logo in localStorage data:', orgData?.logo ? 'EXISTS' : 'MISSING', orgData?.logo?.substring(0, 50) || 'N/A');
+          
+          // AUTO-REHYDRATION: Check if organizationData is incomplete (normalized/partial object)
+          // localStorage is only a cache - backend is the source of truth
+          const organizationId = userData.organizationId;
+          
+          // Detect if organizationData looks like a normalized/partial object
+          // Full organization objects should have many fields (logo, email, phone, address, etc.)
+          // Normalized objects typically only have: id, name, code (3-4 fields)
+          const hasOnlyBasicFields = orgData && Object.keys(orgData).length <= 4 && 
+            orgData.id && orgData.name && (orgData.code || orgData.orgCode) && !orgData.logo;
+          
+          // Also check if critical fields are missing (indicates old/incomplete data)
+          const isIncomplete = orgData && organizationId && (
+            hasOnlyBasicFields || // Only has id, name, code (normalized)
+            (!orgData.logo && !orgData.email) || // Missing both logo and email (very incomplete)
+            Object.keys(orgData).length < 5 // Heuristic: full org object should have many fields
+          );
+          
+          if (isIncomplete) {
+            console.log('🔄 [AUTO-REHYDRATE] Organization data incomplete, fetching from backend...');
+            console.log('🔄 [AUTO-REHYDRATE] Missing fields:', {
+              logo: !orgData.logo,
+              email: !orgData.email,
+              orgCode: !orgData.orgCode,
+              fieldCount: Object.keys(orgData).length
+            });
+            try {
+              // Fetch full organization object from backend (source of truth)
+              const response = await organizationAPI.getOrganizationById(organizationId);
+              if (response.success && response.data) {
+                const fullOrgData = response.data;
+                console.log('✅ [AUTO-REHYDRATE] Full organization data fetched:', Object.keys(fullOrgData));
+                console.log('✅ [AUTO-REHYDRATE] Logo in fetched data:', fullOrgData.logo ? 'EXISTS' : 'MISSING', fullOrgData.logo?.substring(0, 50) || 'N/A');
+                
+                // Update localStorage with complete data (backend is source of truth)
+                localStorage.setItem('organizationData', JSON.stringify(fullOrgData));
+                
+                // Use the complete organization data
+                orgData = fullOrgData;
+                console.log('✅ [AUTO-REHYDRATE] Organization data rehydrated and saved to localStorage');
+              } else {
+                console.warn('⚠️ [AUTO-REHYDRATE] Backend response missing data, using incomplete localStorage data');
+              }
+            } catch (error) {
+              console.error('❌ [AUTO-REHYDRATE] Failed to rehydrate organization data:', error);
+              // Continue with incomplete data if fetch fails (graceful degradation)
+            }
+          } else if (orgData) {
+            console.log('✅ [AUTO-REHYDRATE] Organization data appears complete, using localStorage cache');
+          }
+          
+          // Store organization data (either from localStorage or rehydrated from backend)
+          setOrganizationData(orgData);
           setIsAuthenticated(true);
         } else {
           // Clear invalid data
@@ -62,12 +119,18 @@ export const AuthProvider = ({ children }) => {
         console.log('AuthContext: User data:', result.user);
         console.log('AuthContext: Dashboard data:', result.dashboard);
         console.log('AuthContext: Organization data:', result.organization);
+        console.log('🔍 [LOGO DEBUG] Organization logo in login response:', result.organization?.logo ? 'EXISTS' : 'MISSING', result.organization?.logo?.substring(0, 50) || 'N/A');
         
         // Set all state synchronously
         setUser(result.user);
         setDashboardData(result.dashboard);
+        // CRITICAL: Store the FULL organization object from response - never normalize
         // Only set organization data if it's not null and not an empty object
-        setOrganizationData(result.organization && Object.keys(result.organization).length > 0 ? result.organization : null);
+        const orgData = result.organization && Object.keys(result.organization).length > 0 ? result.organization : null;
+        console.log('🔍 [LOGO DEBUG] Full organization object from login:', orgData ? Object.keys(orgData) : 'NULL');
+        console.log('🔍 [LOGO DEBUG] Organization logo in object:', orgData?.logo ? 'EXISTS' : 'MISSING', orgData?.logo?.substring(0, 50) || 'N/A');
+        setOrganizationData(orgData); // Store FULL object - includes logo and all fields
+        console.log('🔍 [LOGO DEBUG] Organization data set in context:', orgData?.logo ? 'EXISTS' : 'MISSING');
         setIsAuthenticated(true);
         
         console.log('AuthContext: Auth state updated, isAuthenticated should be true');
@@ -107,8 +170,12 @@ export const AuthProvider = ({ children }) => {
   };
 
   const updateOrganizationData = (data) => {
+    console.log('🔍 [LOGO DEBUG] Updating organization data in context:', data?.logo ? 'EXISTS' : 'MISSING', data?.logo?.substring(0, 50) || 'N/A');
+    console.log('🔍 [LOGO DEBUG] Full organization data keys:', data ? Object.keys(data) : 'NULL');
+    // CRITICAL: Store the FULL organization object - never normalize or reconstruct
     setOrganizationData(data);
     localStorage.setItem('organizationData', JSON.stringify(data));
+    console.log('🔍 [LOGO DEBUG] Organization data saved to localStorage');
   };
 
   const refreshUser = async () => {

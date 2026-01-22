@@ -1,8 +1,9 @@
 import axios from 'axios';
+import { API_ENDPOINTS } from '../config/apiConfig';
 
 // Create axios instance for authentication API
 const authAPI = axios.create({
-  baseURL: 'http://localhost:5001/api/auth',
+  baseURL: API_ENDPOINTS.AUTH,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -71,19 +72,25 @@ export const authService = {
       if (response.data.success) {
         const { token, user, dashboard, organization } = response.data.data;
         
+        // CRITICAL: Store the FULL organization object - never normalize
+        console.log('🔍 [LOGO DEBUG] authService.login - organization from API:', organization ? Object.keys(organization) : 'NULL');
+        console.log('🔍 [LOGO DEBUG] authService.login - logo in organization:', organization?.logo ? 'EXISTS' : 'MISSING', organization?.logo?.substring(0, 50) || 'N/A');
+        
         // Store token and user data
         localStorage.setItem('authToken', token);
         localStorage.setItem('userData', JSON.stringify(user));
         localStorage.setItem('dashboardData', JSON.stringify(dashboard));
+        // Store FULL organization object (includes logo and all fields)
         if (organization) {
           localStorage.setItem('organizationData', JSON.stringify(organization));
+          console.log('🔍 [LOGO DEBUG] authService.login - organizationData saved to localStorage with', Object.keys(organization).length, 'keys');
         }
         
         return {
           success: true,
           user,
           dashboard,
-          organization,
+          organization, // Return FULL object - includes logo
           token
         };
       }

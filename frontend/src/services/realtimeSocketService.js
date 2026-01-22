@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client';
+import { SOCKET_URL } from '../config/apiConfig';
 
 class RealtimeSocketService {
   constructor() {
@@ -29,11 +30,9 @@ class RealtimeSocketService {
       return null;
     }
 
-    const serverUrl = import.meta.env.VITE_REALTIME_URL || 'http://localhost:5004';
+    console.log(`⚡ Connecting to real-time server: ${SOCKET_URL}`);
     
-    console.log(`⚡ Connecting to real-time server: ${serverUrl}`);
-    
-    this.socket = io(serverUrl, {
+    this.socket = io(SOCKET_URL, {
       auth: {
         token: token
       },
@@ -62,6 +61,16 @@ class RealtimeSocketService {
 
   setupEventListeners() {
     if (!this.socket) return;
+
+    // ============================================================
+    // CRITICAL-5 FIX: Clear existing core listeners before adding
+    // Prevents memory leak from duplicate listeners on reconnection
+    // ============================================================
+    this.socket.off('connect');
+    this.socket.off('disconnect');
+    this.socket.off('connect_error');
+    this.socket.off('error');
+    this.socket.off('heartbeat_ack');
 
     this.socket.on('connect', () => {
       console.log('⚡ Connected to Real-time Socket.IO server');
@@ -233,19 +242,6 @@ class RealtimeSocketService {
     this.socket.emit('resume_exam', {
       examId,
       sessionId
-    });
-  }
-
-  updateProgress(examId, sessionId, progress) {
-    if (!this.socket || !this.socket.connected) {
-      console.warn('Real-time socket not connected, cannot update progress');
-      return;
-    }
-
-    this.socket.emit('update_progress', {
-      examId,
-      sessionId,
-      progress
     });
   }
 
@@ -553,6 +549,8 @@ class RealtimeSocketService {
   // Utility Methods
   disconnect() {
     if (this.socket) {
+      // Remove all event listeners to prevent memory leaks
+      this.socket.removeAllListeners();
       this.socket.disconnect();
       this.socket = null;
       this.isConnected = false;

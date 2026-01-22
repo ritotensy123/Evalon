@@ -39,6 +39,17 @@ const FirstTimeLoginWizard = () => {
   const [emailVerificationSent, setEmailVerificationSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [otpExpiresIn, setOtpExpiresIn] = useState(0);
+
+  // SAFETY CHECK: Organization admins MUST NEVER see this wizard
+  // This is a safety net in case routing logic fails
+  React.useEffect(() => {
+    if (user?.userType === 'organization_admin') {
+      // Immediately redirect organization admins to dashboard
+      // They do NOT require first-time login setup
+      window.location.href = '/';
+      return;
+    }
+  }, [user?.userType]);
   
   // Country management
   const [countries, setCountries] = useState([]);

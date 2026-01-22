@@ -543,11 +543,8 @@ const QuestionBankManagement = () => {
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             >
               <option value="">All Subjects</option>
-              <option value="Mathematics">Mathematics</option>
-              <option value="Science">Science</option>
-              <option value="English">English</option>
-              <option value="History">History</option>
-              <option value="Geography">Geography</option>
+              {/* Subject options will be populated from backend - subjects API */}
+              {/* For now, allow free text entry or fetch from subject management */}
             </select>
 
             <select

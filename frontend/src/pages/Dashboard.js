@@ -5,10 +5,10 @@ import OrganizationDashboard from './dashboard/OrganizationDashboard';
 import TeacherDashboard from './dashboard/TeacherDashboard';
 import StudentDashboard from './dashboard/StudentDashboard';
 import SubAdminDashboard from './dashboard/SubAdminDashboard';
-import SystemSetupWizard from '../components/setup/SystemSetupWizard';
+import OrganizationOnboardingPrompt from '../components/onboarding/OrganizationOnboardingPrompt';
 import api from '../services/api';
 
-const Dashboard = ({ onNavigateToDepartmentDetail }) => {
+const Dashboard = ({ onNavigateToDepartmentDetail, onNavigateToProfile }) => {
   const { user, isLoading, isAuthenticated, organizationData, updateUser, updateDashboardData } = useAuth();
   const [setupStatus, setSetupStatus] = useState(null);
   const [checkingSetup, setCheckingSetup] = useState(false);
@@ -54,8 +54,19 @@ const Dashboard = ({ onNavigateToDepartmentDetail }) => {
   }, [user, setupStatus, organizationData]);
 
   // Handle setup completion
-  const handleSetupComplete = () => {
-    setSetupStatus(prev => ({ ...prev, setupCompleted: true }));
+  const handleSetupComplete = async () => {
+    // Refresh setup status after completion
+    if (user?.organizationId) {
+      try {
+        const response = await api.get(`/organization/${user.organizationId}/setup-status`);
+        if (response.data.success) {
+          setSetupStatus(response.data.data);
+        }
+      } catch (error) {
+        console.error('Error refreshing setup status:', error);
+      }
+    }
+    
     // Update user context
     updateUser({
       ...user,
@@ -109,13 +120,8 @@ const Dashboard = ({ onNavigateToDepartmentDetail }) => {
     );
   }
 
-  // Check if organization admin needs to complete setup (only on first login)
-  if (user?.userType === 'organization_admin' && user?.firstLogin) {
-    // Show setup wizard if setup is not completed or if we don't have setup status yet
-    if (!setupStatus || !setupStatus.setupCompleted) {
-      return <SystemSetupWizard onComplete={handleSetupComplete} onSkip={handleSetupComplete} />;
-    }
-  }
+  // PHASE 1: Dashboard ALWAYS renders - onboarding is non-blocking
+  // SystemSetupWizard is no longer blocking - it opens via prompt/modal
 
   // Render appropriate dashboard based on user type
   const renderDashboard = () => {
@@ -123,7 +129,27 @@ const Dashboard = ({ onNavigateToDepartmentDetail }) => {
 
     switch (user.userType) {
       case 'organization_admin':
-        return <OrganizationDashboard onNavigateToDepartmentDetail={onNavigateToDepartmentDetail} />;
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
+            {/* PHASE 2: Show onboarding prompt if setup not completed */}
+            {/* PHASE 7: Safety check - only show if organizationData exists and setup not completed */}
+            {organizationData && 
+             organizationData.setupCompleted !== true && 
+             user?.userType === 'organization_admin' && (
+              <OrganizationOnboardingPrompt
+                organizationData={organizationData}
+                onSetupComplete={handleSetupComplete}
+              />
+            )}
+            {/* PHASE 1: Dashboard ALWAYS renders - never blocked */}
+            <div style={{ flex: 1 }}>
+              <OrganizationDashboard 
+                onNavigateToDepartmentDetail={onNavigateToDepartmentDetail}
+                onNavigateToProfile={onNavigateToProfile}
+              />
+            </div>
+          </div>
+        );
       case 'sub_admin':
         return <SubAdminDashboard />;
       case 'teacher':

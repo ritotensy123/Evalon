@@ -3,20 +3,50 @@
  * Handles communication with the Python AI face detection service
  */
 
-// Dynamic port detection - tries ports 5002-5012
-let AI_SERVICE_URL = 'http://localhost:5002';
+import { AI_SERVICE_URL as CONFIG_AI_URL } from '../config/apiConfig';
 
-// Function to find the correct port
+// Dynamic port detection - tries ports 5002-5012 (for development flexibility)
+// In production, use the configured AI_SERVICE_URL directly
+let AI_SERVICE_URL = CONFIG_AI_URL;
+
+// Extract base URL without port for dynamic port scanning
+const getBaseUrl = () => {
+  try {
+    const url = new URL(CONFIG_AI_URL);
+    return `${url.protocol}//${url.hostname}`;
+  } catch (error) {
+    throw new Error(`Invalid AI_SERVICE_URL in config: ${CONFIG_AI_URL}. Please check your environment variables.`);
+  }
+};
+
+// Function to find the correct port (for development with dynamic port allocation)
 async function findServicePort() {
-  // Try default port first
-  for (let port = 5002; port <= 5012; port++) {
+  const baseUrl = getBaseUrl();
+  
+  // Try default port from config first, then scan range
+  let defaultPort;
+  try {
+    defaultPort = parseInt(new URL(CONFIG_AI_URL).port);
+  } catch {
+    throw new Error(`Cannot extract port from AI_SERVICE_URL: ${CONFIG_AI_URL}`);
+  }
+  
+  // If no port in URL, throw error (production should have explicit port)
+  if (!defaultPort || isNaN(defaultPort)) {
+    throw new Error(`AI_SERVICE_URL must include a port number: ${CONFIG_AI_URL}`);
+  }
+  
+  // For development: scan nearby ports if default fails
+  const portsToTry = [defaultPort, ...Array.from({ length: 11 }, (_, i) => defaultPort + i - 5).filter(p => p !== defaultPort && p > 0)];
+  
+  for (const port of portsToTry) {
     try {
-      const response = await fetch(`http://localhost:${port}/health`, {
+      const response = await fetch(`${baseUrl}:${port}/health`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
       });
       if (response.ok) {
-        AI_SERVICE_URL = `http://localhost:${port}`;
+        AI_SERVICE_URL = `${baseUrl}:${port}`;
         console.log(`✅ AI Service found on port ${port}`);
         return port;
       }
@@ -31,6 +61,20 @@ class AIProctoringService {
   static servicePort = null;
   
   /**
+   * Get authorization headers for authenticated requests
+   */
+  static getAuthHeaders() {
+    const token = localStorage.getItem('authToken');
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  }
+  
+  /**
    * Initialize service and find correct port
    */
   static async initialize() {
@@ -41,7 +85,7 @@ class AIProctoringService {
   }
   
   /**
-   * Health check for AI service
+   * Health check for AI service (no auth required)
    */
   static async checkHealth() {
     try {
@@ -73,9 +117,7 @@ class AIProctoringService {
       
       const response = await fetch(`${AI_SERVICE_URL}/api/detect-faces`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getAuthHeaders(),
         body: JSON.stringify({
           image: imageBase64,
         }),
@@ -100,9 +142,7 @@ class AIProctoringService {
       
       const response = await fetch(`${AI_SERVICE_URL}/api/validate-setup`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getAuthHeaders(),
         body: JSON.stringify({
           images: images,
           duration_seconds: durationSeconds,
@@ -208,9 +248,7 @@ class AIProctoringService {
       
       const response = await fetch(`${AI_SERVICE_URL}/api/classify-behavior`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getAuthHeaders(),
         body: JSON.stringify({
           image: imageBase64,
         }),
@@ -228,18 +266,24 @@ class AIProctoringService {
    * @param {number} noFaceDuration - Duration in seconds with no face detected
    * @param {boolean} isIdle - Whether user is idle (no keyboard/mouse activity)
    * @param {number} audioLevel - Normalized audio level (0-1)
+   * @param {boolean} useTestEndpoint - Use test endpoint (no auth required) for AI Model Test page
    * @returns {Promise<Object>} Comprehensive proctoring results
    */
-  static async comprehensiveProctoring(imageBase64, noFaceDuration = 0, isIdle = false, audioLevel = 0.0) {
+  static async comprehensiveProctoring(imageBase64, noFaceDuration = 0, isIdle = false, audioLevel = 0.0, useTestEndpoint = false) {
     try {
       // Ensure service is initialized
       await this.initialize();
       
-      const response = await fetch(`${AI_SERVICE_URL}/api/comprehensive-proctoring`, {
+      // Use test endpoint for AI Model Test page (no auth required)
+      const endpoint = useTestEndpoint 
+        ? `${AI_SERVICE_URL}/api/comprehensive-proctoring-test`
+        : `${AI_SERVICE_URL}/api/comprehensive-proctoring`;
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: useTestEndpoint 
+          ? { 'Content-Type': 'application/json' }  // No auth for test endpoint
+          : this.getAuthHeaders(),
         body: JSON.stringify({
           image: imageBase64,
           no_face_duration: noFaceDuration,

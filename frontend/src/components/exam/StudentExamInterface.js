@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_ENDPOINTS } from '../../config/apiConfig';
 import {
   Clock,
   BookOpen,
@@ -86,7 +87,7 @@ const StudentExamInterface = ({ exam, onClose, user }) => {
   const syncWithServer = async () => {
     try {
       const startTime = Date.now();
-      const response = await fetch('http://localhost:5001/api/time', {
+      const response = await fetch(API_ENDPOINTS.TIME, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

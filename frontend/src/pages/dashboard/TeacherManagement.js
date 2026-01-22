@@ -979,66 +979,78 @@ const TeacherManagement = () => {
             </div>
           )}
 
-          {/* Subjects Tab - Simplified */}
+          {/* Subjects Tab - Data from backend */}
           {activeTab === 'subjects' && (
             <div className="p-6 space-y-6">
               <h3 className="text-lg font-semibold text-gray-900">Subject Assignments</h3>
               
-              {/* Simple Subject Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[
-                  { subject: 'Mathematics', teachers: 8, classes: 12 },
-                  { subject: 'Physics', teachers: 4, classes: 8 },
-                  { subject: 'Chemistry', teachers: 3, classes: 6 },
-                  { subject: 'Biology', teachers: 3, classes: 6 },
-                  { subject: 'English', teachers: 6, classes: 10 },
-                  { subject: 'History', teachers: 2, classes: 4 },
-                ].map((item, index) => (
-                  <div key={index} className="bg-white p-6 rounded-lg border border-gray-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-lg font-semibold text-gray-900">{item.subject}</h4>
-                      <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                    </div>
-                    
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">Teachers</span>
-                        <span className="text-sm font-medium text-gray-900">{item.teachers}</span>
+              {/* Subject Distribution from backend */}
+              {subjectDistribution.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {subjectDistribution.map((item, index) => (
+                    <div key={index} className="bg-white p-6 rounded-lg border border-gray-200">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-lg font-semibold text-gray-900">{item.subject}</h4>
+                        <div className="w-3 h-3 rounded-full bg-purple-500"></div>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">Classes</span>
-                        <span className="text-sm font-medium text-gray-900">{item.classes}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Simple Teacher-Subject Table */}
-              <div className="bg-white p-6 rounded-lg border border-gray-200">
-                <h4 className="text-lg font-semibold text-gray-900 mb-4">Teacher Assignments</h4>
-                <div className="space-y-3">
-                  {teachers.slice(0, 5).map((teacher) => (
-                    <div key={teacher._id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center">
-                          <span className="text-xs font-medium text-purple-600">
-                            {teacher.firstName?.[0]}{teacher.lastName?.[0]}
-                          </span>
+                      
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-600">Teachers</span>
+                          <span className="text-sm font-medium text-gray-900">{item.count || 0}</span>
                         </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {teacher.firstName} {teacher.lastName}
-                          </div>
-                          <div className="text-xs text-gray-500">{teacher.teacherRole || 'Teacher'}</div>
-                        </div>
-                      </div>
-                      <div className="text-sm text-gray-600">
-                        {teacher.subjects?.[0] || 'Not assigned'}
                       </div>
                     </div>
                   ))}
                 </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <BookOpen className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">No subject assignments yet</h4>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Subject assignments will appear here once teachers are assigned to subjects.
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    Assign subjects to teachers in the Teachers tab
+                  </p>
+                </div>
+              )}
+
+              {/* Teacher-Subject Table - Real data */}
+              <div className="bg-white p-6 rounded-lg border border-gray-200">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">Teacher Assignments</h4>
+                {teachers.length > 0 ? (
+                  <div className="space-y-3">
+                    {teachers.slice(0, 10).map((teacher) => (
+                      <div key={teacher._id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center">
+                            <span className="text-xs font-medium text-purple-600">
+                              {teacher.firstName?.[0]}{teacher.lastName?.[0]}
+                            </span>
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {teacher.firstName} {teacher.lastName}
+                            </div>
+                            <div className="text-xs text-gray-500">{teacher.teacherRole || 'Teacher'}</div>
+                          </div>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {teacher.subjects && teacher.subjects.length > 0 
+                            ? teacher.subjects.join(', ') 
+                            : 'Not assigned'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                    <p className="text-sm">No teachers found</p>
+                    <p className="text-xs text-gray-400 mt-1">Add teachers to see their subject assignments</p>
+                  </div>
+                )}
               </div>
             </div>
           )}

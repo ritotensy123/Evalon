@@ -36,8 +36,6 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
   const [registrationToken, setRegistrationToken] = useState(null);
   const [backendConnected, setBackendConnected] = useState(false);
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
-  const [tempLogoPath, setTempLogoPath] = useState(null);
-  const [logoTempKey, setLogoTempKey] = useState(null);
   
   // Enhanced form data structure
   const [formData, setFormData] = useState({
@@ -59,7 +57,6 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
     password: '',
     confirmPassword: '',
     emailOTP: '',
-    phoneOTP: '',
     emailVerified: false,
     phoneVerified: false,
     
@@ -98,6 +95,72 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
   useEffect(() => {
     setIsLoaded(true);
     checkBackendConnection();
+    
+    // Validate registration session with backend before restoring
+    const validateAndRestoreSession = async () => {
+      const savedToken = localStorage.getItem('orgRegistrationToken');
+      
+      // RULE 1: If no token, start from step 1
+      if (!savedToken) {
+        console.log('🔄 [FRONTEND] No saved registration token - starting from step 1');
+        setActiveStep(0);
+        return;
+      }
+      
+      console.log('🔄 [FRONTEND] Found saved registration token - validating with backend...');
+      
+      try {
+        // RULE 2: Backend must decide the step
+        const sessionStatus = await organizationAPI.getRegistrationSessionStatus(savedToken);
+        
+        console.log('🔄 [FRONTEND] Session status response:', sessionStatus);
+        
+        // RULE 3: Conditional step restoration based on backend response
+        if (!sessionStatus.data?.sessionValid) {
+          // Session invalid - clear everything and start from step 1
+          console.log('❌ [FRONTEND] Session invalid - clearing and starting from step 1');
+          console.log('❌ [FRONTEND] Reason:', sessionStatus.data?.reason);
+          
+          localStorage.removeItem('orgRegistrationToken');
+          localStorage.removeItem('orgRegistrationStep');
+          setRegistrationToken(null);
+          setActiveStep(0);
+          return;
+        }
+        
+        // Session is valid - restore token and step based on backend response
+        console.log('✅ [FRONTEND] Session valid');
+        console.log('✅ [FRONTEND] Last completed step:', sessionStatus.data?.lastCompletedStep);
+        
+        setRegistrationToken(savedToken);
+        
+        // Only restore step if backend confirms step 1 was completed
+        const lastCompletedStep = sessionStatus.data?.lastCompletedStep || 0;
+        
+        if (lastCompletedStep >= 1) {
+          // Step 1 completed - go to step 2 (admin details)
+          console.log('✅ [FRONTEND] Step 1 completed - restoring to step 2');
+          setActiveStep(1);
+          if (sessionStatus.data?.orgCode) {
+            setOrgCode(sessionStatus.data.orgCode);
+          }
+        } else {
+          // Step 1 not completed - start from step 1
+          console.log('⚠️ [FRONTEND] Step 1 not completed - starting from step 1');
+          setActiveStep(0);
+        }
+        
+      } catch (error) {
+        console.error('❌ [FRONTEND] Failed to validate session:', error);
+        // On error, clear and start fresh
+        localStorage.removeItem('orgRegistrationToken');
+        localStorage.removeItem('orgRegistrationStep');
+        setRegistrationToken(null);
+        setActiveStep(0);
+      }
+    };
+    
+    validateAndRestoreSession();
   }, []);
 
   const steps = [
@@ -151,28 +214,84 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
         
         if (response.success) {
           console.log('Step 1 response:', response.data);
-          setRegistrationToken(response.data.registrationToken);
+          const token = response.data.registrationToken;
+          setRegistrationToken(token);
           setOrgCode(response.data.orgCode);
+          
+          // Persist token to localStorage to survive page refreshes
+          // NOTE: Step is NOT saved - backend will determine step on reload
+          if (token) {
+            localStorage.setItem('orgRegistrationToken', token);
+            // Do NOT save step - backend is the source of truth
+            console.log('💾 [FRONTEND] Registration token saved to localStorage (step NOT saved)');
+          }
+          
           showNotification('Organization details saved successfully!', 'success');
           setActiveStep(1);
         }
         } else if (activeStep === 1) {
-          // Step 2: Admin Details - registerStep2 is now called when sending OTP
-          // Just move to next step if both email and phone are verified
-          if (formData.emailVerified && formData.phoneVerified) {
-            // Check if password fields are filled before proceeding
-            if (!formData.password || !formData.confirmPassword) {
-              showNotification('Please fill in password and confirm password before proceeding', 'warning');
+          // Step 2: Admin Details - save admin details before proceeding
+          if (!formData.emailVerified) {
+            showNotification('Please verify your email before proceeding', 'warning');
+            return;
+          }
+
+          // Validate required fields before saving
+          if (!formData.adminName || !formData.adminName.trim()) {
+            showNotification('Please enter admin name', 'warning');
+            return;
+          }
+
+          // Check if password fields are filled before proceeding
+          if (!formData.password || !formData.confirmPassword) {
+            showNotification('Please fill in password and confirm password before proceeding', 'warning');
+            return;
+          }
+          if (formData.password !== formData.confirmPassword) {
+            showNotification('Passwords do not match', 'error');
+            return;
+          }
+
+          // Save admin details to backend (registerStep2)
+          try {
+            console.log('📝 [FRONTEND] Preparing to save admin details...');
+            console.log('📝 [FRONTEND] Registration token:', registrationToken ? registrationToken.substring(0, 10) + '...' : 'NULL/UNDEFINED');
+            console.log('📝 [FRONTEND] Admin email:', formData.adminEmail);
+            console.log('📝 [FRONTEND] Admin name:', formData.adminName);
+            
+            if (!registrationToken) {
+              showNotification('Registration session expired. Please start registration from step 1.', 'error');
               return;
             }
-            if (formData.password !== formData.confirmPassword) {
-              showNotification('Passwords do not match', 'error');
+            
+            const step2Data = {
+              adminName: formData.adminName,
+              adminEmail: formData.adminEmail,
+              registrationToken: registrationToken,
+              password: formData.password,
+              confirmPassword: formData.confirmPassword
+            };
+
+            // Only include phone fields if provided
+            if (formData.adminPhone && formData.adminPhone.trim()) {
+              step2Data.adminPhone = formData.adminPhone;
+            }
+            if (formData.countryCode) {
+              step2Data.countryCode = formData.countryCode;
+            }
+
+            const registerResponse = await organizationAPI.registerStep2(step2Data);
+            
+            if (!registerResponse.success) {
+              showNotification(registerResponse.message || 'Failed to save admin details', 'error');
               return;
             }
+
             showNotification('Moving to setup preferences!', 'success');
             setActiveStep(2);
-          } else {
-            showNotification('Please verify both email and phone before proceeding', 'warning');
+          } catch (error) {
+            console.error('Failed to save admin details:', error);
+            showNotification(error.message || 'Failed to save admin details', 'error');
             return;
           }
         } else if (activeStep === 2) {
@@ -185,7 +304,7 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
         const completeData = {
           registrationToken: registrationToken,
           emailVerified: formData.emailVerified || false,
-          phoneVerified: formData.phoneVerified || false
+          phoneVerified: false // Phone verification removed
         };
 
         const response = await organizationAPI.registerStep3(completeData);
@@ -198,6 +317,11 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
           localStorage.setItem('authToken', response.data.token);
           localStorage.setItem('userType', 'organization_admin');
           localStorage.setItem('organizationId', response.data.organization.id);
+          
+          // Clear registration token from localStorage (registration complete)
+          localStorage.removeItem('orgRegistrationToken');
+          localStorage.removeItem('orgRegistrationStep');
+          console.log('🧹 [FRONTEND] Cleared registration token from localStorage');
           
           // Redirect to dashboard
           setTimeout(() => {
@@ -263,12 +387,11 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
         if (!formData.adminName.trim()) errors.adminName = 'Admin Name Is Required';
         if (!formData.adminEmail.trim()) errors.adminEmail = 'Email Is Required';
         if (!/\S+@\S+\.\S+/.test(formData.adminEmail)) errors.adminEmail = 'Please Enter A Valid Email';
-        if (!formData.adminPhone.trim()) errors.adminPhone = 'Phone Number Is Required';
+        // Phone number is now optional - no validation required
         if (!formData.password) errors.password = 'Password Is Required';
         if (formData.password.length < 8) errors.password = 'Password Must Be At Least 8 Characters';
         if (formData.password !== formData.confirmPassword) errors.confirmPassword = 'Passwords Do Not Match';
         if (!formData.emailVerified) errors.emailVerified = 'Please Verify Your Email';
-        if (!formData.phoneVerified) errors.phoneVerified = 'Please Verify Your Phone Number';
         break;
       case 2: // Setup Preferences
         if (!formData.institutionStructure) errors.institutionStructure = 'Please Select Institution Structure';
@@ -327,7 +450,7 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
         addSubAdmins: formData.addSubAdmins,
         timeZone: formData.timeZone,
         twoFactorAuth: formData.twoFactorAuth,
-        logoTempKey: logoTempKey, // Send temp key for logo finalization
+        logo: formData.logo || null, // Send base64 logo string directly
         registrationToken: registrationToken
       };
 
@@ -379,7 +502,6 @@ const OrganisationRegistration = ({ onNavigateToLanding, onNavigateToLogin }) =>
             formErrors={formErrors}
             onFormChange={handleFormChange}
             orgCode={orgCode}
-            onLogoPathChange={setLogoTempKey}
           />
         );
       default:

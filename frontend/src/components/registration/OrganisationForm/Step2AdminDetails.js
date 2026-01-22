@@ -9,7 +9,6 @@ import {
   InputLabel,
   IconButton,
   InputAdornment,
-  Chip,
   Button,
   CircularProgress,
   LinearProgress,
@@ -26,7 +25,6 @@ import {
   VisibilityOff,
   CheckCircle,
   Send,
-  VerifiedUser,
   Lock,
   Security,
   Warning,
@@ -43,17 +41,11 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
   // console.log('Step2AdminDetails - formData:', formData);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [emailOtpSent, setEmailOtpSent] = useState(false);
-  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
-  const [emailOtp, setEmailOtp] = useState('');
-  const [phoneOtp, setPhoneOtp] = useState('');
+  const [emailOtpSent, setEmailOtpSent] = useState(false);  const [emailOtp, setEmailOtp] = useState('');
   const [verifyingEmail, setVerifyingEmail] = useState(false);
-  const [verifyingPhone, setVerifyingPhone] = useState(false);
   const [showPasswordTips, setShowPasswordTips] = useState(false);
   const [emailError, setEmailError] = useState('');
-  const [phoneError, setPhoneError] = useState('');
   const [emailResendCooldown, setEmailResendCooldown] = useState(0);
-  const [phoneResendCooldown, setPhoneResendCooldown] = useState(0);
 
   const countryCodes = [
     { value: '+91', label: '🇮🇳 +91 (India)', flag: '🇮🇳' },
@@ -101,33 +93,19 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
       return;
     }
 
+    if (!registrationToken) {
+      setEmailError('Registration session expired. Please start over.');
+      return;
+    }
+
     setEmailError('');
     setEmailOtpSent(true);
     
     try {
-      // First, save the admin details to backend (registerStep2)
-      const step2Data = {
-        adminName: formData.adminName,
-        adminEmail: formData.adminEmail,
-        adminPhone: formData.adminPhone,
-        countryCode: formData.countryCode,
-        password: formData.password,
-        confirmPassword: formData.confirmPassword,
-        registrationToken: registrationToken
-      };
-
-      console.log('Sending step2Data for email OTP:', step2Data);
-      const registerResponse = await organizationAPI.registerStep2(step2Data);
-      
-      if (!registerResponse.success) {
-        console.error('RegisterStep2 validation errors:', registerResponse.errors);
-        console.error('Full error response:', registerResponse);
-        throw new Error(registerResponse.message || 'Failed to save admin details');
-      }
-
-      // Then send the OTP
+      // Send OTP directly - only requires email and registrationToken
       const response = await organizationAPI.sendEmailOTP({
         email: formData.adminEmail,
+        registrationToken: registrationToken,
         purpose: 'registration'
       });
       
@@ -148,81 +126,15 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
         }, 1000);
       } else {
         setEmailOtpSent(false);
+        setEmailError(response.message || 'Failed to send email OTP');
       }
     } catch (error) {
       console.error('Email OTP error:', error);
-      setEmailError(error.message || 'Failed to send email OTP');
+      setEmailError(error.message || error.response?.data?.message || 'Failed to send email OTP');
       setEmailOtpSent(false);
     }
   };
 
-  const handleSendPhoneOTP = async () => {
-    if (!formData.adminPhone) {
-      setPhoneError('Please enter a phone number');
-      return;
-    }
-
-    setPhoneError('');
-    setPhoneOtpSent(true);
-    
-    try {
-      // First, save the admin details to backend (registerStep2) if not already saved
-      const step2Data = {
-        adminName: formData.adminName,
-        adminEmail: formData.adminEmail,
-        adminPhone: formData.adminPhone,
-        countryCode: formData.countryCode,
-        registrationToken: registrationToken
-      };
-
-      // Only include password fields if they are filled
-      if (formData.password && formData.password.trim()) {
-        step2Data.password = formData.password;
-      }
-      if (formData.confirmPassword && formData.confirmPassword.trim()) {
-        step2Data.confirmPassword = formData.confirmPassword;
-      }
-
-      console.log('Sending step2Data for phone OTP:', step2Data);
-      const registerResponse = await organizationAPI.registerStep2(step2Data);
-      
-      if (!registerResponse.success) {
-        console.error('RegisterStep2 validation errors:', registerResponse.errors);
-        console.error('Full error response:', registerResponse);
-        throw new Error(registerResponse.message || 'Failed to save admin details');
-      }
-
-      // Then send the OTP
-      const response = await organizationAPI.sendPhoneOTP({
-        phone: formData.adminPhone,
-        countryCode: formData.countryCode,
-        purpose: 'registration'
-      });
-      
-      if (response.success) {
-        console.log('Phone OTP sent successfully');
-        // Keep phoneOtpSent as true to show the OTP input box
-        // It will be reset to false when OTP is verified
-        // Start resend cooldown
-        setPhoneResendCooldown(60);
-        const cooldownInterval = setInterval(() => {
-          setPhoneResendCooldown((prev) => {
-            if (prev <= 1) {
-              clearInterval(cooldownInterval);
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-      } else {
-        setPhoneOtpSent(false);
-      }
-    } catch (error) {
-      console.error('Phone OTP error:', error);
-      setPhoneError(error.message || 'Failed to send phone OTP');
-      setPhoneOtpSent(false);
-    }
-  };
 
   const handleVerifyEmail = async () => {
     if (!emailOtp) {
@@ -254,44 +166,10 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
     }
   };
 
-  const handleVerifyPhone = async () => {
-    if (!phoneOtp) {
-      setPhoneError('Please enter the OTP');
-      return;
-    }
-    
-    setPhoneError('');
-    setVerifyingPhone(true);
-    
-    try {
-      const response = await organizationAPI.verifyPhoneOTP({
-        phone: formData.adminPhone,
-        countryCode: formData.countryCode,
-        otp: phoneOtp
-      });
-      
-      if (response.success) {
-        onFormChange('phoneVerified', true);
-        setPhoneOtp('');
-        setPhoneOtpSent(false); // Reset OTP sent state after successful verification
-        console.log('Phone verified successfully');
-      }
-    } catch (error) {
-      console.error('Phone verification error:', error);
-      setPhoneError(error.message || 'Failed to verify phone OTP');
-    } finally {
-      setVerifyingPhone(false);
-    }
-  };
 
   const handleResendEmailOTP = () => {
     if (emailResendCooldown > 0) return;
     handleSendEmailOTP();
-  };
-
-  const handleResendPhoneOTP = () => {
-    if (phoneResendCooldown > 0) return;
-    handleSendPhoneOTP();
   };
 
   const getPasswordStrength = (password) => {
@@ -540,12 +418,12 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
           <Box>
             <TextField
               fullWidth
-              label="Phone Number"
+              label="Phone Number (Optional)"
               value={formData.adminPhone}
               onChange={(e) => onFormChange('adminPhone', e.target.value)}
               error={!!formErrors.adminPhone}
               helperText={formErrors.adminPhone}
-              placeholder="Enter phone number"
+              placeholder="Enter phone number (optional)"
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
@@ -584,130 +462,9 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
                     </FormControl>
                   </InputAdornment>
                 ),
-                endAdornment: formData.phoneVerified && (
-                  <InputAdornment position="end">
-                    <CheckCircle sx={{ color: COLORS.SUCCESS, fontSize: 20 }} />
-                  </InputAdornment>
-                ),
               }}
               sx={universalFieldStyle}
             />
-            
-            {phoneError && (
-              <Alert severity="error" sx={{ mt: 1, fontSize: '0.875rem' }}>
-                {phoneError}
-              </Alert>
-            )}
-            
-            <Collapse in={!formData.phoneVerified && formData.adminPhone}>
-              <Box sx={{ 
-                mt: 1, 
-                display: 'flex', 
-                gap: { xs: 1, sm: 1.5 }, 
-                alignItems: 'center',
-                flexDirection: { xs: 'column', sm: 'row' },
-                flexWrap: 'wrap'
-              }}>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={handleSendPhoneOTP}
-                  disabled={phoneOtpSent}
-                  startIcon={phoneOtpSent ? <CircularProgress size={16} /> : <Send />}
-                  sx={{ 
-                    borderColor: COLORS.PRIMARY,
-                    color: COLORS.PRIMARY,
-                    borderRadius: 2,
-                    textTransform: 'none',
-                    fontWeight: 500,
-                    '&:hover': {
-                      borderColor: COLORS.PRIMARY,
-                      backgroundColor: 'rgba(102, 126, 234, 0.04)',
-                      transform: 'translateY(-1px)',
-                      boxShadow: '0 4px 8px rgba(102, 126, 234, 0.2)',
-                    },
-                    transition: 'all 0.2s ease-in-out',
-                  }}
-                >
-                  {phoneOtpSent ? 'Sending...' : 'Send OTP'}
-                </Button>
-                
-                {phoneOtpSent && phoneResendCooldown > 0 && (
-                  <Button
-                    size="small"
-                    variant="text"
-                    disabled
-                    sx={{ 
-                      color: COLORS.TEXT_DISABLED,
-                      textTransform: 'none',
-                      fontSize: '0.75rem',
-                      minWidth: 'auto',
-                    }}
-                  >
-                    Resend in {phoneResendCooldown}s
-                  </Button>
-                )}
-                
-                {phoneOtpSent && phoneResendCooldown === 0 && (
-                  <Button
-                    size="small"
-                    variant="text"
-                    onClick={handleResendPhoneOTP}
-                    sx={{ 
-                      color: COLORS.PRIMARY,
-                      textTransform: 'none',
-                      fontSize: '0.75rem',
-                      minWidth: 'auto',
-                      '&:hover': {
-                        backgroundColor: 'rgba(102, 126, 234, 0.04)',
-                      },
-                    }}
-                  >
-                    Resend OTP
-                  </Button>
-                )}
-                
-                <Collapse in={phoneOtpSent} orientation="horizontal">
-                  <TextField
-                    size="small"
-                    placeholder="Enter OTP"
-                    value={phoneOtp}
-                    onChange={(e) => setPhoneOtp(e.target.value)}
-                    InputProps={{
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <Button
-                            size="small"
-                            onClick={handleVerifyPhone}
-                            disabled={verifyingPhone}
-                            sx={{
-                              minWidth: 'auto',
-                              p: 0.5,
-                              color: COLORS.PRIMARY,
-                              '&:hover': {
-                                backgroundColor: 'rgba(102, 126, 234, 0.04)',
-                              },
-                            }}
-                          >
-                            {verifyingPhone ? (
-                              <CircularProgress size={16} />
-                            ) : (
-                              <CheckCircle sx={{ fontSize: 16 }} />
-                            )}
-                          </Button>
-                        </InputAdornment>
-                      ),
-                    }}
-                    sx={{
-                      width: { xs: '100%', sm: '120px' },
-                      '& .MuiOutlinedInput-root': {
-                        fontSize: '0.875rem',
-                      },
-                    }}
-                  />
-                </Collapse>
-              </Box>
-            </Collapse>
           </Box>
         </Slide>
 
@@ -911,54 +668,7 @@ const Step2AdminDetails = ({ formData, formErrors, onFormChange, registrationTok
         </Slide>
       </Box>
 
-      {/* Enhanced Verification Status */}
-      <Fade in timeout={1400}>
-        <Box sx={{ 
-          mt: 4, 
-          p: 3, 
-          backgroundColor: 'rgba(102, 126, 234, 0.05)', 
-          borderRadius: 2, 
-          border: '1px solid rgba(102, 126, 234, 0.1)',
-          boxShadow: '0 2px 8px rgba(102, 126, 234, 0.1)',
-        }}>
-          <Typography variant="body2" sx={{ color: '#555555', mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <VerifiedUser sx={{ fontSize: 18, color: COLORS.PRIMARY }} />
-            Verification Status
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <Chip
-              icon={<Email />}
-              label={formData.emailVerified ? 'Email Verified' : 'Email Pending'}
-              color={formData.emailVerified ? 'success' : 'default'}
-              size="medium"
-              variant="outlined"
-              sx={{ 
-                borderRadius: 2,
-                fontWeight: 500,
-                '& .MuiChip-icon': {
-                  fontSize: 18,
-                },
-              }}
-            />
-            <Chip
-              icon={formData.phoneVerified ? <CheckCircle /> : <Phone />}
-              label={formData.phoneVerified ? 'Phone Verified' : 'Phone Pending'}
-              color={formData.phoneVerified ? 'success' : 'default'}
-              size="medium"
-              variant="outlined"
-              sx={{ 
-                borderRadius: 2,
-                fontWeight: 500,
-                '& .MuiChip-icon': {
-                  fontSize: 18,
-                },
-              }}
-            />
-          </Box>
-        </Box>
-      </Fade>
-
-      {/* Enhanced Info Box */}
+      {/* Info Box */}
       <Fade in timeout={1600}>
         <Box
           sx={{

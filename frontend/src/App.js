@@ -8,14 +8,41 @@ import OrganisationRegistration from './pages/onboarding/OrganisationRegistratio
 import TeacherRegistration from './pages/onboarding/TeacherRegistration';
 import StudentRegistration from './pages/onboarding/StudentRegistration';
 import Dashboard from './pages/Dashboard';
-import SystemSetupWizard from './components/setup/SystemSetupWizard';
 import CompleteRegistration from './pages/CompleteRegistration';
 import FirstTimeLoginWizard from './components/FirstTimeLoginWizard';
 import DepartmentDetailPage from './pages/dashboard/DepartmentDetailPage';
 import MonitoringTest from './pages/dashboard/MonitoringTest';
 import AIModelTestPage from './pages/AIModelTestPage';
+import OrganizationProfile from './pages/dashboard/OrganizationProfile';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+
+/**
+ * ROUTING ARCHITECTURE
+ * ====================
+ * 
+ * This App.js handles TWO separate onboarding layers:
+ * 
+ * 1. USER-LEVEL ONBOARDING (password/profile setup)
+ *    - Applies ONLY to: teachers, students, sub_admins
+ *    - Blocks dashboard access until completed
+ *    - Handled by: FirstTimeLoginWizard
+ *    - Organization admins MUST bypass this
+ * 
+ * 2. ORGANIZATION ONBOARDING (departments/setup)
+ *    - Applies ONLY to: organization_admin
+ *    - Optional and non-blocking
+ *    - Handled inside: Dashboard component
+ *    - NEVER appears in App.js routing
+ * 
+ * ROUTING ORDER:
+ * 1. Authentication guard
+ * 2. User-level onboarding (ROLE-AWARE - excludes organization_admin)
+ * 3. Normal application routing (dashboard, pages)
+ * 
+ * Organization onboarding is handled inside Dashboard and is completely
+ * separate from App.js routing logic.
+ */
 
 // Main app content component that uses auth context
 const AppContent = () => {
@@ -38,40 +65,68 @@ const AppContent = () => {
     } else if (path === '/ai-model-test') {
       setCurrentPage('ai-model-test');
       setManualNavigation(true);
+    } else if (path === '/profile' || path === '/organization/profile') {
+      setCurrentPage('profile');
+      setManualNavigation(true);
     } else {
       setCurrentPage('landing');
       setManualNavigation(false);
     }
   }, []);
 
-  // Check authentication status on app load
+  // STEP 1: Authentication guard and routing logic
   useEffect(() => {
-    
     // Only auto-redirect if not manually navigating
     if (!manualNavigation) {
-      // If not authenticated and loading is complete, go to landing
+      // STEP 1: Auth guard - if not authenticated, go to landing
       if (!isAuthenticated && !isLoading) {
         setCurrentPage('landing');
         return;
       }
       
-      // If authenticated, check where to go
+      // STEP 2: User-level onboarding (ROLE-AWARE) - only for non-organization users
       if (isAuthenticated && user && (currentPage === 'landing' || currentPage === 'login')) {
+        // IMPORTANT: Organization admins COMPLETELY bypass first-time login
+        // Ignore firstLogin flag entirely for organization admins
+        if (user.userType === 'organization_admin') {
+          // Organization admins always go directly to dashboard
+          // Organization onboarding (optional, non-blocking) is handled inside Dashboard
+          setCurrentPage('dashboard');
+          return;
+        }
         
-        // Check if this is a first-time login - only if user is actually authenticated AND has firstLogin true
-        if (user.firstLogin === true) {
+        // For teachers: FirstTimeLoginWizard ONLY for admin-created teachers
+        // Business rule: Show wizard ONLY when:
+        // - userType === 'teacher'
+        // - firstLogin === true
+        // - authProvider === 'temporary_password'
+        if (user.userType === 'teacher') {
+          const isAdminCreatedTeacher = user.firstLogin === true && 
+                                       user.authProvider === 'temporary_password';
+          
+          if (isAdminCreatedTeacher) {
+            setCurrentPage('first-time-login');
+            return;
+          } else {
+            // Self-registered teachers skip FirstTimeLoginWizard
+            setCurrentPage('dashboard');
+            return;
+          }
+        }
+        
+        // For other user types: check if first-login wizard is needed
+        const needsUserOnboarding = user.firstLogin === true;
+        
+        if (needsUserOnboarding) {
           setCurrentPage('first-time-login');
         } else {
+          // STEP 4: Normal routing - go to dashboard
           setCurrentPage('dashboard');
         }
       }
-    } else {
     }
   }, [isAuthenticated, isLoading, manualNavigation, currentPage, user]);
 
-  // Debug authentication state changes
-  useEffect(() => {
-  }, [isAuthenticated, isLoading]);
 
   // Memoized navigation functions to prevent unnecessary re-renders
   const handleNavigateToOnboarding = React.useCallback(() => {
@@ -115,9 +170,9 @@ const AppContent = () => {
     setCurrentPage(`department-detail/${departmentId}`);
   }, []);
 
-  const handleNavigateToSetup = React.useCallback(() => {
+  const handleNavigateToProfile = React.useCallback(() => {
     setManualNavigation(true);
-    setCurrentPage('setup-wizard');
+    setCurrentPage('profile');
   }, []);
 
   const handleNavigateToCompleteRegistration = React.useCallback((token) => {
@@ -127,19 +182,49 @@ const AppContent = () => {
 
   // Handle successful login
   const handleLoginSuccess = React.useCallback(() => {
-    
     // Clear manual navigation flag to allow auto-redirect
     setManualNavigation(false);
     
-    // Immediately check authentication state and redirect
+    // STEP 2: User-level onboarding (ROLE-AWARE)
+    // IMPORTANT: Organization admins COMPLETELY bypass first-time login
     if (isAuthenticated && user) {
-      if (user.firstLogin === true) {
+      // Organization admins always go directly to dashboard
+      // Ignore firstLogin flag entirely for organization admins
+      if (user.userType === 'organization_admin') {
+        setCurrentPage('dashboard');
+        return;
+      }
+      
+      // For teachers: FirstTimeLoginWizard ONLY for admin-created teachers
+      // Business rule: Show wizard ONLY when:
+      // - userType === 'teacher'
+      // - firstLogin === true
+      // - authProvider === 'temporary_password'
+      if (user.userType === 'teacher') {
+        const isAdminCreatedTeacher = user.firstLogin === true && 
+                                     user.authProvider === 'temporary_password';
+        
+        if (isAdminCreatedTeacher) {
+          setCurrentPage('first-time-login');
+          return;
+        } else {
+          // Self-registered teachers skip FirstTimeLoginWizard
+          setCurrentPage('dashboard');
+          return;
+        }
+      }
+      
+      // For other user types: check if first-login wizard is needed
+      const needsUserOnboarding = user.firstLogin === true;
+      
+      if (needsUserOnboarding) {
         setCurrentPage('first-time-login');
       } else {
+        // STEP 4: Normal routing - go to dashboard
         setCurrentPage('dashboard');
       }
     }
-  }, [currentPage, user, isAuthenticated]);
+  }, [user, isAuthenticated]);
 
   const renderPage = () => {
     switch (currentPage) {
@@ -190,41 +275,31 @@ const AppContent = () => {
             onNavigateToLogin={handleNavigateToLogin}
           />
         );
-      case 'setup-wizard':
-        return (
-          <ProtectedRoute>
-            <SystemSetupWizard
-              onComplete={handleNavigateToDashboard}
-              onSkip={handleNavigateToDashboard}
-            />
-          </ProtectedRoute>
-        );
       case 'first-time-login':
-        console.log('🎯 Rendering first-time-login case with:', { 
-          isAuthenticated, 
-          hasUser: !!user, 
-          firstLogin: user?.firstLogin,
-          currentPage 
-        });
-        
-        // Only show wizard if user is authenticated AND has firstLogin true
-        if (!isAuthenticated || !user || user.firstLogin !== true) {
-          console.log('🚫 Wizard conditions not met:', { 
-            isAuthenticated, 
-            hasUser: !!user, 
-            firstLogin: user?.firstLogin 
-          });
-          // Redirect to landing if not authenticated, or dashboard if authenticated but not first login
-          if (!isAuthenticated) {
-            setCurrentPage('landing');
-            return null;
-          } else {
-            setCurrentPage('dashboard');
-            return null;
-          }
+        // STEP 2: User-level onboarding (ROLE-AWARE)
+        // IMPORTANT: Organization admins COMPLETELY bypass first-time login
+        if (!isAuthenticated || !user) {
+          // Not authenticated - redirect to landing
+          setCurrentPage('landing');
+          return null;
         }
         
-        console.log('✅ Wizard conditions met, rendering FirstTimeLoginWizard');
+        // CRITICAL: Organization admins MUST NEVER see FirstTimeLoginWizard
+        // Ignore firstLogin flag entirely - always redirect to dashboard
+        if (user.userType === 'organization_admin') {
+          setCurrentPage('dashboard');
+          return null;
+        }
+        
+        // Only show wizard if user needs first-login setup (password/profile)
+        // This applies ONLY to: teachers, students, sub_admins
+        if (user.firstLogin !== true) {
+          // Already completed first login - go to dashboard
+          setCurrentPage('dashboard');
+          return null;
+        }
+        
+        // Render FirstTimeLoginWizard for teachers/students/sub_admins only
         return (
           <ProtectedRoute>
             <FirstTimeLoginWizard />
@@ -233,7 +308,10 @@ const AppContent = () => {
       case 'dashboard':
         return (
           <ProtectedRoute>
-            <Dashboard onNavigateToDepartmentDetail={handleNavigateToDepartmentDetail} />
+            <Dashboard 
+              onNavigateToDepartmentDetail={handleNavigateToDepartmentDetail}
+              onNavigateToProfile={handleNavigateToProfile}
+            />
           </ProtectedRoute>
         );
       case 'monitoring-test':
@@ -246,6 +324,12 @@ const AppContent = () => {
         return (
           <ProtectedRoute>
             <AIModelTestPage />
+          </ProtectedRoute>
+        );
+      case 'profile':
+        return (
+          <ProtectedRoute>
+            <OrganizationProfile />
           </ProtectedRoute>
         );
       default:
@@ -300,7 +384,21 @@ const AppContent = () => {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      {renderPage()}
+      <div style={{ 
+        height: '100vh', 
+        display: 'flex', 
+        flexDirection: 'column',
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          flex: 1,
+          height: '100%',
+          overflowY: 'auto',
+          overflowX: 'hidden'
+        }}>
+          {renderPage()}
+        </div>
+      </div>
     </ThemeProvider>
   );
 };

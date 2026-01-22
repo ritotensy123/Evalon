@@ -58,14 +58,11 @@ import {
 import { COLORS, BORDER_RADIUS } from '../../../theme/constants';
 import { organizationAPI } from '../../../services/api';
 
-const Step3SetupPreferences = ({ formData, formErrors, onFormChange, orgCode, onLogoPathChange }) => {
+const Step3SetupPreferences = ({ formData, formErrors, onFormChange, orgCode }) => {
   const [newDepartment, setNewDepartment] = useState('');
   const [logoPreview, setLogoPreview] = useState(null);
   const [fileError, setFileError] = useState('');
   const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [tempLogoPath, setTempLogoPath] = useState(null);
-  const [logoTempKey, setLogoTempKey] = useState(null); // Store temp key for later use
-  const [selectedFile, setSelectedFile] = useState(null); // Store file for later upload
 
   // Universal field styling matching other steps
   const universalFieldStyle = {
@@ -96,60 +93,56 @@ const Step3SetupPreferences = ({ formData, formErrors, onFormChange, orgCode, on
     },
   };
 
-  const handleLogoUpload = async (event) => {
+  const handleLogoUpload = (event) => {
     const file = event.target.files[0];
     setFileError(''); // Clear previous errors
     
     if (file) {
-      // Check file size (2MB = 2 * 1024 * 1024 bytes)
-      const maxSize = 2 * 1024 * 1024; // 2MB in bytes
+      // Check file size (5MB = 5 * 1024 * 1024 bytes)
+      const maxSize = 5 * 1024 * 1024; // 5MB in bytes
       
       if (file.size > maxSize) {
-        setFileError('File Size Must Be Less Than 2MB');
+        setFileError('File Size Must Be Less Than 5MB');
         return;
       }
       
       // Check file type
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
       if (!allowedTypes.includes(file.type)) {
-        setFileError('Please Upload A PNG Or JPG File');
+        setFileError('Please Upload A PNG, JPG, or GIF File');
         return;
       }
       
       setUploadingLogo(true);
       
-      try {
-        // Store file for later upload
-        setSelectedFile(file);
+      // Extract base64 string directly
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64String = e.target.result; // This is already "data:image/...;base64,XXXX"
         
-        // Upload to backend as temporary file
-        const organizationContext = {
-          orgCode: orgCode,
-          orgName: formData.organisationName
-        };
-        const response = await organizationAPI.uploadLogo(file, organizationContext);
-        
-        if (response.success) {
-          // Create preview
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            setLogoPreview(e.target.result);
-            // Store temp key and path for later use
-            setLogoTempKey(response.tempKey);
-            setTempLogoPath(response.tempPath);
-            // Pass temp key to parent component instead of path
-            if (onLogoPathChange) {
-              onLogoPathChange(response.tempKey);
-            }
-          };
-          reader.readAsDataURL(file);
+        // Validate base64 string
+        if (!base64String || !base64String.startsWith('data:image/')) {
+          setFileError('Invalid image file');
+          setUploadingLogo(false);
+          return;
         }
-      } catch (error) {
-        console.error('Logo upload error:', error);
-        setFileError(error.message || 'Failed to upload logo');
-      } finally {
+        
+        // Set preview
+        setLogoPreview(base64String);
+        
+        // Store base64 string in form data
+        onFormChange('logo', base64String);
+        
         setUploadingLogo(false);
-      }
+      };
+      
+      reader.onerror = () => {
+        setFileError('Failed to read file');
+        setUploadingLogo(false);
+      };
+      
+      // Read file as data URL (base64)
+      reader.readAsDataURL(file);
     }
   };
 
@@ -269,9 +262,6 @@ const Step3SetupPreferences = ({ formData, formErrors, onFormChange, orgCode, on
                   <IconButton
                     onClick={() => {
                       setLogoPreview(null);
-                      setSelectedFile(null);
-                      setLogoTempKey(null);
-                      setTempLogoPath(null);
                       onFormChange('logo', null);
                       setFileError('');
                     }}

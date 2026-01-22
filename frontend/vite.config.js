@@ -11,7 +11,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3001,
+    port: parseInt(process.env.VITE_FRONTEND_PORT || '3001', 10),
     open: true,
     hmr: {
       overlay: true,
